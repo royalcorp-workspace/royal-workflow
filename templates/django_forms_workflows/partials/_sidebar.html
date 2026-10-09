@@ -1,0 +1,42 @@
+{% load forms_workflows_tags %}
+{% if user.is_authenticated %}
+<aside class="sidebar-wrapper">
+    <div class="sidebar-header">
+        <a href="{% url 'forms_workflows:form_list' %}" class="d-flex align-items-center text-decoration-none">
+            <div class="sidebar-brand-icon">
+                <i class="bi bi-diagram-3-fill"></i>
+            </div>
+            <span class="sidebar-brand-text">Royal Workflow</span>
+        </a>
+    </div>
+    <div class="sidebar-nav">
+        <div class="nav-section-title">Main Menu</div>
+        <nav class="nav flex-column">
+            <a class="sidebar-link {% if request.path == '/forms/' or '/submit/' in request.path %}active{% endif %}" href="{% url 'forms_workflows:form_list' %}">
+                <i class="bi bi-card-checklist"></i>
+                <span>Forms</span>
+            </a>
+            <a class="sidebar-link {% if 'my-submissions' in request.path or 'submissions/' in request.path %}active{% endif %}" href="{% url 'forms_workflows:my_submissions' %}">
+                <i class="bi bi-journal-text"></i>
+                <span>My Submissions</span>
+            </a>
+            {% if user.is_staff or user.groups.exists or user_is_approver %}
+            <a class="sidebar-link {% if 'approvals' in request.path %}active{% endif %}" href="/forms/approvals/">
+                <i class="bi bi-check2-square"></i>
+                <span>Approvals</span>
+            </a>
+            {% endif %}
+        </nav>
+
+        {% if user.is_staff or user.is_superuser %}
+        <div class="nav-section-title mt-4">Management</div>
+        <nav class="nav flex-column">
+            <a class="sidebar-link {% if 'analytics' in request.path %}active{% endif %}" href="{% url 'forms_workflows:analytics_dashboard' %}">
+                <i class="bi bi-graph-up"></i>
+                <span>Analytics</span>
+            </a>
+        </nav>
+        {% endif %}
+    </div>
+</aside>
+{% endif %}

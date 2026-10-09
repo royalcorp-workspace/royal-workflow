@@ -1,0 +1,1805 @@
+"""
+Celery-friendly email tasks for Django Forms Workflows.
+
+- Uses Celery if available (shared_task). If Celery isn't installed/running,
+  tasks still import and `.delay(...)` will call synchronously as a graceful fallback.
+- Emails use the package's generic templates under django_forms_workflows/templates/emails/.
+- Absolute URLs are built from settings.FORMS_WORKFLOWS_BASE_URL (or SITE_BASE_URL) if set;
+  otherwise fall back to relative paths.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import logging
+from calendar import monthrange
+from collections import defaultdict
+from collections.abc import Iterable
+from datetime import datetime, timedelta
+from datetime import time as dt_time
+from email.utils import make_msgid
+
+import requests
+from django.conf import settings
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
+from django.urls import reverse
+from django.utils import timezone
+from django.utils.html import strip_tags
+
+from .models import (
+    ApprovalTask,
+    FormSubmission,
+    NotificationLog,
+    NotificationRule,
+    PendingNotification,
+    WebhookDeliveryLog,
+    WebhookEndpoint,
+    WorkflowStage,
+)
+
+logger = logging.getLogger(__name__)
+
+# Provide a no-op shared_task decorator if Celery isn't installed
+try:  # pragma: no cover
+    from celery import shared_task  # type: ignore
+except Exception:  # pragma: no cover
+
+    def shared_task(*dargs, **dkwargs):  # type: ignore
+        def _decorator(fn):
+            def _wrapper(*args, **kwargs):
+                return fn(*args, **kwargs)
+
+            # mimic celery Task API for `.delay`
+            _wrapper.delay = _wrapper  # type: ignore[attr-defined]
+            return _wrapper
+
+        return _decorator
+
+
+def _base_url() -> str:
+    """Return the base URL (scheme + domain) for building absolute links in emails.
+
+    Checks, in order:
+    1. ``settings.FORMS_WORKFLOWS_BASE_URL``
+    2. ``settings.SITE_BASE_URL``
+    3. First entry in ``settings.CSRF_TRUSTED_ORIGINS``
+    """
+    url = getattr(settings, "FORMS_WORKFLOWS_BASE_URL", None) or getattr(
+        settings, "SITE_BASE_URL", None
+    )
+    if url:
+        return url
+    origins = getattr(settings, "CSRF_TRUSTED_ORIGINS", None)
+    if origins:
+        return origins[0]
+    return ""
+
+
+def _abs(url_path: str) -> str:
+    base = _base_url().rstrip("/")
+    if base:
+        return f"{base}{url_path}"
+    return url_path  # relative fallback
+
+
+def _site_name() -> str:
+    """Return the configured site name, defaulting to 'Django Forms Workflows'."""
+    cfg = getattr(settings, "FORMS_WORKFLOWS", {})
+    return cfg.get("SITE_NAME", "Django Forms Workflows")
+
+
+def _make_message_id(from_addr: str) -> str:
+    """Return a unique RFC 2822 Message-ID (with angle brackets) for an outgoing email.
+
+    We stamp this ourselves so each send can later be reconciled against the
+    Google Workspace Gmail delivery log (whose ``rfc2822_message_id`` field
+    stores the exact header value). The domain is taken from the sender so the
+    ID reads cleanly; uniqueness comes from ``make_msgid``'s random component.
+    The value is stored verbatim on ``NotificationLog.rfc2822_message_id`` and
+    set as the MIME ``Message-ID`` header (see ``GmailAPIBackend``).
+    """
+    domain = from_addr.rpartition("@")[2].strip().strip(">") or "localhost"
+    return make_msgid(domain=domain)
+
+
+def _send_html_email(
+    subject: str,
+    to: Iterable[str],
+    template: str,
+    context: dict,
+    from_email: str | None = None,
+    *,
+    notification_type: str = "other",
+    submission_id: int | None = None,
+    cc: Iterable[str] | None = None,
+    bcc: Iterable[str] | None = None,
+) -> None:
+    to_list = [e for e in to if e]
+    cc_list = [e for e in (cc or []) if e and e not in to_list]
+    bcc_list = [e for e in (bcc or []) if e and e not in to_list and e not in cc_list]
+    if not to_list:
+        logger.info("Skipping email '%s' (no recipients)", subject)
+        _write_notification_log(
+            notification_type=notification_type,
+            submission_id=submission_id,
+            recipient_email="(none)",
+            subject=subject,
+            status="skipped",
+            cc_emails=", ".join(cc_list),
+            bcc_emails=", ".join(bcc_list),
+        )
+        return
+
+    # Inject site_name so all email templates can reference {{ site_name }}
+    context.setdefault("site_name", _site_name())
+
+    html_body = render_to_string(template, context)
+    text_body = strip_tags(html_body)
+    from_addr = from_email or getattr(
+        settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost"
+    )
+
+    msg = EmailMultiAlternatives(
+        subject=subject,
+        body=text_body,
+        from_email=from_addr,
+        to=to_list,
+        cc=cc_list or None,
+        bcc=bcc_list or None,
+    )
+    msg.attach_alternative(html_body, "text/html")
+    # Stamp a Message-ID we control so delivery can be reconciled against the
+    # Workspace Gmail log (see _make_message_id / GmailAPIBackend).
+    message_id = _make_message_id(from_addr)
+    msg.extra_headers["Message-ID"] = message_id
+    cc_str = ", ".join(cc_list)
+    bcc_str = ", ".join(bcc_list)
+    try:
+        msg.send(fail_silently=False)
+        logger.info(
+            "Sent email '%s' to %s%s%s",
+            subject,
+            to_list,
+            f" cc={cc_list}" if cc_list else "",
+            f" bcc={bcc_list}" if bcc_list else "",
+        )
+        for recipient in to_list:
+            _write_notification_log(
+                notification_type=notification_type,
+                submission_id=submission_id,
+                recipient_email=recipient,
+                subject=subject,
+                status="sent",
+                cc_emails=cc_str,
+                bcc_emails=bcc_str,
+                rfc2822_message_id=message_id,
+            )
+    except Exception as e:  # pragma: no cover
+        logger.exception("Failed sending email '%s' to %s: %s", subject, to_list, e)
+        for recipient in to_list:
+            _write_notification_log(
+                notification_type=notification_type,
+                submission_id=submission_id,
+                recipient_email=recipient,
+                subject=subject,
+                status="failed",
+                error_message=str(e),
+                cc_emails=cc_str,
+                bcc_emails=bcc_str,
+            )
+
+
+def _send_html_email_from_string(
+    subject: str,
+    to: Iterable[str],
+    body_template_string: str,
+    context: dict,
+    from_email: str | None = None,
+    *,
+    notification_type: str = "other",
+    submission_id: int | None = None,
+    cc: Iterable[str] | None = None,
+    bcc: Iterable[str] | None = None,
+) -> None:
+    """Like _send_html_email but renders an inline Django template string
+    instead of loading a template file.  Used when a NotificationRule has a
+    custom ``body_template``.
+    """
+    from django.template import Context, Template
+
+    to_list = [e for e in to if e]
+    cc_list = [e for e in (cc or []) if e and e not in to_list]
+    bcc_list = [e for e in (bcc or []) if e and e not in to_list and e not in cc_list]
+    if not to_list:
+        logger.info("Skipping email '%s' (no recipients)", subject)
+        _write_notification_log(
+            notification_type=notification_type,
+            submission_id=submission_id,
+            recipient_email="(none)",
+            subject=subject,
+            status="skipped",
+            cc_emails=", ".join(cc_list),
+            bcc_emails=", ".join(bcc_list),
+        )
+        return
+
+    context.setdefault("site_name", _site_name())
+
+    tpl = Template(body_template_string)
+    html_body = tpl.render(Context(context))
+    text_body = strip_tags(html_body)
+    from_addr = from_email or getattr(
+        settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost"
+    )
+
+    msg = EmailMultiAlternatives(
+        subject=subject,
+        body=text_body,
+        from_email=from_addr,
+        to=to_list,
+        cc=cc_list or None,
+        bcc=bcc_list or None,
+    )
+    msg.attach_alternative(html_body, "text/html")
+    # Stamp a Message-ID we control so delivery can be reconciled against the
+    # Workspace Gmail log (see _make_message_id / GmailAPIBackend).
+    message_id = _make_message_id(from_addr)
+    msg.extra_headers["Message-ID"] = message_id
+    cc_str = ", ".join(cc_list)
+    bcc_str = ", ".join(bcc_list)
+    try:
+        msg.send(fail_silently=False)
+        logger.info(
+            "Sent email '%s' to %s%s%s",
+            subject,
+            to_list,
+            f" cc={cc_list}" if cc_list else "",
+            f" bcc={bcc_list}" if bcc_list else "",
+        )
+        for recipient in to_list:
+            _write_notification_log(
+                notification_type=notification_type,
+                submission_id=submission_id,
+                recipient_email=recipient,
+                subject=subject,
+                status="sent",
+                cc_emails=cc_str,
+                bcc_emails=bcc_str,
+                rfc2822_message_id=message_id,
+            )
+    except Exception as e:  # pragma: no cover
+        logger.exception("Failed sending email '%s' to %s: %s", subject, to_list, e)
+        for recipient in to_list:
+            _write_notification_log(
+                notification_type=notification_type,
+                submission_id=submission_id,
+                recipient_email=recipient,
+                subject=subject,
+                status="failed",
+                error_message=str(e),
+                cc_emails=cc_str,
+                bcc_emails=bcc_str,
+            )
+
+
+def _write_notification_log(
+    *,
+    notification_type: str,
+    submission_id: int | None,
+    recipient_email: str,
+    subject: str,
+    status: str,
+    error_message: str = "",
+    cc_emails: str = "",
+    bcc_emails: str = "",
+    rfc2822_message_id: str = "",
+) -> None:
+    """Write a NotificationLog row; never raises so it cannot break email delivery."""
+    try:
+        NotificationLog.objects.create(
+            notification_type=notification_type,
+            submission_id=submission_id,
+            recipient_email=recipient_email,
+            subject=subject,
+            status=status,
+            error_message=error_message,
+            cc_emails=cc_emails,
+            bcc_emails=bcc_emails,
+            rfc2822_message_id=rfc2822_message_id,
+        )
+    except Exception:  # pragma: no cover
+        logger.exception("Failed to write NotificationLog (ignored)")
+
+
+def _serialize_webhook_user(user) -> dict | None:
+    if not user:
+        return None
+    return {
+        "id": user.id,
+        "username": user.get_username(),
+        "email": getattr(user, "email", ""),
+        "full_name": getattr(user, "get_full_name", lambda: "")(),
+    }
+
+
+def _serialize_webhook_stage(stage: WorkflowStage | None) -> dict | None:
+    if not stage:
+        return None
+    return {
+        "id": stage.id,
+        "name": stage.name,
+        "order": stage.order,
+    }
+
+
+def _build_webhook_payload(
+    submission: FormSubmission,
+    event: str,
+    *,
+    workflow=None,
+    approval_task: ApprovalTask | None = None,
+    target_stage: WorkflowStage | None = None,
+) -> dict:
+    workflow_obj = workflow
+    if workflow_obj is None and approval_task and approval_task.workflow_stage_id:
+        workflow_obj = approval_task.workflow_stage.workflow
+    if workflow_obj is None and target_stage is not None:
+        workflow_obj = target_stage.workflow
+
+    payload = {
+        "event": event,
+        "timestamp": timezone.now().isoformat(),
+        "submission": {
+            "id": submission.id,
+            "status": submission.status,
+            "created_at": submission.created_at.isoformat()
+            if submission.created_at
+            else None,
+            "submitted_at": submission.submitted_at.isoformat()
+            if submission.submitted_at
+            else None,
+            "completed_at": submission.completed_at.isoformat()
+            if submission.completed_at
+            else None,
+        },
+        "form": {
+            "id": submission.form_definition_id,
+            "name": submission.form_definition.name,
+            "slug": submission.form_definition.slug,
+        },
+        "submitter": _serialize_webhook_user(submission.submitter),
+        "workflow": None,
+        "task": None,
+        "target_stage": _serialize_webhook_stage(target_stage),
+    }
+
+    if workflow_obj is not None:
+        payload["workflow"] = {
+            "id": workflow_obj.id,
+            "name_label": workflow_obj.name_label,
+            "requires_approval": workflow_obj.requires_approval,
+        }
+
+    if approval_task is not None:
+        payload["task"] = {
+            "id": approval_task.id,
+            "status": approval_task.status,
+            "stage_number": approval_task.stage_number,
+            "step_name": approval_task.step_name,
+            "assigned_to": _serialize_webhook_user(approval_task.assigned_to),
+            "assigned_group": (
+                {
+                    "id": approval_task.assigned_group.id,
+                    "name": approval_task.assigned_group.name,
+                }
+                if approval_task.assigned_group_id
+                else None
+            ),
+            "workflow_stage": _serialize_webhook_stage(approval_task.workflow_stage),
+            "approved_by": _serialize_webhook_user(approval_task.completed_by),
+        }
+
+    return payload
+
+
+def _sign_webhook_payload(secret: str, payload_text: str) -> str:
+    digest = hmac.new(
+        secret.encode("utf-8"),
+        payload_text.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"sha256={digest}"
+
+
+def _schedule_webhook_retry(
+    *,
+    endpoint_id: int,
+    event: str,
+    payload: dict,
+    submission_id: int | None,
+    task_id: int | None,
+    attempt: int,
+) -> None:
+    countdown = min(300, 2 ** max(0, attempt - 1))
+    kwargs = {
+        "endpoint_id": endpoint_id,
+        "event": event,
+        "payload": payload,
+        "submission_id": submission_id,
+        "task_id": task_id,
+        "attempt": attempt,
+    }
+    if hasattr(deliver_workflow_webhook, "apply_async"):
+        deliver_workflow_webhook.apply_async(kwargs=kwargs, countdown=countdown)
+    else:  # pragma: no cover
+        logger.warning(
+            "Celery apply_async unavailable; retrying webhook %s synchronously",
+            endpoint_id,
+        )
+        deliver_workflow_webhook(**kwargs)
+
+
+@shared_task(name="django_forms_workflows.dispatch_workflow_webhooks")
+def dispatch_workflow_webhooks(
+    submission_id: int,
+    event: str,
+    task_id: int | None = None,
+    workflow_id: int | None = None,
+    target_stage_id: int | None = None,
+) -> None:
+    submission = FormSubmission.objects.select_related(
+        "form_definition", "submitter"
+    ).get(id=submission_id)
+    approval_task = None
+    if task_id is not None:
+        approval_task = ApprovalTask.objects.select_related(
+            "assigned_to",
+            "assigned_group",
+            "completed_by",
+            "workflow_stage__workflow",
+        ).get(id=task_id)
+    target_stage = None
+    if target_stage_id is not None:
+        target_stage = WorkflowStage.objects.select_related("workflow").get(
+            id=target_stage_id
+        )
+
+    if workflow_id is not None:
+        workflow_ids = [workflow_id]
+    elif approval_task is not None and approval_task.workflow_stage_id:
+        workflow_ids = [approval_task.workflow_stage.workflow_id]
+    elif target_stage is not None:
+        workflow_ids = [target_stage.workflow_id]
+    else:
+        workflow_ids = list(
+            submission.form_definition.workflows.values_list("id", flat=True)
+        )
+
+    if not workflow_ids:
+        return
+
+    endpoints = WebhookEndpoint.objects.select_related(
+        "workflow", "workflow__form_definition"
+    ).filter(workflow_id__in=workflow_ids, is_active=True)
+    for endpoint in endpoints:
+        if not endpoint.subscribes_to(event):
+            continue
+        payload = _build_webhook_payload(
+            submission,
+            event,
+            workflow=endpoint.workflow,
+            approval_task=approval_task,
+            target_stage=target_stage,
+        )
+        try:
+            deliver_workflow_webhook.delay(
+                endpoint.id,
+                event,
+                payload,
+                submission.id,
+                approval_task.id if approval_task else None,
+                1,
+            )
+        except Exception:  # pragma: no cover
+            logger.warning(
+                "Webhook delivery fell back to synchronous execution for endpoint %s",
+                endpoint.id,
+            )
+            deliver_workflow_webhook(
+                endpoint.id,
+                event,
+                payload,
+                submission.id,
+                approval_task.id if approval_task else None,
+                1,
+            )
+
+
+@shared_task(name="django_forms_workflows.deliver_workflow_webhook")
+def deliver_workflow_webhook(
+    endpoint_id: int,
+    event: str,
+    payload: dict,
+    submission_id: int | None = None,
+    task_id: int | None = None,
+    attempt: int = 1,
+) -> None:
+    try:
+        endpoint = WebhookEndpoint.objects.select_related("workflow").get(
+            id=endpoint_id
+        )
+    except WebhookEndpoint.DoesNotExist:
+        logger.warning(
+            "Webhook endpoint %s no longer exists; skipping delivery", endpoint_id
+        )
+        return
+
+    if not endpoint.subscribes_to(event):
+        return
+
+    request_headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "django-forms-workflows/webhooks",
+        "X-Forms-Workflows-Event": event,
+    }
+    if endpoint.custom_headers:
+        request_headers.update(
+            {str(k): str(v) for k, v in endpoint.custom_headers.items()}
+        )
+
+    payload_text = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    request_headers["X-Forms-Workflows-Signature"] = _sign_webhook_payload(
+        endpoint.secret,
+        payload_text,
+    )
+
+    log_data = {
+        "endpoint": endpoint,
+        "workflow": endpoint.workflow,
+        "submission_id": submission_id,
+        "approval_task_id": task_id,
+        "event": event,
+        "endpoint_name": endpoint.name,
+        "delivery_url": endpoint.url,
+        "attempt_number": attempt,
+        "request_headers": request_headers,
+        "payload": payload,
+    }
+    max_attempts = 1 + max(0, endpoint.max_retries)
+
+    try:
+        response = requests.request(
+            "POST",
+            endpoint.url,
+            data=payload_text,
+            headers=request_headers,
+            timeout=endpoint.timeout_seconds,
+        )
+        success = 200 <= response.status_code < 300
+        WebhookDeliveryLog.objects.create(
+            success=success,
+            status_code=response.status_code,
+            response_body=(response.text or "")[:5000],
+            error_message="" if success else f"HTTP {response.status_code}",
+            **log_data,
+        )
+        if not success and endpoint.retry_on_failure and attempt < max_attempts:
+            _schedule_webhook_retry(
+                endpoint_id=endpoint.id,
+                event=event,
+                payload=payload,
+                submission_id=submission_id,
+                task_id=task_id,
+                attempt=attempt + 1,
+            )
+    except Exception as exc:  # pragma: no cover
+        WebhookDeliveryLog.objects.create(
+            success=False,
+            error_message=str(exc),
+            **log_data,
+        )
+        if endpoint.retry_on_failure and attempt < max_attempts:
+            _schedule_webhook_retry(
+                endpoint_id=endpoint.id,
+                event=event,
+                payload=payload,
+                submission_id=submission_id,
+                task_id=task_id,
+                attempt=attempt + 1,
+            )
+
+
+# ---------------------------------------------------------------------------
+# Notification Batching Helpers
+# ---------------------------------------------------------------------------
+
+
+def _compute_scheduled_for(workflow, submission=None):
+    """
+    Return a timezone-aware datetime indicating when the next batch for the
+    given workflow should go out, based on its notification_cadence setting.
+    """
+    now = timezone.now()
+    raw_time = getattr(workflow, "notification_cadence_time", None) or dt_time(8, 0)
+    cadence = getattr(workflow, "notification_cadence", "immediate")
+
+    def _at_time(base_dt):
+        """Replace h/m on *base_dt* (already tz-aware) with the send time."""
+        return base_dt.replace(
+            hour=raw_time.hour, minute=raw_time.minute, second=0, microsecond=0
+        )
+
+    if cadence == "daily":
+        candidate = _at_time(now)
+        if candidate <= now:
+            candidate += timedelta(days=1)
+        return candidate
+
+    if cadence == "weekly":
+        target_dow = getattr(workflow, "notification_cadence_day", None) or 0  # 0=Mon
+        days_ahead = (target_dow - now.weekday()) % 7
+        candidate = _at_time(now + timedelta(days=days_ahead))
+        if days_ahead == 0 and candidate <= now:
+            candidate += timedelta(weeks=1)
+        return candidate
+
+    if cadence == "monthly":
+        target_day = getattr(workflow, "notification_cadence_day", None) or 1
+        year, month = now.year, now.month
+        actual_day = min(target_day, monthrange(year, month)[1])
+        candidate = _at_time(now.replace(day=actual_day))
+        if candidate <= now:
+            month += 1
+            if month > 12:
+                year, month = year + 1, 1
+            actual_day = min(target_day, monthrange(year, month)[1])
+            candidate = _at_time(now.replace(year=year, month=month, day=actual_day))
+        return candidate
+
+    if cadence == "form_field_date" and submission is not None:
+        field_name = getattr(workflow, "notification_cadence_form_field", "")
+        form_data = getattr(submission, "form_data", None) or {}
+        date_str = form_data.get(field_name, "")
+        if date_str:
+            try:
+                parsed = datetime.fromisoformat(str(date_str)).date()
+                candidate = timezone.make_aware(datetime.combine(parsed, raw_time))
+                if candidate > now:
+                    return candidate
+            except (ValueError, TypeError):
+                logger.debug(
+                    "Could not parse date string %r for reminder schedule", date_str
+                )
+        # Fallback: send tomorrow
+        return _at_time(now + timedelta(days=1))
+
+    # Fallback for unknown cadences
+    return _at_time(now + timedelta(days=1))
+
+
+@shared_task(name="django_forms_workflows.send_approval_request")
+def send_approval_request(task_id: int) -> None:
+    """Request approval from the assigned approver for a task.
+    - If assigned_to is set, email that user.
+    - If assigned_group is set, email all users in the group.
+    """
+    task = ApprovalTask.objects.select_related(
+        "submission__form_definition",
+        "submission__submitter",
+        "assigned_to",
+        "assigned_group",
+        "workflow_stage",
+    ).get(id=task_id)
+    approval_url = _abs(reverse("forms_workflows:approve_submission", args=[task.id]))
+    subject = f"Approval Request: {task.submission.form_definition.name} (ID {task.submission.id})"
+    template = "emails/approval_request.html"
+
+    # Build stage / parallel context so email templates can show progress info
+    stage_context: dict = {}
+    if task.workflow_stage:
+        stage = task.workflow_stage
+        workflow = getattr(task.submission.form_definition, "workflow", None)
+        total_stages = workflow.stages.count() if workflow else 1
+        # Count sibling tasks in the same stage
+        sibling_tasks = task.submission.approval_tasks.filter(
+            workflow_stage=stage
+        ).count()
+        stage_context = {
+            "stage_name": stage.name,
+            "stage_number": task.stage_number or 1,
+            "total_stages": total_stages,
+            "stage_approval_logic": stage.approval_logic,
+            "stage_total_approvers": sibling_tasks,
+        }
+    elif task.step_number:
+        # Legacy sequential tasks (pre-staged)
+        stage_context = {
+            "stage_number": task.step_number,
+            "total_stages": task.step_number,
+            "stage_approval_logic": "sequence",
+            "stage_total_approvers": 1,
+        }
+
+    def _build_context(approver):
+        ctx = {
+            "task": task,
+            "submission": task.submission,
+            "approver": approver,
+            "approval_url": approval_url,
+        }
+        ctx.update(stage_context)
+        return ctx
+
+    if task.assigned_to and getattr(task.assigned_to, "email", None):
+        _send_html_email(
+            subject,
+            [task.assigned_to.email],
+            template,
+            _build_context(task.assigned_to),
+            notification_type="approval_request",
+            submission_id=task.submission_id,
+        )
+        return
+
+    if task.assigned_group:
+        recipients = []
+        for user in task.assigned_group.user_set.all():
+            email = getattr(user, "email", None)
+            if not email:
+                continue
+            _send_html_email(
+                subject,
+                [email],
+                template,
+                _build_context(user),
+                notification_type="approval_request",
+                submission_id=task.submission_id,
+            )
+            recipients.append(email)
+        if not recipients:
+            logger.info(
+                "Group %s has no users with email to notify for task %s",
+                task.assigned_group,
+                task.id,
+            )
+        return
+
+    logger.info("No assigned user or group to notify for task %s", task_id)
+
+
+@shared_task(name="django_forms_workflows.send_approval_reminder")
+def send_approval_reminder(task_id: int) -> None:
+    task = ApprovalTask.objects.select_related(
+        "submission__form_definition", "assigned_to"
+    ).get(id=task_id)
+    if not task.assigned_to or not getattr(task.assigned_to, "email", None):
+        return
+    approval_url = _abs(reverse("forms_workflows:approve_submission", args=[task.id]))
+    context = {
+        "task": task,
+        "submission": task.submission,
+        "approver": task.assigned_to,
+        "approval_url": approval_url,
+    }
+    subject = f"Reminder: Approval Pending for {task.submission.form_definition.name} (ID {task.submission.id})"
+    _send_html_email(
+        subject,
+        [task.assigned_to.email],
+        "emails/approval_reminder.html",
+        context,
+        notification_type="approval_reminder",
+        submission_id=task.submission_id,
+    )
+
+
+@shared_task(name="django_forms_workflows.check_approval_deadlines")
+def check_approval_deadlines() -> str:
+    """Periodic task to send reminders, expire tasks, and optionally auto-approve.
+
+    This operates purely on configured workflow timeouts and does not create audit log entries
+    (no user context available).
+    """
+    now = timezone.now()
+    pending = ApprovalTask.objects.select_related("submission__form_definition").filter(
+        status="pending"
+    )
+
+    expired_count = 0
+    reminder_count = 0
+    auto_approved_count = 0
+
+    for task in pending:
+        submission = task.submission
+        workflow = getattr(submission.form_definition, "workflow", None)
+        if not workflow:
+            continue
+
+        # Expire tasks after deadline
+        if workflow.approval_deadline_days and task.created_at:
+            deadline = task.created_at + timedelta(days=workflow.approval_deadline_days)
+            if now > deadline:
+                task.status = "expired"
+                task.save(update_fields=["status"])  # mark expired
+                expired_count += 1
+
+                # Escalation groups have been removed.
+                # Escalation should now be modelled as conditional stages.
+
+                # Optional auto-approve after grace period
+                if (
+                    workflow.auto_approve_after_days
+                    and submission.status == "pending_approval"
+                ):
+                    auto_deadline = task.created_at + timedelta(
+                        days=workflow.auto_approve_after_days
+                    )
+                    if now > auto_deadline:
+                        submission.status = "approved"
+                        submission.completed_at = now
+                        submission.save(update_fields=["status", "completed_at"])
+                        # cancel remaining tasks
+                        submission.approval_tasks.filter(status="pending").update(
+                            status="skipped"
+                        )
+                        try:
+                            send_notification_rules.delay(
+                                submission.id, "workflow_approved"
+                            )
+                        except Exception:
+                            logger.debug(
+                                "Could not enqueue approval notification for submission %s",
+                                submission.id,
+                                exc_info=True,
+                            )
+                        auto_approved_count += 1
+
+        # Send reminder if configured and not yet sent
+        if (
+            workflow.send_reminder_after_days
+            and task.created_at
+            and task.status == "pending"
+            and not task.reminder_sent_at
+        ):
+            reminder_time = task.created_at + timedelta(
+                days=workflow.send_reminder_after_days
+            )
+            if now > reminder_time:
+                try:
+                    send_notification_rules.delay(
+                        submission.id, "approval_reminder", task_id=task.id
+                    )
+                except Exception:
+                    logger.debug(
+                        "Could not enqueue approval_reminder for task %s",
+                        task.id,
+                        exc_info=True,
+                    )
+                # ``reminder_sent_at`` is stamped by send_notification_rules
+                # once the dispatch completes, not here. Enqueuing is not
+                # sending: a task lost in the broker or killed mid-flight
+                # used to leave the reminder recorded as sent and never
+                # retried. Until it is stamped, the next sweep re-dispatches;
+                # duplicate emails are absorbed by the already_sent guard.
+                reminder_count += 1
+
+    return f"expired={expired_count}, reminders={reminder_count}, auto_approved={auto_approved_count}"
+
+
+@shared_task(name="django_forms_workflows.send_escalation_notification")
+def send_escalation_notification(task_id: int, to_email: str | None = None) -> None:
+    task = ApprovalTask.objects.select_related(
+        "submission__form_definition", "assigned_to"
+    ).get(id=task_id)
+    recipient = to_email or getattr(getattr(task, "assigned_to", None), "email", None)
+    if not recipient:
+        return
+    submission_url = _abs(
+        reverse("forms_workflows:submission_detail", args=[task.submission.id])
+    )
+    context = {
+        "task": task,
+        "submission": task.submission,
+        "submission_url": submission_url,
+    }
+    subject = (
+        f"Escalation: {task.submission.form_definition.name} (ID {task.submission.id})"
+    )
+    _send_html_email(
+        subject,
+        [recipient],
+        "emails/escalation_notification.html",
+        context,
+        notification_type="escalation",
+        submission_id=task.submission_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Batched Notification Dispatch
+# ---------------------------------------------------------------------------
+
+
+@shared_task(name="django_forms_workflows.send_batched_notifications")
+def send_batched_notifications() -> str:
+    """
+    Periodic task: find all PendingNotification records that are due and send
+    one digest email per (recipient, notification_type, workflow) group.
+
+    Schedule this via Celery Beat, e.g. every hour, so batches are dispatched
+    promptly once their scheduled_for time has passed.
+    """
+    now = timezone.now()
+    due_qs = (
+        PendingNotification.objects.filter(sent=False, scheduled_for__lte=now)
+        .select_related(
+            "workflow__form_definition",
+            "submission__form_definition",
+            "submission__submitter",
+            "approval_task",
+        )
+        .order_by("recipient_email", "notification_type", "workflow_id")
+    )
+
+    groups: dict[tuple, list] = defaultdict(list)
+    for pn in due_qs:
+        key = (pn.recipient_email, pn.notification_type, pn.workflow_id)
+        groups[key].append(pn)
+
+    sent_count = 0
+    for (
+        recipient_email,
+        notification_type,
+        _workflow_id,
+    ), notifications in groups.items():
+        try:
+            if notification_type == "submission_received":
+                _dispatch_submission_digest(recipient_email, notifications)
+            elif notification_type == "approval_request":
+                _dispatch_approval_digest(recipient_email, notifications)
+            elif notification_type in (
+                "approval_notification",
+                "rejection_notification",
+                "withdrawal_notification",
+            ):
+                _dispatch_conclusion_digest(
+                    recipient_email, notifications, notification_type
+                )
+            else:
+                logger.warning(
+                    "send_batched_notifications: unknown type %r for %s; skipping.",
+                    notification_type,
+                    recipient_email,
+                )
+                continue
+            ids = [n.id for n in notifications]
+            PendingNotification.objects.filter(id__in=ids).update(sent=True)
+            sent_count += len(ids)
+        except Exception as exc:
+            logger.exception(
+                "Failed dispatching batched %s digest to %s: %s",
+                notification_type,
+                recipient_email,
+                exc,
+            )
+
+    return f"sent={sent_count}"
+
+
+def _dispatch_submission_digest(recipient_email: str, notifications: list) -> None:
+    """Send a digest of submission_received notifications to one recipient."""
+    sample = notifications[0]
+    workflow = sample.workflow
+    form_name = workflow.form_definition.name
+    count = len(notifications)
+    submissions = [
+        {
+            "submission": n.submission,
+            "submission_url": _abs(
+                reverse("forms_workflows:submission_detail", args=[n.submission.id])
+            ),
+        }
+        for n in notifications
+        if n.submission
+    ]
+    subject = (
+        f"{count} new submission{'s' if count != 1 else ''} received — {form_name}"
+    )
+    context = {
+        "form_name": form_name,
+        "count": count,
+        "submissions": submissions,
+        "notification_type": "submission_received",
+    }
+    _send_html_email(
+        subject,
+        [recipient_email],
+        "emails/notification_digest.html",
+        context,
+        notification_type="batched",
+    )
+
+
+def _dispatch_approval_digest(recipient_email: str, notifications: list) -> None:
+    """Send a digest of approval_request notifications to one recipient."""
+    sample = notifications[0]
+    workflow = sample.workflow
+    form_name = workflow.form_definition.name
+    count = len(notifications)
+    items = []
+    for n in notifications:
+        if n.submission:
+            items.append(
+                {
+                    "submission": n.submission,
+                    "approval_task": n.approval_task,
+                    "approval_url": _abs(
+                        reverse(
+                            "forms_workflows:approve_submission",
+                            args=[n.approval_task.id],
+                        )
+                    )
+                    if n.approval_task
+                    else None,
+                }
+            )
+    subject = (
+        f"{count} item{'s' if count != 1 else ''} pending your approval — {form_name}"
+    )
+    context = {
+        "form_name": form_name,
+        "count": count,
+        "items": items,
+        "notification_type": "approval_request",
+    }
+    _send_html_email(
+        subject,
+        [recipient_email],
+        "emails/notification_digest.html",
+        context,
+        notification_type="batched",
+    )
+
+
+_CONCLUSION_VERB: dict[str, tuple[str, str]] = {
+    "approval_notification": ("approved", "Approvals"),
+    "rejection_notification": ("rejected", "Rejections"),
+    "withdrawal_notification": ("withdrawn", "Withdrawals"),
+}
+
+
+def _dispatch_conclusion_digest(
+    recipient_email: str, notifications: list, notification_type: str
+) -> None:
+    """Send a digest of approval/rejection/withdrawal events to one recipient."""
+    sample = notifications[0]
+    workflow = sample.workflow
+    form_name = workflow.form_definition.name
+    count = len(notifications)
+    verb, label = _CONCLUSION_VERB.get(notification_type, ("processed", "Updates"))
+    submissions = [
+        {
+            "submission": n.submission,
+            "submission_url": _abs(
+                reverse("forms_workflows:submission_detail", args=[n.submission.id])
+            ),
+        }
+        for n in notifications
+        if n.submission
+    ]
+    subject = f"{count} submission{'s' if count != 1 else ''} {verb} — {form_name}"
+    context = {
+        "form_name": form_name,
+        "count": count,
+        "submissions": submissions,
+        "notification_type": notification_type,
+        "verb": verb,
+        "label": label,
+    }
+    _send_html_email(
+        subject,
+        [recipient_email],
+        "emails/notification_digest.html",
+        context,
+        notification_type="batched",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Form-Field Conditional Notification Tasks
+# ---------------------------------------------------------------------------
+
+
+def _get_form_field_emails(form_data: dict, email_field: str) -> list[str]:
+    """Extract and validate email addresses from form_data by field slug.
+
+    A multi-select field (e.g. a picklist of faculty) stores several
+    addresses in one value — as a comma-separated string, or as a list —
+    so the value is always split before validation. Returning them
+    separately keeps each address a single recipient; handing the raw
+    ``"a@x.edu,b@x.edu"`` string to the email backend is rejected with
+    "must be a single address".
+    """
+    raw = form_data.get(email_field, "")
+    if isinstance(raw, list | tuple):
+        raw = ",".join(str(part) for part in raw)
+    return [
+        addr for addr in (part.strip() for part in str(raw).split(",")) if "@" in addr
+    ]
+
+
+def _collect_notification_recipients(
+    notif, form_data: dict, submission=None, task=None
+) -> list[str]:
+    """Return the deduplicated list of recipient emails for a notification rule.
+
+    Combines all recipient sources from a NotificationRule additively:
+
+    1. notify_submitter  → submission.submitter.email
+    2. email_field       → form_data[slug] (dynamic per submission)
+    3. static_emails     → comma-separated fixed addresses
+    4. notify_stage_assignees → ApprovalTask.assigned_to.email
+    5. notify_stage_groups    → all users in the stage's approval groups
+    6. notify_groups (M2M)    → all users in explicitly-listed groups
+
+    When ``use_triggering_stage`` is True and a *task* is provided, the
+    task's ``workflow_stage`` is used to scope stage-based recipients
+    instead of ``notif.stage``.
+    """
+    recipients: list[str] = []
+
+    def _add(email: str | None) -> None:
+        if email and email not in recipients:
+            recipients.append(email)
+
+    # 1. Submitter
+    if getattr(notif, "notify_submitter", False) and submission is not None:
+        _add(getattr(getattr(submission, "submitter", None), "email", None))
+
+    # 2. Email field (dynamic from form_data; may hold several addresses)
+    if notif.email_field:
+        for addr in _get_form_field_emails(form_data, notif.email_field):
+            _add(addr)
+
+    # 3. Static emails
+    for addr in (notif.static_emails or "").split(","):
+        addr = addr.strip()
+        if addr and "@" in addr:
+            _add(addr)
+
+    # Resolve the effective stage for stage-scoped recipient sources.
+    # Priority: use_triggering_stage (from task) > explicit stage FK > all stages.
+    _triggering_stage_id = None
+    if getattr(notif, "use_triggering_stage", False) and task is not None:
+        _triggering_stage_id = getattr(task, "workflow_stage_id", None)
+
+    def _effective_stage_id():
+        """Return the stage ID to scope to, or None for all stages."""
+        if _triggering_stage_id:
+            return _triggering_stage_id
+        return getattr(notif, "stage_id", None)
+
+    # 4. Stage assignees (NotificationRule only)
+    if getattr(notif, "notify_stage_assignees", False) and submission is not None:
+        qs = (
+            submission.approval_tasks.select_related("assigned_to", "workflow_stage")
+            .filter(assigned_to__isnull=False)
+            .exclude(workflow_stage__assignee_form_field__isnull=True)
+            .exclude(workflow_stage__assignee_form_field="")
+        )
+        eff_stage = _effective_stage_id()
+        if eff_stage:
+            qs = qs.filter(workflow_stage_id=eff_stage)
+        for email in qs.values_list("assigned_to__email", flat=True):
+            _add(email)
+
+    # 5. Stage approval groups (NotificationRule only)
+    #
+    # Two scoping rules apply, both to avoid notifying the wrong people:
+    #
+    # (a) Only consider stages that ACTUALLY GENERATED an ApprovalTask on
+    #     this submission. Looking at WorkflowStage config (the prior
+    #     behaviour) leaks recipients from configured-but-never-fired
+    #     stages — e.g. a conditional stage whose trigger never matched,
+    #     or stages skipped via a send-back. The submitter doesn't expect
+    #     "approver-of-the-stage-that-didn't-run" to receive the email.
+    #
+    # (b) Only consider stages whose actual task took the GROUP-FALLBACK
+    #     path (assigned_group_id IS NOT NULL AND assigned_to_id IS NULL).
+    #     If the stage was configured for dynamic assignment AND the
+    #     resolution succeeded, the assignee was already notified via
+    #     stage 4 (notify_stage_assignees); paging the fallback group on
+    #     top of that double-notifies (and confuses the group, who never
+    #     held the task).
+    #
+    # The per-stage filter below is strictly more correct than the prior
+    # `_skip_stage_groups` early-out and supersedes it. For the per-task
+    # approval_request use case: when use_triggering_stage=True, eff_stage
+    # is set to the triggering stage; if that stage's task has
+    # assigned_to set, the assigned_group_id__isnull=False filter excludes
+    # it → no group recipients (same outcome as the early-out). For
+    # workflow-level events the early-out was over-aggressive — once
+    # task auto-detection in send_notification_rules picks a finalizing
+    # task, that task's assigned_to status incorrectly suppressed group
+    # resolution for OTHER stages on the workflow.
+    if getattr(notif, "notify_stage_groups", False) and submission is not None:
+        from django.contrib.auth import get_user_model
+
+        from .models import StageApprovalGroup
+
+        user_model = get_user_model()
+        eff_stage = _effective_stage_id()
+
+        # Step 1 — candidate stages: explicit/triggering stage if set,
+        # else every stage that actually produced a task on this submission.
+        if eff_stage:
+            candidate_stage_ids = [eff_stage]
+        else:
+            candidate_stage_ids = list(
+                submission.approval_tasks.filter(workflow_stage_id__isnull=False)
+                .values_list("workflow_stage_id", flat=True)
+                .distinct()
+            )
+
+        # Step 2 — narrow to stages whose task took the group-fallback
+        # path on this submission.
+        effective_stage_ids = list(
+            submission.approval_tasks.filter(
+                workflow_stage_id__in=candidate_stage_ids,
+                assigned_group_id__isnull=False,
+                assigned_to_id__isnull=True,
+            )
+            .values_list("workflow_stage_id", flat=True)
+            .distinct()
+        )
+
+        if effective_stage_ids:
+            # Step 3 — only role="approval" rows on those stages count.
+            # Validation/reassignment-role groups must not spawn tasks
+            # (engine fix in 0.74.6) and must not receive notifications
+            # (parity with that fix).
+            group_ids = list(
+                StageApprovalGroup.objects.filter(
+                    stage_id__in=effective_stage_ids, role="approval"
+                ).values_list("group_id", flat=True)
+            )
+            if group_ids:
+                for email in (
+                    user_model.objects.filter(groups__id__in=group_ids)
+                    .exclude(email="")
+                    .values_list("email", flat=True)
+                    .distinct()
+                ):
+                    _add(email)
+
+    # 6. Explicit notify_groups M2M (NotificationRule only)
+    if hasattr(notif, "notify_groups"):
+        try:
+            from django.contrib.auth import get_user_model
+
+            user_model = get_user_model()
+            group_ids = list(notif.notify_groups.values_list("id", flat=True))
+            if group_ids:
+                for email in (
+                    user_model.objects.filter(groups__id__in=group_ids)
+                    .exclude(email="")
+                    .values_list("email", flat=True)
+                    .distinct()
+                ):
+                    _add(email)
+        except ValueError:
+            # M2M not available (unsaved instance)
+            pass
+
+    return recipients
+
+
+def _collect_notification_cc(notif, form_data: dict) -> list[str]:
+    """Return the deduplicated list of CC emails for a notification rule.
+
+    Combines static and dynamic CC sources:
+
+    1. ``cc_email_field``   → form_data[slug] (dynamic per submission)
+    2. ``cc_static_emails`` → comma-separated fixed addresses
+    """
+    cc: list[str] = []
+
+    def _add(email: str | None) -> None:
+        if email and email not in cc:
+            cc.append(email)
+
+    if getattr(notif, "cc_email_field", ""):
+        for addr in _get_form_field_emails(form_data, notif.cc_email_field):
+            _add(addr)
+
+    for addr in (getattr(notif, "cc_static_emails", "") or "").split(","):
+        addr = addr.strip()
+        if addr and "@" in addr:
+            _add(addr)
+
+    return cc
+
+
+def _build_form_field_notification_context(
+    submission: FormSubmission,
+    task: ApprovalTask | None = None,
+) -> tuple[str, str]:
+    """Return (submission_url, approval_url) for notification templates."""
+    submission_url = _abs(
+        reverse("forms_workflows:submission_detail", args=[submission.id])
+    )
+    approval_url = (
+        _abs(reverse("forms_workflows:approve_submission", args=[task.id]))
+        if task
+        else submission_url
+    )
+    return submission_url, approval_url
+
+
+# ---------------------------------------------------------------------------
+# Unified NotificationRule dispatch
+# ---------------------------------------------------------------------------
+
+# Maps NotificationRule event types to email templates
+_EVENT_TEMPLATE_MAP: dict[str, str] = {
+    "submission_received": "emails/submission_notification.html",
+    "approval_request": "emails/approval_request.html",
+    "stage_decision": "emails/approval_notification.html",
+    "workflow_approved": "emails/approval_notification.html",
+    "workflow_denied": "emails/rejection_notification.html",
+    "form_withdrawn": "emails/withdrawal_notification.html",
+    "approval_reminder": "emails/approval_reminder.html",
+    "escalation": "emails/escalation_notification.html",
+}
+
+_EVENT_DEFAULT_SUBJECTS: dict[str, str] = {
+    "submission_received": "Submission Received: {form_name} (ID {submission_id})",
+    "approval_request": "Action Required: {form_name} (ID {submission_id})",
+    "stage_decision": "Stage Decision: {form_name} (ID {submission_id})",
+    "workflow_approved": "Submission Approved: {form_name} (ID {submission_id})",
+    "workflow_denied": "Submission Rejected: {form_name} (ID {submission_id})",
+    "form_withdrawn": "Submission Withdrawn: {form_name} (ID {submission_id})",
+    "approval_reminder": "Reminder: Approval Pending for {form_name} (ID {submission_id})",
+    "escalation": "Escalation: {form_name} (ID {submission_id})",
+}
+
+
+def _pipe_value(val) -> str:
+    """Stringify one ``form_data`` value for ``{field_name}`` subject piping.
+
+    File-upload fields don't store strings — a single-file field stores a
+    dict and a multi-file field stores a list of dicts — so a bare
+    ``", ".join(val)`` raises ``TypeError`` and kills the whole
+    notification before any email is sent or any NotificationLog row is
+    written.  Render file values as their filenames, matching how the
+    export views (``_export_xlsx``) present the same data.
+
+    Always returns a string; never raises.
+    """
+    if isinstance(val, dict):
+        return str(val.get("filename") or val.get("path") or "")
+    if isinstance(val, list | tuple):
+        return ", ".join(_pipe_value(v) for v in val)
+    return "" if val is None else str(val)
+
+
+@shared_task(name="django_forms_workflows.send_notification_rules")
+def send_notification_rules(
+    submission_id: int,
+    event: str,
+    task_id: int | None = None,
+) -> None:
+    """Unified notification dispatch for all NotificationRule records.
+
+    Queries all ``NotificationRule`` records matching the given ``event`` for
+    workflows attached to the submission's form definition.  For each rule:
+
+    1. Evaluates optional ``conditions`` against ``form_data``.
+    2. Resolves all recipient sources (submitter, email field, static,
+       stage assignees, stage groups, explicit groups).
+    3. Sends one email per recipient using the event's template.
+
+    Args:
+        submission_id: The FormSubmission to notify about.
+        event: The NotificationRule event type (e.g. ``workflow_approved``).
+        task_id: Optional ApprovalTask ID (used for approval_request context).
+    """
+    default_template = _EVENT_TEMPLATE_MAP.get(event)
+    if not default_template:
+        logger.warning("send_notification_rules: unknown event '%s'", event)
+        return
+
+    submission = FormSubmission.objects.select_related(
+        "form_definition", "submitter"
+    ).get(id=submission_id)
+    form_data = submission.form_data or {}
+    form_name = submission.form_definition.name
+
+    # Auto-detect the finalizing/rejecting task for workflow-level events
+    # so custom NotificationRule.body_template strings can address
+    # ``{{ task.comments }}`` / ``{{ task.workflow_stage.name }}`` without
+    # the caller having to know which task drove the decision. Also lets
+    # the admin "Retry failed" action re-fire these events without losing
+    # the task context. Only applies when no explicit ``task_id`` was
+    # passed; an explicit task always wins.
+    if not task_id:
+        if event == "workflow_approved":
+            _finalizing = (
+                submission.approval_tasks.filter(status="approved")
+                .order_by("-completed_at")
+                .first()
+            )
+            if _finalizing:
+                task_id = _finalizing.id
+        elif event == "workflow_denied":
+            _rejecting = (
+                submission.approval_tasks.filter(status="rejected")
+                .order_by("-completed_at")
+                .first()
+            )
+            if _rejecting:
+                task_id = _rejecting.id
+
+    submission_url, approval_url = _build_form_field_notification_context(
+        submission,
+        ApprovalTask.objects.get(id=task_id) if task_id else None,
+    )
+
+    workflow = getattr(submission.form_definition, "workflow", None)
+    hide_approval_history = bool(getattr(workflow, "hide_approval_history", False))
+
+    # Resolve the task (if any) to scope rules to its workflow
+    task = None
+    if task_id:
+        try:
+            task = ApprovalTask.objects.select_related("workflow_stage").get(id=task_id)
+        except ApprovalTask.DoesNotExist:
+            # A concurrently deleted task simply leaves notification context unscoped.
+            pass
+
+    # Build a denormalized "public_comments" list for the template context
+    # (file templates and per-rule body_template overrides alike). Each
+    # entry has stage_name / status / actor / comment so a custom body can
+    # do ``{% for c in public_comments %}{{ c.stage_name }}: {{ c.comment }}{% endfor %}``
+    # without knowing the model. Ordered by workflow flow (stage → step →
+    # completion time) so the audit reads top-to-bottom in the email.
+    _comments_qs = (
+        submission.approval_tasks.select_related("workflow_stage", "completed_by")
+        .filter(status__in=["approved", "rejected"])
+        .exclude(comments="")
+        .order_by("stage_number", "step_number", "completed_at")
+    )
+    public_comments: list[dict] = []
+    for _t in _comments_qs:
+        _actor = ""
+        if _t.completed_by:
+            _actor = _t.completed_by.get_full_name() or _t.completed_by.username
+        public_comments.append(
+            {
+                "stage_name": (
+                    _t.workflow_stage.name if _t.workflow_stage_id else _t.step_name
+                ),
+                "status": _t.status,
+                "actor": _actor,
+                "comment": _t.comments,
+            }
+        )
+
+    rules_qs = (
+        NotificationRule.objects.filter(event=event)
+        .select_related("workflow", "stage")
+        .prefetch_related("notify_groups")
+    )
+
+    # Scope rules to the specific workflow that owns the triggering task,
+    # rather than firing rules from every workflow on the form.
+    if task and getattr(task, "workflow_stage_id", None):
+        rules_qs = rules_qs.filter(workflow_id=task.workflow_stage.workflow_id)
+    else:
+        rules_qs = rules_qs.filter(workflow__form_definition=submission.form_definition)
+
+    # Stage-scope filter: a rule with an explicit ``stage`` FK is asking to
+    # be scoped to that specific stage. Without this filter, all rules of
+    # the same event on the same workflow fire on every dispatch — so a
+    # ``stage_decision`` rule attached to "Program Director Approval"
+    # would also fire when "Instructor Approval" completes (and vice
+    # versa), producing duplicate emails. ``use_triggering_stage=True``
+    # rules handle scoping at recipient resolution time and must remain
+    # candidates here regardless of which task triggered the event.
+    from django.db.models import Q
+
+    if task and getattr(task, "workflow_stage_id", None):
+        triggering_stage_id = task.workflow_stage_id
+        rules_qs = rules_qs.filter(
+            Q(stage__isnull=True)  # workflow-level rule
+            | Q(stage_id=triggering_stage_id)  # rule scoped to triggering stage
+            | Q(use_triggering_stage=True)  # dynamic-stage rule
+        )
+    else:
+        # No task context — only workflow-level (stage IS NULL) rules and
+        # dynamic-stage rules can fire safely. Stage-scoped rules need a
+        # task to determine relevance.
+        rules_qs = rules_qs.filter(Q(stage__isnull=True) | Q(use_triggering_stage=True))
+
+    rules = rules_qs
+
+    default_subject_tpl = _EVENT_DEFAULT_SUBJECTS.get(
+        event, "{form_name} (ID {submission_id})"
+    )
+
+    # Idempotency guard: if this task is being re-executed (e.g. acks_late
+    # requeued it after a worker died mid-send), skip recipients we already
+    # successfully delivered to. Only "sent" entries dedup — "failed" entries
+    # should be retried.
+    #
+    # Exception: rows a delivery sweep marked ``delivery_state='retried'`` are
+    # deliberately excluded here. Such a row has ``status='sent'`` (the send call
+    # succeeded) but a delivery check showed it was never actually delivered, so
+    # the sweep re-dispatched this task precisely to resend to that recipient.
+    # Leaving it in ``already_sent`` would make the retry a silent no-op.
+    _sent_rows = list(
+        NotificationLog.objects.filter(
+            submission_id=submission_id,
+            notification_type=event,
+            status="sent",
+        )
+        .exclude(delivery_state="retried")
+        .values_list("recipient_email", "cc_emails", "bcc_emails")
+    )
+    already_sent: set[str] = {row[0] for row in _sent_rows}
+    # CC/BCC addresses are stored as comma-separated lists on each To row;
+    # an address was delivered if it appears alongside any successful To send.
+    already_cc_or_bcc: set[str] = set()
+    for _, _cc, _bcc in _sent_rows:
+        for blob in (_cc, _bcc):
+            if not blob:
+                continue
+            for addr in blob.split(","):
+                addr = addr.strip()
+                if addr:
+                    already_cc_or_bcc.add(addr)
+
+    def _apply_rule(rule) -> None:
+        """Resolve recipients for one rule and send (or queue) its emails.
+
+        Kept as a nested function so the caller can isolate each rule: see
+        the ``for rule in rules`` loop below.
+        """
+        # Evaluate optional conditions
+        if rule.conditions:
+            try:
+                from .conditions import evaluate_conditions
+
+                if not evaluate_conditions(rule.conditions, form_data):
+                    logger.info(
+                        "NotificationRule %s skipped: conditions not met "
+                        "(submission %s, event %s)",
+                        rule.id,
+                        submission.id,
+                        event,
+                    )
+                    return
+            except Exception:
+                logger.warning(
+                    "NotificationRule %s: error evaluating conditions; skipping.",
+                    rule.id,
+                    exc_info=True,
+                )
+                return
+
+        # Resolve recipients
+        recipients = _collect_notification_recipients(
+            rule, form_data, submission=submission, task=task
+        )
+        cc_recipients = _collect_notification_cc(rule, form_data)
+        # Prevent duplicate delivery: don't CC anyone already in the TO list.
+        cc_recipients = [c for c in cc_recipients if c not in recipients]
+
+        # Drop recipients already successfully delivered (acks_late retry guard).
+        # New rows store CCs in `cc_emails` on the To row; legacy rows from
+        # before that change used a `cc:{recipient}` prefix on `recipient_email`,
+        # so check both formats during the transition.
+        if already_sent or already_cc_or_bcc:
+            before_to, before_cc = len(recipients), len(cc_recipients)
+            recipients = [r for r in recipients if r not in already_sent]
+            cc_recipients = [
+                c
+                for c in cc_recipients
+                if c not in already_cc_or_bcc and f"cc:{c}" not in already_sent
+            ]
+            skipped = (before_to - len(recipients)) + (before_cc - len(cc_recipients))
+            if skipped:
+                logger.info(
+                    "NotificationRule %s: skipped %d already-sent recipient(s) "
+                    "for submission %s (idempotency)",
+                    rule.id,
+                    skipped,
+                    submission.id,
+                )
+
+        if not recipients:
+            logger.info(
+                "NotificationRule %s: no recipients to send to for submission %s; "
+                "skipping (resolved zero, or all already delivered).",
+                rule.id,
+                submission.id,
+            )
+            return
+
+        # Drop recipients who have muted this rule via per-user preference.
+        # Matches by email, case-insensitively — same key the resolver uses.
+        from django.contrib.auth import get_user_model
+
+        _muted_emails = set(
+            get_user_model()
+            .objects.filter(
+                notification_preferences__rule_id=rule.id,
+                notification_preferences__muted=True,
+                email__in=list(recipients) + list(cc_recipients),
+            )
+            .exclude(email="")
+            .values_list("email", flat=True)
+        )
+        if _muted_emails:
+            before = len(recipients)
+            recipients = [r for r in recipients if r not in _muted_emails]
+            cc_recipients = [c for c in cc_recipients if c not in _muted_emails]
+            logger.info(
+                "NotificationRule %s: dropped %d muted recipient(s) for submission %s",
+                rule.id,
+                before - len(recipients),
+                submission.id,
+            )
+            if not recipients:
+                return
+
+        # Build subject with answer piping — {field_name} tokens are
+        # resolved from form_data alongside the built-in {form_name} and
+        # {submission_id} placeholders.
+        _pipe_vars = {
+            "form_name": form_name,
+            "submission_id": submission.id,
+            **{k: _pipe_value(v) for k, v in form_data.items()},
+        }
+        subject_tpl = rule.subject_template or default_subject_tpl
+        try:
+            subject = subject_tpl.format_map(defaultdict(str, _pipe_vars))
+        except Exception:
+            subject = subject_tpl.format(
+                form_name=form_name, submission_id=submission.id
+            )
+
+        base_context = {
+            "submission": submission,
+            "form_data": form_data,
+            "submission_url": submission_url,
+            "approval_url": approval_url,
+            "hide_approval_history": hide_approval_history,
+            # Denormalized list of {stage_name, status, actor, comment}
+            # entries for every approved/rejected task with a non-empty
+            # public comment. Lets per-rule body_template overrides do
+            # ``{% for c in public_comments %}{{ c.stage_name }}:
+            # {{ c.comment }}{% endfor %}`` without iterating the model.
+            "public_comments": public_comments,
+        }
+        if task_id:
+            try:
+                base_context["task"] = ApprovalTask.objects.get(id=task_id)
+            except ApprovalTask.DoesNotExist:
+                # The notification can still be rendered without optional task context.
+                pass
+
+        # Pre-fetch User objects for all recipients so templates that
+        # reference ``{{ approver }}`` (e.g. approval_request.html) work
+        # identically to the legacy send_approval_request task.
+        from django.contrib.auth import get_user_model
+
+        user_model = get_user_model()
+        _users_by_email: dict = {}
+        if recipients:
+            for u in user_model.objects.filter(email__in=recipients):
+                _users_by_email[u.email] = u
+
+        # Check cadence — batch or send immediately
+        cadence = (
+            getattr(workflow, "notification_cadence", "immediate")
+            if workflow
+            else "immediate"
+        )
+        if cadence != "immediate" and workflow is not None:
+            scheduled_for = _compute_scheduled_for(workflow, submission)
+            # In batched/digest mode we don't carry the TO/CC distinction —
+            # each recipient just gets the summary email. Queue CCs alongside
+            # TOs so they still receive the digest.
+            queued_emails = list(recipients) + list(cc_recipients)
+            for recipient in queued_emails:
+                PendingNotification.objects.create(
+                    workflow=workflow,
+                    notification_type=event,
+                    submission=submission,
+                    approval_task_id=task_id,
+                    recipient_email=recipient,
+                    scheduled_for=scheduled_for,
+                )
+            logger.info(
+                "Queued %d %s notification(s) for submission %s (due %s)",
+                len(queued_emails),
+                event,
+                submission.id,
+                scheduled_for,
+            )
+        else:
+            # Determine template: per-rule body_template overrides file.
+            rule_body = getattr(rule, "body_template", "") or ""
+            # Each TO recipient gets a personalized email (approver context).
+            # CCs are attached to the first email only so CC recipients receive
+            # exactly one copy per rule execution rather than one per TO.
+            cc_pending = list(cc_recipients)
+            for recipient in recipients:
+                ctx = {**base_context}
+                recipient_user = _users_by_email.get(recipient)
+                if recipient_user:
+                    ctx["approver"] = recipient_user
+                email_cc = cc_pending
+                cc_pending = []
+                if rule_body.strip():
+                    _send_html_email_from_string(
+                        subject,
+                        [recipient],
+                        rule_body,
+                        ctx,
+                        notification_type=event,
+                        submission_id=submission_id,
+                        cc=email_cc,
+                    )
+                else:
+                    _send_html_email(
+                        subject,
+                        [recipient],
+                        default_template,
+                        ctx,
+                        notification_type=event,
+                        submission_id=submission_id,
+                        cc=email_cc,
+                    )
+
+    for rule in rules:
+        try:
+            _apply_rule(rule)
+        except Exception as exc:
+            # One bad rule must not silence the rest of this event, and the
+            # failure must leave a trace. Previously any exception in here
+            # (e.g. a TypeError building the subject from form_data) killed
+            # the whole task: no email, no NotificationLog row, not even a
+            # "failed" record — a silent, total notification blackout for
+            # the submission, since every event fails the same way on the
+            # same data.
+            logger.exception(
+                "NotificationRule %s failed for submission %s (event %s)",
+                rule.id,
+                submission_id,
+                event,
+            )
+            _write_notification_log(
+                notification_type=event,
+                submission_id=submission_id,
+                recipient_email="(rule failed)",
+                subject=f"NotificationRule {rule.id} ({event})",
+                status="failed",
+                error_message=f"{type(exc).__name__}: {exc}",
+            )
+
+    # ``approval_reminder`` is the one event whose "did this happen?" state
+    # lives outside NotificationLog: check_approval_deadlines reads
+    # ApprovalTask.reminder_sent_at to decide whether to remind again. Stamp
+    # it here, once the dispatch has actually run to completion, rather than
+    # at enqueue time — a task that is lost in the broker or dies mid-flight
+    # then gets retried by the next sweep instead of being recorded as sent.
+    # Completing with zero recipients still counts (a workflow with no
+    # reminder rule must not re-dispatch every sweep forever); duplicate
+    # sends from an overlapping sweep are absorbed by the already_sent guard.
+    if event == "approval_reminder" and task is not None and not task.reminder_sent_at:
+        task.reminder_sent_at = timezone.now()
+        task.save(update_fields=["reminder_sent_at"])

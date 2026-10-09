@@ -1,0 +1,560 @@
+{% extends "django_forms_workflows/base.html" %}
+{% load static %}
+
+{% block title %}Analytics & Reporting — {{ site_name }}{% endblock %}
+
+{% block topbar_title %}
+  <span class="crumb-current">Analytics &amp; Reporting</span>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* ── Enterprise Analytics Layout ── */
+  .analytics-wrapper {
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* Compact Toolbar Card */
+  .analytics-toolbar {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    margin-bottom: 1.25rem;
+  }
+
+  /* Stat KPI Widget */
+  .kpi-widget {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .kpi-widget-label {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .kpi-widget-value {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: #0f172a;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.35rem;
+  }
+  .kpi-widget-subtext {
+    font-size: 12.5px;
+    color: #64748b;
+    font-weight: 500;
+  }
+
+  /* Secondary Status Strip */
+  .status-widget {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  }
+  .status-widget-val {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.2;
+  }
+  .status-widget-lbl {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+  }
+
+  /* Trend Badges */
+  .trend-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+  }
+  .trend-indicator.trend-up {
+    color: #15803d;
+    background-color: #dcfce7;
+  }
+  .trend-indicator.trend-down {
+    color: #b91c1c;
+    background-color: #fee2e2;
+  }
+  .trend-indicator.trend-neutral {
+    color: #475569;
+    background-color: #f1f5f9;
+  }
+
+  /* Chart & Table Card Containers */
+  .analytics-card {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    height: 100%;
+  }
+  .analytics-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .analytics-card-title {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #0f172a;
+    margin-bottom: 0;
+  }
+
+  /* Responsive Canvas Box */
+  .chart-canvas-box {
+    position: relative;
+    width: 100%;
+    height: 260px;
+  }
+
+  /* Enterprise Table Rules (Phase 1 Standard) */
+  .analytics-table {
+    font-size: 13px;
+  }
+  .analytics-table thead th {
+    background-color: #f8fafc;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 0.65rem 0.85rem;
+    white-space: nowrap;
+  }
+  .analytics-table tbody td {
+    padding: 0.7rem 0.85rem;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: middle;
+  }
+  .analytics-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="analytics-wrapper py-3">
+
+  {# ── 1. Compact Toolbar: Title & Filter Controls ── #}
+  <div class="analytics-toolbar bg-white border rounded-xl p-3 p-md-4 shadow-sm mb-4 d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3">
+    <div>
+      <h1 class="h5 fw-bold text-dark mb-0" style="font-size: 1.25rem;">Analytics &amp; Reporting</h1>
+      <p class="text-secondary small mb-0">Overview of form volumes and workflow SLA performance</p>
+    </div>
+
+    <div class="d-flex align-items-stretch align-items-sm-center gap-2 flex-wrap w-100 w-lg-auto">
+      <form method="get" class="d-flex align-items-stretch align-items-sm-center gap-2 flex-wrap mb-0 w-100 w-sm-auto">
+        <select name="form" class="form-select form-select-sm flex-grow-1 flex-sm-grow-0" style="min-width: 160px;">
+          <option value="">All Form Definitions</option>
+          {% for slug, name in available_forms %}
+            <option value="{{ slug }}" {% if slug == form_slug %}selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </select>
+
+        <select name="days" class="form-select form-select-sm flex-grow-1 flex-sm-grow-0" style="min-width: 130px;">
+          <option value="7" {% if range_days == 7 %}selected{% endif %}>Last 7 Days</option>
+          <option value="30" {% if range_days == 30 %}selected{% endif %}>Last 30 Days</option>
+          <option value="90" {% if range_days == 90 %}selected{% endif %}>Last 90 Days</option>
+          <option value="365" {% if range_days == 365 %}selected{% endif %}>Year to Date</option>
+        </select>
+
+        <button type="submit" class="btn btn-sm btn-dark d-inline-flex align-items-center justify-content-center gap-1" style="background-color: #0f172a; border-color: #0f172a;">
+          <i class="bi bi-funnel"></i>
+          <span>Apply</span>
+        </button>
+      </form>
+
+      <a href="{% url 'forms_workflows:analytics_export_csv' %}?days={{ range_days }}{% if form_slug %}&form={{ form_slug }}{% endif %}"
+         class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center gap-1.5 w-100 w-sm-auto"
+         title="Export raw analytics data to CSV">
+        <i class="bi bi-download"></i>
+        <span>Export CSV</span>
+      </a>
+    </div>
+  </div>
+
+  {# ── 2. Metric KPI Widgets (Top Row) ── #}
+  <div class="row g-3 mb-3">
+    {# Total Submissions #}
+    <div class="col-sm-6 col-xl-3">
+      <div class="kpi-widget bg-white border rounded-xl p-3 p-md-4 shadow-sm">
+        <div>
+          <div class="kpi-widget-label">
+            <span>Total Submissions</span>
+            <i class="bi bi-file-earmark-text text-muted"></i>
+          </div>
+          <div class="kpi-widget-value">{{ total_submissions }}</div>
+        </div>
+        <div class="kpi-widget-subtext d-flex align-items-center gap-1.5">
+          {% if total_change is not None %}
+            <span class="trend-indicator {% if total_change > 0 %}trend-up{% elif total_change < 0 %}trend-down{% else %}trend-neutral{% endif %}">
+              <i class="bi {% if total_change > 0 %}bi-arrow-up-short{% elif total_change < 0 %}bi-arrow-down-short{% else %}bi-dash{% endif %}"></i>
+              {{ total_change }}%
+            </span>
+            <span>vs prev {{ range_days }}d</span>
+          {% else %}
+            <span>Last {{ range_days }} days</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Pending Reviews #}
+    <div class="col-sm-6 col-xl-3">
+      <div class="kpi-widget bg-white border rounded-xl p-3 p-md-4 shadow-sm">
+        <div>
+          <div class="kpi-widget-label">
+            <span>Pending Reviews</span>
+            <i class="bi bi-hourglass-split text-muted"></i>
+          </div>
+          <div class="kpi-widget-value">{{ pending_count }}</div>
+        </div>
+        <div class="kpi-widget-subtext">
+          {% if overdue_count > 0 %}
+            <span class="text-danger fw-semibold"><i class="bi bi-exclamation-circle me-1"></i>{{ overdue_count }} overdue task{{ overdue_count|pluralize }}</span>
+          {% else %}
+            <span class="text-secondary">All tasks within SLA</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Approval Rate #}
+    <div class="col-sm-6 col-xl-3">
+      <div class="kpi-widget bg-white border rounded-xl p-3 p-md-4 shadow-sm">
+        <div>
+          <div class="kpi-widget-label">
+            <span>Approval Rate</span>
+            <i class="bi bi-check2-circle text-muted"></i>
+          </div>
+          <div class="kpi-widget-value">
+            {% if approval_rate is not None %}{{ approval_rate }}%{% else %}N/A{% endif %}
+          </div>
+        </div>
+        <div class="kpi-widget-subtext d-flex align-items-center gap-1.5">
+          {% if approval_rate_change is not None %}
+            <span class="trend-indicator {% if approval_rate_change > 0 %}trend-up{% elif approval_rate_change < 0 %}trend-down{% else %}trend-neutral{% endif %}">
+              <i class="bi {% if approval_rate_change > 0 %}bi-arrow-up-short{% elif approval_rate_change < 0 %}bi-arrow-down-short{% else %}bi-dash{% endif %}"></i>
+              {{ approval_rate_change }}%
+            </span>
+          {% endif %}
+          <span>{{ approved_count }} approved &bull; {{ rejected_count }} rejected</span>
+        </div>
+      </div>
+    </div>
+
+    {# Avg Processing Time #}
+    <div class="col-sm-6 col-xl-3">
+      <div class="kpi-widget bg-white border rounded-xl p-3 p-md-4 shadow-sm">
+        <div>
+          <div class="kpi-widget-label">
+            <span>Avg Processing Time</span>
+            <i class="bi bi-speedometer2 text-muted"></i>
+          </div>
+          <div class="kpi-widget-value">{{ turnaround.avg|default:"N/A" }}</div>
+        </div>
+        <div class="kpi-widget-subtext">
+          <span>Fastest: <strong>{{ turnaround.fastest|default:"N/A" }}</strong> &bull; Slowest: <strong>{{ turnaround.slowest|default:"N/A" }}</strong></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Secondary Status Overview Strip ── #}
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="status-widget bg-white border rounded-xl p-3 shadow-sm d-flex align-items-center justify-content-between">
+        <div>
+          <div class="status-widget-lbl">Approved</div>
+          <div class="status-widget-val text-success">{{ approved_count }}</div>
+        </div>
+        {% if approved_change is not None %}
+          <span class="trend-indicator {% if approved_change > 0 %}trend-up{% elif approved_change < 0 %}trend-down{% else %}trend-neutral{% endif %}">
+            {{ approved_change }}%
+          </span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="status-widget bg-white border rounded-xl p-3 shadow-sm d-flex align-items-center justify-content-between">
+        <div>
+          <div class="status-widget-lbl">Rejected</div>
+          <div class="status-widget-val text-danger">{{ rejected_count }}</div>
+        </div>
+        {% if rejected_change is not None %}
+          <span class="trend-indicator {% if rejected_change > 0 %}trend-down{% elif rejected_change < 0 %}trend-up{% else %}trend-neutral{% endif %}">
+            {{ rejected_change }}%
+          </span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="status-widget bg-white border rounded-xl p-3 shadow-sm d-flex align-items-center justify-content-between">
+        <div>
+          <div class="status-widget-lbl">Withdrawn</div>
+          <div class="status-widget-val text-secondary">{{ withdrawn_count }}</div>
+        </div>
+        <span class="text-muted small">Cancelled</span>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="status-widget bg-white border rounded-xl p-3 shadow-sm d-flex align-items-center justify-content-between">
+        <div>
+          <div class="status-widget-lbl">Overdue Tasks</div>
+          <div class="status-widget-val {% if overdue_count > 0 %}text-danger{% else %}text-secondary{% endif %}">
+            {{ overdue_count }}
+          </div>
+        </div>
+        <span class="text-muted small">Exceeds SLA</span>
+      </div>
+    </div>
+  </div>
+
+  {# ── 3. Charts Row 1: Submissions Trend & Status Breakdown ── #}
+  <div class="row g-3 mb-4">
+    <div class="col-lg-8">
+      <div class="analytics-card bg-white border rounded-xl p-4 shadow-sm">
+        <div class="analytics-card-header">
+          <h2 class="analytics-card-title">
+            <i class="bi bi-graph-up text-secondary me-1.5"></i> Submissions Trend (Daily)
+          </h2>
+          <span class="text-secondary small">Trailing {{ range_days }} days</span>
+        </div>
+        <div class="chart-canvas-box">
+          <canvas id="dailyChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="analytics-card bg-white border rounded-xl p-4 shadow-sm">
+        <div class="analytics-card-header">
+          <h2 class="analytics-card-title">
+            <i class="bi bi-pie-chart text-secondary me-1.5"></i> Status Distribution
+          </h2>
+          <span class="text-secondary small">Total: {{ total_submissions }}</span>
+        </div>
+        <div class="chart-canvas-box">
+          <canvas id="statusChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── 4. Charts Row 2: Monthly Volume & Form Volume ── #}
+  <div class="row g-3 mb-4">
+    <div class="col-lg-6">
+      <div class="analytics-card bg-white border rounded-xl p-4 shadow-sm">
+        <div class="analytics-card-header">
+          <h2 class="analytics-card-title">
+            <i class="bi bi-bar-chart text-secondary me-1.5"></i> Monthly Submission Volume
+          </h2>
+          <span class="text-secondary small">Trailing 12 months</span>
+        </div>
+        <div class="chart-canvas-box">
+          <canvas id="monthlyChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="analytics-card bg-white border rounded-xl p-4 shadow-sm">
+        <div class="analytics-card-header">
+          <h2 class="analytics-card-title">
+            <i class="bi bi-list-columns text-secondary me-1.5"></i> Submissions by Form Definition
+          </h2>
+          <span class="text-secondary small">Top volume categories</span>
+        </div>
+        <div class="chart-canvas-box">
+          <canvas id="byFormChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── 5. Tabular Data Breakdown Row ── #}
+  <div class="row g-3 mb-4">
+    {# Bottleneck Stages #}
+    <div class="col-lg-4">
+      <div class="analytics-card bg-white border rounded-xl p-4 shadow-sm d-flex flex-column">
+        <div class="analytics-card-header">
+          <h2 class="analytics-card-title">
+            <i class="bi bi-exclamation-triangle text-secondary me-1.5"></i> Stage Bottlenecks
+          </h2>
+          <span class="badge bg-light text-secondary border">Pending</span>
+        </div>
+        <div class="table-responsive flex-grow-1">
+          {% if bottleneck_stages %}
+            <table class="table analytics-table table-hover align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Stage &amp; Form</th>
+                  <th class="text-end">Pending Tasks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for s in bottleneck_stages %}
+                  <tr>
+                    <td>
+                      <div class="fw-semibold text-dark">{{ s.workflow_stage__name }}</div>
+                      <div class="text-muted small">{{ s.workflow_stage__workflow__form_definition__name|default:"—" }}</div>
+                    </td>
+                    <td class="text-end">
+                      <span class="badge bg-secondary-subtle text-dark border fw-bold">
+                        {{ s.pending }}
+                      </span>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div class="py-4 text-center text-muted small">
+              <i class="bi bi-check-circle fs-5 d-block mb-1 text-success"></i>
+              No pending approval bottlenecks detected.
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Turnaround by Stage #}
+    <div class="col-lg-4">
+      <div class="analytics-card bg-white border rounded-xl p-4 shadow-sm d-flex flex-column">
+        <div class="analytics-card-header">
+          <h2 class="analytics-card-title">
+            <i class="bi bi-clock-history text-secondary me-1.5"></i> Turnaround by Stage
+          </h2>
+          <span class="badge bg-light text-secondary border">Average</span>
+        </div>
+        <div class="table-responsive flex-grow-1">
+          {% if stage_turnaround %}
+            <table class="table analytics-table table-hover align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Stage Name</th>
+                  <th class="text-end">Avg Time</th>
+                  <th class="text-end">Tasks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for s in stage_turnaround %}
+                  <tr>
+                    <td>
+                      <div class="fw-semibold text-dark">{{ s.workflow_stage__name }}</div>
+                      <div class="text-muted small">{{ s.workflow_stage__workflow__form_definition__name|default:"—" }}</div>
+                    </td>
+                    <td class="text-end fw-semibold text-dark">{{ s.avg_display }}</td>
+                    <td class="text-end text-secondary">{{ s.task_count }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div class="py-4 text-center text-muted small">
+              <i class="bi bi-info-circle fs-5 d-block mb-1 text-secondary"></i>
+              No stage completion records found for this period.
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# Top Reviewers #}
+    <div class="col-lg-4">
+      <div class="analytics-card bg-white border rounded-xl p-4 shadow-sm d-flex flex-column">
+        <div class="analytics-card-header">
+          <h2 class="analytics-card-title">
+            <i class="bi bi-people text-secondary me-1.5"></i> Top Reviewers
+          </h2>
+          <span class="badge bg-light text-secondary border">Completed</span>
+        </div>
+        <div class="table-responsive flex-grow-1">
+          {% if top_approvers %}
+            <table class="table analytics-table table-hover align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Reviewer Name</th>
+                  <th class="text-end">Signed Off</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for a in top_approvers %}
+                  <tr>
+                    <td>
+                      <div class="fw-semibold text-dark">
+                        {% if a.completed_by__first_name %}
+                          {{ a.completed_by__first_name }} {{ a.completed_by__last_name }}
+                        {% else %}
+                          {{ a.completed_by__username }}
+                        {% endif %}
+                      </div>
+                      <div class="text-muted small">@{{ a.completed_by__username }}</div>
+                    </td>
+                    <td class="text-end">
+                      <span class="badge bg-dark text-white fw-semibold">
+                        {{ a.completed }}
+                      </span>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div class="py-4 text-center text-muted small">
+              <i class="bi bi-info-circle fs-5 d-block mb-1 text-secondary"></i>
+              No review actions recorded during this period.
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script type="application/json" id="chartDataPayload">
+{
+  "dailySubmissions": {{ daily_submissions_json }},
+  "statusBreakdown": {{ status_breakdown_json }},
+  "monthlySubmissions": {{ monthly_submissions_json }},
+  "byForm": {{ by_form_json }}
+}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/analytics-charts.js' %}"></script>
+{% endblock %}

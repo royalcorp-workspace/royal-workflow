@@ -1,0 +1,110 @@
+{% load forms_workflows_tags %}
+
+{% if form_data_ordered %}
+  <div class="row g-3">
+    {% for row in form_data_ordered %}
+      {% if row.type == 'section' %}
+        <div class="col-12 kv-section-header">
+          <h6 class="kv-section-title">{{ row.label }}</h6>
+        </div>
+      {% elif row.type == 'display_text' %}
+        <div class="col-12">
+          <div class="p-3 bg-light border rounded small text-secondary">
+            {{ row.value|render_markdown }}
+          </div>
+        </div>
+      {% elif row.type == 'pair' or row.type == 'triple' or row.type == 'quad' %}
+        {% for field in row.fields %}
+          <div class="{% if row.type == 'pair' %}col-md-6{% elif row.type == 'triple' %}col-md-4{% else %}col-md-3{% endif %}">
+            <div class="kv-card-cell">
+              <div class="kv-label">{{ field.label }}</div>
+              <div class="kv-value">
+                {% if field.value.url %}
+                  <a href="{{ field.value.url }}" target="_blank" class="file-item-pill">
+                    <i class="bi bi-file-earmark-arrow-down text-primary"></i>
+                    <span>{{ field.value.filename }}</span>
+                    {% if field.value.size %}<small class="text-muted">({{ field.value.size|filesizeformat }})</small>{% endif %}
+                  </a>
+                {% elif field.value|is_signature %}
+                  <img src="{{ field.value }}" alt="Signature" class="img-fluid border rounded p-1" style="max-height: 90px;">
+                {% elif field.value.0.filename %}
+                  <div class="d-flex flex-column gap-1">
+                    {% for f in field.value %}
+                      {% if f.url %}
+                        <a href="{{ f.url }}" target="_blank" class="file-item-pill">
+                          <i class="bi bi-file-earmark-arrow-down text-primary"></i>
+                          <span>{{ f.filename }}</span>
+                          {% if f.size %}<small class="text-muted">({{ f.size|filesizeformat }})</small>{% endif %}
+                        </a>
+                      {% else %}
+                        <span class="text-muted small">{{ f.filename }}</span>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  {{ field.value|default:"—"|linebreaksbr }}
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        {% with field=row.fields.0 %}
+          <div class="col-12">
+            <div class="kv-card-cell">
+              <div class="kv-label">{{ field.label }}</div>
+              <div class="kv-value">
+                {% if field.value.url %}
+                  <a href="{{ field.value.url }}" target="_blank" class="file-item-pill">
+                    <i class="bi bi-file-earmark-arrow-down text-primary"></i>
+                    <span>{{ field.value.filename }}</span>
+                    {% if field.value.size %}<small class="text-muted">({{ field.value.size|filesizeformat }})</small>{% endif %}
+                  </a>
+                {% elif field.value|is_signature %}
+                  <img src="{{ field.value }}" alt="Signature" class="img-fluid border rounded p-1" style="max-height: 90px;">
+                {% elif field.value.0.filename %}
+                  <div class="d-flex flex-column gap-1">
+                    {% for f in field.value %}
+                      {% if f.url %}
+                        <a href="{{ f.url }}" target="_blank" class="file-item-pill">
+                          <i class="bi bi-file-earmark-arrow-down text-primary"></i>
+                          <span>{{ f.filename }}</span>
+                          {% if f.size %}<small class="text-muted">({{ f.size|filesizeformat }})</small>{% endif %}
+                        </a>
+                      {% else %}
+                        <span class="text-muted small">{{ f.filename }}</span>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  {{ field.value|default:"—"|linebreaksbr }}
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        {% endwith %}
+      {% endif %}
+    {% endfor %}
+  </div>
+{% else %}
+  <p class="text-muted small mb-0">No submitted field data recorded for this draft.</p>
+{% endif %}
+
+{# Document Model-level Attachments if any #}
+{% if resolved_attachments %}
+  <div class="pt-3 mt-3 border-top">
+    <div class="kv-label mb-2"><i class="bi bi-paperclip me-1"></i>Attached Documents</div>
+    <div class="d-flex flex-wrap gap-2">
+      {% for att in resolved_attachments %}
+        {% if att.url %}
+          <a href="{{ att.url }}" target="_blank" class="file-item-pill">
+            <i class="bi bi-file-earmark-text text-secondary"></i>
+            <span>{{ att.filename }}</span>
+          </a>
+        {% else %}
+          <span class="text-muted small">{{ att.filename }}</span>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}

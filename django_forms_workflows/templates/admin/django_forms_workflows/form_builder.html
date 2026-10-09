@@ -1,0 +1,1273 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if is_new %}Create New Form{% else %}Edit Form: {{ form_definition.name }}{% endif %} - Visual Form Builder</title>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    
+    <!-- SortableJS -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.0/dist/cdn.min.js"></script>
+    
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: #f5f5f5;
+        }
+        
+        .builder-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .builder-container {
+            display: grid;
+            grid-template-columns: 220px 1fr 1fr;
+            gap: 1rem;
+            padding: 1rem;
+            height: calc(100vh - 120px);
+        }
+        
+        .palette-panel, .canvas-panel, .preview-panel {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            overflow-y: auto;
+        }
+        
+        .panel-header {
+            padding: 1rem;
+            border-bottom: 2px solid #e9ecef;
+            font-weight: 600;
+            color: #495057;
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 10;
+        }
+        
+        .panel-content {
+            padding: 1rem;
+        }
+        
+        /* Field Palette */
+        .field-palette-item {
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            background: #f8f9fa;
+            border: 2px dashed #dee2e6;
+            border-radius: 6px;
+            cursor: grab;
+            transition: all 0.2s;
+            user-select: none;
+        }
+
+        .field-palette-item:hover {
+            background: #e9ecef;
+            border-color: #667eea;
+            transform: translateX(4px);
+            box-shadow: 0 2px 6px rgba(102, 126, 234, 0.15);
+        }
+
+        .field-palette-item:active {
+            cursor: grabbing;
+            transform: translateX(2px) scale(0.98);
+            box-shadow: 0 1px 3px rgba(102, 126, 234, 0.2);
+        }
+
+        .field-palette-item i {
+            margin-right: 0.5rem;
+            color: #667eea;
+        }
+        
+        /* Canvas */
+        .canvas-field {
+            padding: 0.5rem 0.75rem;
+            margin-bottom: 0.5rem;
+            background: white;
+            border: 1px solid #dee2e6;
+            border-left: 3px solid #667eea;
+            border-radius: 4px;
+            cursor: move;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+
+        .canvas-field:hover {
+            border-left-color: #764ba2;
+            box-shadow: 0 2px 6px rgba(102, 126, 234, 0.15);
+            background: #f8f9fa;
+        }
+
+        /* Section header divider */
+        .canvas-section {
+            padding: 0.6rem 0.75rem;
+            margin-top: 1rem;
+            margin-bottom: 0.25rem;
+            background: linear-gradient(135deg, #f0f2ff 0%, #e9ecff 100%);
+            border: 1px solid #c5cae9;
+            border-left: 4px solid #5c6bc0;
+            border-radius: 6px;
+            position: relative;
+            transition: all 0.2s;
+            user-select: none;
+            touch-action: none;
+        }
+        .canvas-section:first-child { margin-top: 0; }
+        .canvas-section .field-label { font-weight: 600; color: #3949ab; font-size: 0.95rem; }
+        .canvas-section:hover {
+            border-left-color: #3949ab;
+            box-shadow: 0 2px 6px rgba(92, 107, 192, 0.2);
+        }
+        .section-badge { background: #5c6bc0 !important; color: white !important; }
+
+        /* The ghost placeholder where item will be dropped */
+        .canvas-section.sortable-ghost,
+        .canvas-field.sortable-ghost {
+            opacity: 1;
+            background: linear-gradient(135deg, #e9ecff 0%, #f0f2ff 100%);
+            border: 2px dashed #667eea;
+            border-left: 4px solid #667eea;
+            box-shadow: inset 0 0 20px rgba(102, 126, 234, 0.1);
+            animation: pulse-drop-zone 1.5s ease-in-out infinite;
+        }
+
+        .canvas-section.sortable-ghost *,
+        .canvas-field.sortable-ghost * {
+            opacity: 0.3;
+        }
+
+        /* The item being dragged */
+        .canvas-section.sortable-drag,
+        .canvas-field.sortable-drag {
+            opacity: 0.9;
+            transform: rotate(2deg) scale(1.05);
+            box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+            border-left-color: #764ba2;
+            background: white;
+            z-index: 1000;
+            cursor: grabbing;
+        }
+
+        /* Pulse animation for drop zone */
+        @keyframes pulse-drop-zone {
+            0%, 100% {
+                box-shadow: inset 0 0 20px rgba(102, 126, 234, 0.1);
+            }
+            50% {
+                box-shadow: inset 0 0 30px rgba(102, 126, 234, 0.2);
+            }
+        }
+
+        /* Add visual separator when dragging to show drop position */
+        .canvas-field.sortable-ghost::before {
+            content: '';
+            position: absolute;
+            top: -8px;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 2px;
+            box-shadow: 0 0 10px rgba(102, 126, 234, 0.5);
+            animation: slide-in 0.3s ease-out;
+        }
+
+        @keyframes slide-in {
+            from {
+                transform: scaleX(0);
+                opacity: 0;
+            }
+            to {
+                transform: scaleX(1);
+                opacity: 1;
+            }
+        }
+
+        /* Smooth transitions for all canvas fields when reordering */
+        #formCanvas {
+            position: relative;
+        }
+
+        #formCanvas.dragging .canvas-field:not(.sortable-drag):not(.sortable-ghost):not(.drag-placeholder) {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Placeholder for new fields being dragged in from palette */
+        .canvas-field.drag-placeholder {
+            opacity: 1;
+            background: linear-gradient(135deg, #e9ecff 0%, #f0f2ff 100%);
+            border: 2px dashed #667eea;
+            border-left: 4px solid #667eea;
+            box-shadow: inset 0 0 20px rgba(102, 126, 234, 0.1);
+            animation: pulse-drop-zone 1.5s ease-in-out infinite;
+            cursor: default;
+            min-height: 50px;
+            display: flex;
+            align-items: center;
+        }
+
+        .canvas-field.drag-placeholder .field-label {
+            color: #667eea;
+            font-weight: 500;
+            font-style: italic;
+        }
+
+        .canvas-field.drag-placeholder::before {
+            content: '';
+            position: absolute;
+            top: -8px;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 2px;
+            box-shadow: 0 0 10px rgba(102, 126, 234, 0.5);
+            animation: slide-in 0.3s ease-out;
+        }
+
+        .field-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.25rem;
+        }
+
+        .field-label {
+            font-weight: 600;
+            color: #212529;
+            font-size: 0.9rem;
+        }
+
+        .field-type-badge {
+            font-size: 0.7rem;
+            padding: 0.15rem 0.4rem;
+            background: #e9ecef;
+            border-radius: 3px;
+            color: #6c757d;
+            text-transform: uppercase;
+            font-weight: 500;
+        }
+
+        .field-actions {
+            display: flex;
+            gap: 0.25rem;
+        }
+
+        .btn-field-action {
+            padding: 0.2rem 0.4rem;
+            font-size: 0.8rem;
+            line-height: 1;
+        }
+        
+        /* Step Canvas */
+        .step-canvas {
+            min-height: 400px;
+            padding: 1rem;
+            background: #f8f9fa;
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+
+        .step-canvas.drag-over {
+            background: linear-gradient(135deg, #e9ecff 0%, #f0f2ff 100%);
+            border-color: #667eea;
+            border-style: solid;
+            box-shadow: inset 0 0 20px rgba(102, 126, 234, 0.1);
+        }
+
+        .step-canvas .field-item {
+            margin-bottom: 0.75rem;
+            background: white;
+            border: 1px solid #dee2e6;
+            border-left: 3px solid #667eea;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .step-canvas .field-item:hover {
+            border-left-color: #764ba2;
+            box-shadow: 0 2px 6px rgba(102, 126, 234, 0.15);
+        }
+
+        .step-canvas .field-item.sortable-ghost {
+            opacity: 0.4;
+            background: linear-gradient(135deg, #e9ecff 0%, #f0f2ff 100%);
+            border: 2px dashed #667eea;
+        }
+
+        .step-canvas .field-item.sortable-drag {
+            opacity: 0.9;
+            transform: rotate(2deg);
+            box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+            cursor: grabbing;
+        }
+
+        .step-canvas .empty-canvas {
+            padding: 3rem 1rem;
+        }
+
+        .field-drag-handle {
+            cursor: move !important;
+        }
+
+        .field-drag-handle:hover {
+            background: #f8f9fa;
+        }
+
+        .field-drag-handle .bi-grip-vertical {
+            opacity: 0.3;
+            transition: opacity 0.2s;
+        }
+
+        .field-drag-handle:hover .bi-grip-vertical {
+            opacity: 0.7;
+        }
+
+        /* Multi-step cards */
+        .step-card {
+            background: white;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: all 0.2s;
+        }
+
+        .step-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
+        }
+
+        .step-card-header {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            padding: 1rem;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        .step-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 50%;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .step-title-input {
+            border: 1px solid #dee2e6;
+            font-size: 1.1rem;
+            font-weight: 500;
+            max-width: 400px;
+        }
+
+        .step-title-input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+
+        /* Context Menu */
+        .field-context-menu {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            min-width: 200px;
+            overflow: hidden;
+        }
+
+        .context-menu-header {
+            padding: 0.5rem 1rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .context-menu-item {
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+        }
+
+        .context-menu-item:last-child {
+            border-bottom: none;
+        }
+
+        .context-menu-item:hover {
+            background: linear-gradient(135deg, #f0f2ff 0%, #e9ecff 100%);
+            color: #667eea;
+            padding-left: 1.25rem;
+        }
+
+        .context-menu-item i {
+            color: #667eea;
+        }
+
+        .empty-canvas {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: #6c757d;
+        }
+
+        .empty-canvas i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.3;
+        }
+
+        /* Drop Zone at bottom of canvas */
+        .canvas-drop-zone {
+            min-height: 200px;
+            margin-top: 1rem;
+            padding: 2rem 1rem;
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+            transition: all 0.3s ease;
+            cursor: default;
+        }
+
+        .canvas-drop-zone:hover {
+            border-color: #667eea;
+            background: linear-gradient(135deg, #f0f2ff 0%, #ffffff 100%);
+        }
+
+        .drop-zone-content {
+            text-align: center;
+            color: #6c757d;
+            font-size: 0.9rem;
+            user-select: none;
+        }
+
+        .drop-zone-content i {
+            display: block;
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            opacity: 0.4;
+            color: #667eea;
+            transition: opacity 0.2s;
+        }
+
+        .canvas-drop-zone:hover .drop-zone-content i {
+            opacity: 0.6;
+        }
+
+        /* When dragging over the drop zone */
+        .canvas-drop-zone.sortable-ghost {
+            border-color: #667eea;
+            border-width: 3px;
+            background: linear-gradient(135deg, #e9ecff 0%, #f0f2ff 100%);
+            border-style: solid;
+            box-shadow: inset 0 0 30px rgba(102, 126, 234, 0.15),
+                        0 4px 12px rgba(102, 126, 234, 0.2);
+            animation: pulse-drop-zone 1.5s ease-in-out infinite;
+        }
+
+        .canvas-drop-zone.sortable-ghost .drop-zone-content {
+            opacity: 0.7;
+        }
+
+        .canvas-drop-zone.sortable-ghost .drop-zone-content i {
+            opacity: 0.8;
+            transform: scale(1.1);
+        }
+        
+        /* Preview Panel - Farm Theme */
+        .preview-panel {
+            background: radial-gradient(ellipse at top left, rgba(248,241,218,0.6), transparent 60%),
+                        radial-gradient(ellipse at bottom right, rgba(232,246,255,0.5), transparent 60%),
+                        white;
+        }
+
+        .preview-content {
+            padding: 1rem;
+        }
+
+        .preview-content .preview-container {
+            background: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+
+        .preview-content .preview-header h5 {
+            color: #2f5f36;
+            font-weight: 600;
+        }
+
+        .preview-content .alert-info {
+            background: linear-gradient(135deg, #f8f1da, #e8f6ff);
+            border: 1px solid rgba(0,0,0,0.05);
+            color: #2f5f36;
+        }
+
+        .preview-content .form-control,
+        .preview-content .form-select {
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+        }
+
+        .preview-content .form-control:focus,
+        .preview-content .form-select:focus {
+            border-color: #3a7d44;
+            box-shadow: 0 0 0 0.2rem rgba(58, 125, 68, 0.15);
+        }
+
+        .preview-content .btn-primary {
+            background: linear-gradient(90deg, #2f5f36, #3a7d44);
+            border: none;
+        }
+
+        .preview-content .btn-primary:hover {
+            background: linear-gradient(90deg, #3a7d44, #2f5f36);
+        }
+        
+        /* Form Settings Panel */
+        .form-settings {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        
+        /* Save Bar */
+        .save-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            border-top: 2px solid #e9ecef;
+            padding: 1rem;
+            box-shadow: 0 -2px 8px rgba(0,0,0,0.08);
+            z-index: 1000;
+        }
+        
+        /* Modal */
+        .modal-backdrop.show {
+            opacity: 0.5;
+        }
+        
+        /* Scrollbar styling */
+        .palette-panel::-webkit-scrollbar,
+        .canvas-panel::-webkit-scrollbar,
+        .preview-panel::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .palette-panel::-webkit-scrollbar-track,
+        .canvas-panel::-webkit-scrollbar-track,
+        .preview-panel::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        
+        .palette-panel::-webkit-scrollbar-thumb,
+        .canvas-panel::-webkit-scrollbar-thumb,
+        .preview-panel::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        
+        .palette-panel::-webkit-scrollbar-thumb:hover,
+        .canvas-panel::-webkit-scrollbar-thumb:hover,
+        .preview-panel::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        /* Palette category headers */
+        .palette-category-header {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.5rem 0.75rem;
+            margin-top: 0.75rem;
+            margin-bottom: 0.25rem;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #6c757d;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .palette-category-header:first-child { margin-top: 0; }
+        .palette-category-header .badge {
+            font-size: 0.6rem;
+            font-weight: 500;
+            padding: 0.15rem 0.4rem;
+        }
+
+        /* Keyboard shortcut hints */
+        .shortcut-hints {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.72rem;
+            color: #6c757d;
+        }
+        .shortcut-hints kbd {
+            background: #e9ecef;
+            border: 1px solid #dee2e6;
+            border-radius: 3px;
+            padding: 0.1rem 0.35rem;
+            font-size: 0.68rem;
+            font-family: inherit;
+            box-shadow: 0 1px 1px rgba(0,0,0,0.08);
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="builder-header">
+        <div class="container-fluid">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="h3 mb-0">
+                        <i class="bi bi-pencil-square"></i>
+                        {% if is_new %}Create New Form{% else %}Edit Form{% endif %}
+                    </h1>
+                    {% if not is_new %}
+                    <small class="opacity-75">{{ form_definition.name }}</small>
+                    {% endif %}
+                </div>
+                <div>
+                    <a href="{% url 'admin:django_forms_workflows_formdefinition_changelist' %}" class="btn btn-light">
+                        <i class="bi bi-arrow-left"></i> Back to Forms
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Form Settings (Collapsible) -->
+    <div class="container-fluid mt-3">
+        <div class="form-settings">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0"><i class="bi bi-gear"></i> Form Settings</h5>
+                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#formSettings">
+                    <i class="bi bi-chevron-down"></i>
+                </button>
+            </div>
+            <div class="collapse show" id="formSettings">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Form Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="formName" placeholder="e.g., Equipment Request" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Form Slug <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="formSlug" placeholder="e.g., equipment-request" required>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" id="formDescription" rows="2" placeholder="Brief description shown to users"></textarea>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Instructions</label>
+                        <textarea class="form-control" id="formInstructions" rows="3" placeholder="Detailed instructions shown at top of form"></textarea>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="formIsActive" checked>
+                            <label class="form-check-label" for="formIsActive">Active</label>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="formRequiresLogin" checked>
+                            <label class="form-check-label" for="formRequiresLogin">Requires Login</label>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="formAllowDraft" checked>
+                            <label class="form-check-label" for="formAllowDraft">Allow Save Draft</label>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="formAllowWithdrawal" checked>
+                            <label class="form-check-label" for="formAllowWithdrawal">Allow Withdrawal</label>
+                        </div>
+                    </div>
+
+                    <!-- Success Page -->
+                    <div class="col-12 mt-3">
+                        <h6 class="text-muted border-bottom pb-2">
+                            <i class="bi bi-check-circle"></i> Success Page
+                        </h6>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Redirect URL <span class="text-muted">(optional)</span></label>
+                        <input type="url" class="form-control form-control-sm" id="formSuccessRedirectUrl" placeholder="https://example.com/thank-you">
+                        <small class="text-muted">Redirect here after submission. Supports <code>{field_name}</code> tokens.</small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Conditional Redirects <span class="text-muted">(JSON, optional)</span></label>
+                        <input type="text" class="form-control form-control-sm font-monospace" id="formSuccessRedirectRules" placeholder='[{"field":"...", "operator":"equals", "value":"...", "url":"..."}]'>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small">Custom Success Message <span class="text-muted">(HTML, optional)</span></label>
+                        <textarea class="form-control form-control-sm" id="formSuccessMessage" rows="3" placeholder="Thank you, {first_name}! Your {form_type} request has been submitted."></textarea>
+                        <small class="text-muted">Shown after submission. Use <code>{field_name}</code> for answer piping. Leave blank for default.</small>
+                    </div>
+
+                    <!-- Document Templates -->
+                    <div class="col-12 mt-3">
+                        <h6 class="text-muted border-bottom pb-2">
+                            <i class="bi bi-file-earmark-pdf"></i> Document Templates
+                            <button type="button" class="btn btn-sm btn-outline-primary float-end" id="btnAddDocTemplate">
+                                <i class="bi bi-plus-circle"></i> Add Template
+                            </button>
+                        </h6>
+                    </div>
+                    <div class="col-12" id="docTemplatesContainer">
+                        <p class="text-muted small" id="docTemplatesEmpty">No custom document templates. PDFs will use the default layout.</p>
+                    </div>
+
+                    <!-- Submission Controls -->
+                    <div class="col-12 mt-3">
+                        <h6 class="text-muted border-bottom pb-2">
+                            <i class="bi bi-shield-check"></i> Submission Controls
+                        </h6>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Close Date</label>
+                        <input type="datetime-local" class="form-control form-control-sm" id="formCloseDate">
+                        <small class="text-muted">Stop accepting submissions after this date</small>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Max Submissions</label>
+                        <input type="number" class="form-control form-control-sm" id="formMaxSubmissions" min="1" placeholder="Unlimited">
+                    </div>
+                    <div class="col-md-2">
+                        <div class="form-check mt-4">
+                            <input class="form-check-input" type="checkbox" id="formOnePerUser">
+                            <label class="form-check-label" for="formOnePerUser">One Per User</label>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="form-check mt-4">
+                            <input class="form-check-input" type="checkbox" id="formEnableCaptcha">
+                            <label class="form-check-label" for="formEnableCaptcha">CAPTCHA</label>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="form-check mt-4">
+                            <input class="form-check-input" type="checkbox" id="formEmbedEnabled">
+                            <label class="form-check-label" for="formEmbedEnabled">Embeddable</label>
+                        </div>
+                    </div>
+
+                    <!-- Payment -->
+                    <div class="col-12 mt-3">
+                        <h6 class="text-muted border-bottom pb-2">
+                            <i class="bi bi-credit-card"></i> Payment
+                        </h6>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="formPaymentEnabled"
+                                   onchange="document.getElementById('paymentSettings').style.display = this.checked ? '' : 'none';">
+                            <label class="form-check-label" for="formPaymentEnabled">Require Payment</label>
+                        </div>
+                    </div>
+                    <div class="col-md-9" id="paymentSettings" style="display:none;">
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <label class="form-label small">Provider</label>
+                                <select class="form-select form-select-sm" id="formPaymentProvider"></select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small">Amount Type</label>
+                                <select class="form-select form-select-sm" id="formPaymentAmountType"
+                                        onchange="document.getElementById('paymentFixedGroup').style.display = this.value==='fixed' ? '' : 'none'; document.getElementById('paymentFieldGroup').style.display = this.value==='field' ? '' : 'none';">
+                                    <option value="fixed">Fixed Amount</option>
+                                    <option value="field">From Form Field</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4" id="paymentFixedGroup">
+                                <label class="form-label small">Amount</label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text">$</span>
+                                    <input type="number" class="form-control" id="formPaymentFixedAmount" step="0.01" min="0.01">
+                                </div>
+                            </div>
+                            <div class="col-md-4" id="paymentFieldGroup" style="display:none;">
+                                <label class="form-label small">Amount Field</label>
+                                <input type="text" class="form-control form-control-sm" id="formPaymentAmountField" placeholder="field_name">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small">Currency</label>
+                                <select class="form-select form-select-sm" id="formPaymentCurrency">
+                                    <option value="usd">USD</option>
+                                    <option value="cad">CAD</option>
+                                    <option value="eur">EUR</option>
+                                    <option value="gbp">GBP</option>
+                                </select>
+                            </div>
+                            <div class="col-md-9">
+                                <label class="form-label small">Description</label>
+                                <input type="text" class="form-control form-control-sm" id="formPaymentDescription"
+                                       placeholder="{form_name} - {student_id}">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Client-Side Enhancements -->
+                    <div class="col-12 mt-3">
+                        <h6 class="text-muted border-bottom pb-2">
+                            <i class="bi bi-lightning-charge"></i> Client-Side Enhancements
+                        </h6>
+                    </div>
+
+                    <div class="col-md-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="formEnableAutoSave" checked>
+                            <label class="form-check-label" for="formEnableAutoSave">Enable Auto-Save</label>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Auto-Save Interval (seconds)</label>
+                        <input type="number" class="form-control form-control-sm" id="formAutoSaveInterval" value="30" min="10" max="300">
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="formEnableMultiStep">
+                            <label class="form-check-label" for="formEnableMultiStep">
+                                Enable Multi-Step
+                                <small class="text-muted d-block">Use tabs in canvas to organize fields into steps</small>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main Builder Container -->
+    <div class="builder-container">
+        <!-- Field Palette -->
+        <div class="palette-panel">
+            <div class="panel-header">
+                <i class="bi bi-grid-3x3-gap"></i> Field Types
+                <div class="mt-2">
+                    <input type="text" class="form-control form-control-sm" id="paletteSearch" placeholder="Search fields..." autocomplete="off">
+                </div>
+            </div>
+            <div class="panel-content" id="fieldPalette">
+                <!-- Field types will be populated by JavaScript -->
+            </div>
+        </div>
+        
+        <!-- Canvas -->
+        <div class="canvas-panel">
+            <div class="panel-header d-flex justify-content-between align-items-center">
+                <div>
+                    <i class="bi bi-layout-text-window-reverse"></i> Form Canvas
+                    <span class="badge bg-secondary ms-2" id="fieldCount">0 fields</span>
+                </div>
+                <div id="stepTabsControls" style="display: none;">
+                    <button type="button" class="btn btn-sm btn-success" id="btnAddStepTab">
+                        <i class="bi bi-plus-circle"></i> Add Step
+                    </button>
+                </div>
+            </div>
+
+            <!-- Single-step canvas (default) -->
+            <div id="singleStepCanvas" class="panel-content">
+                <div id="formCanvas">
+                    <div class="empty-canvas">
+                        <i class="bi bi-inbox"></i>
+                        <p>Drag fields from the left palette to start building your form</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Multi-step canvas (shown when multi-step enabled) -->
+            <div id="multiStepCanvas" class="panel-content" style="display: none; overflow-y: auto; max-height: calc(100vh - 200px);">
+                <!-- Step cards will be added here by JavaScript -->
+                <div id="stepTabContent">
+                    <!-- Step canvases will be added here by JavaScript -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Preview Panel -->
+        <div class="preview-panel">
+            <div class="panel-header">
+                <i class="bi bi-eye"></i> Live Preview
+            </div>
+            <div class="preview-content" id="formPreview">
+                <p class="text-muted text-center">Preview will appear here</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Save Bar -->
+    <div class="save-bar">
+        <div class="container-fluid">
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-3">
+                    <span class="text-muted" id="saveStatus">Unsaved changes</span>
+                    <span class="shortcut-hints d-none d-md-flex">
+                        <span><kbd>Ctrl+S</kbd> Save</span>
+                        <span><kbd>Ctrl+Z</kbd> Undo</span>
+                        <span><kbd>Ctrl+Shift+Z</kbd> Redo</span>
+                    </span>
+                </div>
+                <div>
+                    <button class="btn btn-outline-secondary me-2" id="btnCancel">Cancel</button>
+                    {% if not is_new %}
+                    <button class="btn btn-outline-primary me-2" id="btnClone">
+                        <i class="bi bi-files"></i> Clone Form
+                    </button>
+                    {% endif %}
+                    <button class="btn btn-primary" id="btnSave">
+                        <i class="bi bi-save"></i> Save Form
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Field Property Modal -->
+    <div class="modal fade" id="fieldPropertyModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Field Properties</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                    <!-- Field properties form will be populated by JavaScript -->
+                    <div id="fieldPropertyForm"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="btnSaveField">Save Field</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Template Selection Modal -->
+    <div class="modal fade" id="templateSelectionModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-file-earmark-text"></i> Choose a Template</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted">Start with a pre-built template or create a blank form</p>
+                    <div id="templateList" class="row g-3">
+                        <!-- Templates will be loaded by JavaScript -->
+                        <div class="col-12 text-center py-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading templates...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-outline-primary" id="btnStartBlank">
+                        <i class="bi bi-file-earmark-plus"></i> Start with Blank Form
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Document Template Modal -->
+    <div class="modal fade" id="docTemplateModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-file-earmark-pdf"></i> Document Template</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="docTemplateId">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Template Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="docTemplateName" placeholder="e.g. Approval Certificate">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Page Size</label>
+                            <select class="form-select" id="docTemplatePageSize">
+                                <option value="letter">US Letter</option>
+                                <option value="a4">A4</option>
+                                <option value="legal">US Legal</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 d-flex align-items-end gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="docTemplateIsDefault">
+                                <label class="form-check-label" for="docTemplateIsDefault">Default</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="docTemplateIsActive" checked>
+                                <label class="form-check-label" for="docTemplateIsActive">Active</label>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">HTML Content</label>
+{% verbatim %}
+                            <textarea class="form-control font-monospace" id="docTemplateHtml" rows="16" placeholder="<!DOCTYPE html>
+<html>
+<head><style>body { font-family: sans-serif; }</style></head>
+<body>
+  <h1>{form_name}</h1>
+  <p>Dear {first_name},</p>
+  <p>Your submission #{submission_id} has been {status}.</p>
+  {% if approver_comments %}<p>Comments: {approver_comments}</p>{% endif %}
+</body>
+</html>"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <div class="alert alert-info small mb-0">
+                                <strong>Merge fields:</strong> Use <code>{field_name}</code> to insert submitted values.
+                                <strong>Conditionals:</strong> <code>{% if field_name %}...{% endif %}</code> to show sections only when a field has a value.
+                                <strong>System vars:</strong> <code>{form_name}</code>, <code>{submission_id}</code>, <code>{submitted_at}</code>, <code>{status}</code>, <code>{submitter_name}</code>.
+                                <br><strong>Security:</strong> Documents are served via secure download link only — never attached to emails.
+                            </div>
+                        </div>
+{% endverbatim %}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="btnSaveDocTemplate">
+                        <i class="bi bi-save"></i> Save Template
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Form Builder JavaScript -->
+    <script type="module">
+        import { FormBuilder } from "{% static 'django_forms_workflows/js/form-builder.js' %}";
+
+        // Initialize form builder with data
+        const formBuilderData = {
+            formId: {% if form_definition %}{{ form_definition.id }}{% else %}null{% endif %},
+            isNew: {{ is_new|yesno:"true,false" }},
+            fieldTypes: {{ field_types|safe }},
+            prefillSources: [
+                {% for source in prefill_sources %}
+                {
+                    id: {{ source.id }},
+                    name: "{{ source.name|escapejs }}",
+                    sourceType: "{{ source.source_type }}",
+                    description: "{{ source.description|escapejs }}"
+                }{% if not forloop.last %},{% endif %}
+                {% endfor %}
+            ],
+            sharedOptionLists: [
+                {% for ol in shared_option_lists %}
+                {
+                    id: {{ ol.id }},
+                    name: "{{ ol.name|escapejs }}",
+                    slug: "{{ ol.slug|escapejs }}",
+                    itemCount: {{ ol.items|length }}
+                }{% if not forloop.last %},{% endif %}
+                {% endfor %}
+            ],
+            paymentProviders: {{ payment_provider_choices_json|safe }},
+            apiUrls: {
+                sharedLists: "{% url 'admin:form_builder_api_shared_lists' %}",
+                sharedListSave: "{% url 'admin:form_builder_api_shared_list_save' %}",
+                {% if form_definition %}
+                load: "{% url 'admin:form_builder_api_load' form_definition.id %}",
+                clone: "{% url 'admin:form_builder_api_clone' form_definition.id %}",
+                docTemplates: "{% url 'admin:form_builder_api_doc_templates' form_definition.id %}",
+                docTemplateSave: "{% url 'admin:form_builder_api_doc_template_save' form_definition.id %}",
+                docTemplateDelete: "{% url 'admin:form_builder_api_doc_template_delete' form_definition.id 0 %}".replace('/0/', '/{id}/'),
+                {% else %}
+                load: null,
+                clone: null,
+                docTemplates: null,
+                docTemplateSave: null,
+                docTemplateDelete: null,
+                {% endif %}
+                save: "{% url 'admin:form_builder_api_save' %}",
+                preview: "{% url 'admin:form_builder_api_preview' %}",
+                templates: "{% url 'admin:form_builder_api_templates' %}",
+                loadTemplate: "{% url 'admin:form_builder_api_load_template' 0 %}".replace('/0/', '/{id}/')
+            },
+            csrfToken: "{{ csrf_token }}"
+        };
+        
+        // Initialize the form builder when DOM is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            window.formBuilder = new FormBuilder(formBuilderData);
+
+            // Handle clone button
+            const btnClone = document.getElementById('btnClone');
+            if (btnClone && formBuilderData.apiUrls.clone) {
+                btnClone.addEventListener('click', async function() {
+                    if (!confirm('Clone this form?\n\nThis will create a copy with all fields and settings.')) {
+                        return;
+                    }
+
+                    const originalText = this.innerHTML;
+                    this.disabled = true;
+                    this.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Cloning...';
+
+                    try {
+                        const response = await fetch(formBuilderData.apiUrls.clone, {
+                            method: 'POST',
+                            headers: {
+                                'X-CSRFToken': formBuilderData.csrfToken,
+                            }
+                        });
+
+                        const data = await response.json();
+
+                        if (data.success) {
+                            alert(data.message);
+                            // Redirect to edit the cloned form
+                            window.location.href = `/admin/django_forms_workflows/formdefinition/${data.form_id}/builder/`;
+                        } else {
+                            alert('Error cloning form: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (error) {
+                        console.error('Error cloning form:', error);
+                        alert('Failed to clone form: ' + error.message);
+                    } finally {
+                        this.disabled = false;
+                        this.innerHTML = originalText;
+                    }
+                });
+            }
+
+            // ── Document Template Manager ─────────────────────────
+            const docUrls = formBuilderData.apiUrls;
+            const docContainer = document.getElementById('docTemplatesContainer');
+            const docEmpty = document.getElementById('docTemplatesEmpty');
+            let docTemplates = [];
+
+            async function loadDocTemplates() {
+                if (!docUrls.docTemplates) { docEmpty.style.display = 'block'; return; }
+                try {
+                    const resp = await fetch(docUrls.docTemplates);
+                    const data = await resp.json();
+                    docTemplates = data.templates || [];
+                    renderDocTemplates();
+                } catch (e) { console.error('Error loading doc templates:', e); }
+            }
+
+            function renderDocTemplates() {
+                const list = docContainer.querySelectorAll('.doc-tpl-item');
+                list.forEach(el => el.remove());
+                docEmpty.style.display = docTemplates.length ? 'none' : 'block';
+                docTemplates.forEach(tpl => {
+                    const el = document.createElement('div');
+                    el.className = 'doc-tpl-item d-flex justify-content-between align-items-center border rounded p-2 mb-2';
+                    el.innerHTML = `
+                        <div>
+                            <strong>${tpl.name}</strong>
+                            ${tpl.is_default ? '<span class="badge bg-primary ms-1">Default</span>' : ''}
+                            ${!tpl.is_active ? '<span class="badge bg-secondary ms-1">Inactive</span>' : ''}
+                            <small class="text-muted ms-2">${tpl.page_size}</small>
+                        </div>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary" onclick="editDocTemplate(${tpl.id})"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteDocTemplate(${tpl.id}, '${tpl.name.replace(/'/g, "\\'")}')"><i class="bi bi-trash"></i></button>
+                        </div>`;
+                    docContainer.appendChild(el);
+                });
+            }
+
+            window.editDocTemplate = function(id) {
+                const tpl = docTemplates.find(t => t.id === id);
+                if (!tpl) return;
+                document.getElementById('docTemplateId').value = tpl.id;
+                document.getElementById('docTemplateName').value = tpl.name;
+                document.getElementById('docTemplateHtml').value = tpl.html_content;
+                document.getElementById('docTemplatePageSize').value = tpl.page_size;
+                document.getElementById('docTemplateIsDefault').checked = tpl.is_default;
+                document.getElementById('docTemplateIsActive').checked = tpl.is_active;
+                new bootstrap.Modal(document.getElementById('docTemplateModal')).show();
+            };
+
+            window.deleteDocTemplate = async function(id, name) {
+                if (!confirm(`Delete template "${name}"?`)) return;
+                try {
+                    await fetch(docUrls.docTemplateDelete.replace('{id}', id), {
+                        method: 'POST', headers: { 'X-CSRFToken': formBuilderData.csrfToken }
+                    });
+                    loadDocTemplates();
+                } catch (e) { alert('Error deleting template: ' + e.message); }
+            };
+
+            document.getElementById('btnAddDocTemplate').addEventListener('click', () => {
+                document.getElementById('docTemplateId').value = '';
+                document.getElementById('docTemplateName').value = '';
+                document.getElementById('docTemplateHtml').value = '';
+                document.getElementById('docTemplatePageSize').value = 'letter';
+                document.getElementById('docTemplateIsDefault').checked = false;
+                document.getElementById('docTemplateIsActive').checked = true;
+                new bootstrap.Modal(document.getElementById('docTemplateModal')).show();
+            });
+
+            document.getElementById('btnSaveDocTemplate').addEventListener('click', async () => {
+                const name = document.getElementById('docTemplateName').value.trim();
+                if (!name) { alert('Template name is required'); return; }
+                const payload = {
+                    id: document.getElementById('docTemplateId').value || null,
+                    name: name,
+                    html_content: document.getElementById('docTemplateHtml').value,
+                    page_size: document.getElementById('docTemplatePageSize').value,
+                    is_default: document.getElementById('docTemplateIsDefault').checked,
+                    is_active: document.getElementById('docTemplateIsActive').checked,
+                };
+                if (payload.id) payload.id = parseInt(payload.id);
+                try {
+                    const resp = await fetch(docUrls.docTemplateSave, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': formBuilderData.csrfToken },
+                        body: JSON.stringify(payload),
+                    });
+                    const data = await resp.json();
+                    if (data.success) {
+                        bootstrap.Modal.getInstance(document.getElementById('docTemplateModal')).hide();
+                        loadDocTemplates();
+                    } else { alert(data.error || 'Error saving template'); }
+                } catch (e) { alert('Error: ' + e.message); }
+            });
+
+            // Load templates on page load (only for existing forms)
+            if (formBuilderData.formId) loadDocTemplates();
+        });
+    </script>
+</body>
+</html>
+

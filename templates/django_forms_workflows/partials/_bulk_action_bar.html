@@ -1,0 +1,23 @@
+{# ── Floating Bottom Bulk Actions Drawer Partial ── #}
+{% if any_exportable or any_pdf_exportable %}
+<div class="bulk-drawer" id="bulkDrawer">
+  <div class="d-flex align-items-center gap-2">
+    <span class="badge bg-light text-dark fw-bold rounded-pill px-2.5 py-1" id="drawerSelectedBadge">0</span>
+    <span class="small text-white-50">items selected</span>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    {% if any_exportable %}
+    <button type="submit" form="bulkExportForm" class="btn btn-sm btn-success d-inline-flex align-items-center gap-1.5" id="drawerExportBtn">
+      <i class="bi bi-file-earmark-spreadsheet"></i>
+      <span>Export Excel</span>
+    </button>
+    {% endif %}
+    {% if any_pdf_exportable %}
+    <button type="button" class="btn btn-sm btn-danger d-inline-flex align-items-center gap-1.5" id="drawerPdfExportBtn" data-bs-toggle="modal" data-bs-target="#bulkPdfModeModal">
+      <i class="bi bi-file-earmark-pdf"></i>
+      <span>Export PDF</span>
+    </button>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

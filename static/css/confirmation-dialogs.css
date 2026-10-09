@@ -1,0 +1,117 @@
+/* ── Royal Workflow: Confirmation Dialogs Stylesheet ── */
+
+.confirm-dialog-wrapper,
+.max-w-lg {
+  max-width: 520px;
+  margin: 3rem auto;
+}
+
+.confirm-card {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.confirm-details-box {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.875rem 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.confirm-kv-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.35rem 0;
+  font-size: 13px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.confirm-kv-row:last-child {
+  border-bottom: none;
+}
+
+.confirm-kv-label {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.confirm-kv-value {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.confirm-consequence-note {
+  background-color: #fffbeb;
+  border: 1px solid #fef3c7;
+  border-radius: 8px;
+  padding: 0.875rem 1rem;
+  font-size: 13px;
+  color: #92400e;
+  line-height: 1.45;
+}
+
+.confirm-consequence-note.danger {
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.confirm-info-note {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.875rem 1rem;
+  font-size: 13px;
+  color: #334155;
+  line-height: 1.45;
+}
+
+.confirm-warning-note {
+  background-color: #fffbeb;
+  border: 1px solid #fef3c7;
+  border-radius: 8px;
+  padding: 0.875rem 1rem;
+  font-size: 13px;
+  color: #92400e;
+  line-height: 1.45;
+}
+
+/* Action Bar & Responsive Mobile Viewports */
+.confirm-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.confirm-actions-bar .btn {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 575.98px) {
+  .confirm-dialog-wrapper {
+    margin: 1.5rem auto !important;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+  .confirm-card {
+    padding: 1.25rem !important;
+  }
+  .confirm-actions-bar {
+    flex-direction: column-reverse !important;
+    align-items: stretch !important;
+    gap: 0.5rem !important;
+  }
+  .confirm-actions-bar .btn {
+    width: 100% !important;
+    min-height: 42px !important;
+  }
+}
+

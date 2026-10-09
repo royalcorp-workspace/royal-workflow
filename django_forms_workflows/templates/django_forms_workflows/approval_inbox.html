@@ -1,0 +1,622 @@
+{% extends 'django_forms_workflows/base.html' %}
+{% load forms_workflows_tags %}
+
+{% block title %}Approval Inbox - {{ site_name }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+<style>
+  /* Improve pagination styling */
+  .dataTables_wrapper .dataTables_paginate {
+    margin-top: 0 !important;
+  }
+
+  .dataTables_wrapper .dataTables_paginate .pagination {
+    margin-bottom: 0;
+  }
+
+  .dataTables_wrapper .dataTables_info {
+    padding-top: 0;
+  }
+
+  /* Clean up table controls */
+  .dataTables_wrapper .row {
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  /* Style the page length selector */
+  .form-select-sm {
+    border-color: #dee2e6;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  }
+
+  .form-select-sm:focus {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+  }
+
+  /* Improve search input styling */
+  #searchContainer .input-group-text {
+    border-right: 0;
+  }
+
+  #searchContainer input {
+    border-left: 0;
+  }
+
+  #searchContainer input:focus {
+    border-color: #dee2e6;
+    box-shadow: none;
+  }
+
+  #searchContainer .input-group:focus-within .input-group-text {
+    border-color: #86b7fe;
+  }
+
+  #searchContainer .input-group:focus-within input {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+  }
+
+  /* Column picker */
+  #colPickerDropdown .dropdown-menu { max-height: 340px; overflow-y: auto; }
+  #colPickerDropdown .form-check { white-space: nowrap; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-12">
+
+    {# ── Page header ── #}
+    <div class="d-flex align-items-center justify-content-between mb-3">
+      <h1 class="mb-0"><i class="bi bi-inbox"></i> Approvals</h1>
+    </div>
+
+    {# ── Tab navigation ── #}
+    <ul class="nav nav-tabs mb-3">
+      <li class="nav-item">
+        <a class="nav-link active" href="{% url 'forms_workflows:approval_inbox' %}">
+          <i class="bi bi-hourglass-split me-1"></i>Pending
+          <span class="badge bg-primary ms-1">{{ total_tasks_count }}</span>
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="{% url 'forms_workflows:completed_approvals' %}">
+          <i class="bi bi-archive me-1"></i>Approval History
+          <span class="badge bg-secondary ms-1">{{ completed_count }}</span>
+        </a>
+      </li>
+    </ul>
+
+    {# ── Role-scope filter pills (Mine / Reviewing / Overseeing) ── #}
+    {# Only renders when the user has reviewer or admin membership on at #}
+    {# least one form. Filters are exclusive: each pill replaces the    #}
+    {# query rather than narrowing within it.                            #}
+    {% if available_role_filters %}
+    <div class="mb-3 d-flex flex-wrap gap-2 align-items-center" role="toolbar" aria-label="Filter by role">
+      <span class="text-muted small fw-semibold me-1">Showing:</span>
+      <a href="?"
+         class="btn btn-sm {% if active_role == 'mine' %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+         {% if active_role == 'mine' %}aria-current="true"{% endif %}>
+        <i class="bi bi-person-check me-1"></i>Mine
+      </a>
+      {% if 'reviewing' in available_role_filters %}
+      <a href="?role=reviewing"
+         class="btn btn-sm {% if active_role == 'reviewing' %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+         {% if active_role == 'reviewing' %}aria-current="true"{% endif %}
+         title="Pending tasks on forms where you're a reviewer (read-only)">
+        <i class="bi bi-eye me-1"></i>Reviewing
+      </a>
+      {% endif %}
+      {% if 'overseeing' in available_role_filters %}
+      <a href="?role=overseeing"
+         class="btn btn-sm {% if active_role == 'overseeing' %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+         {% if active_role == 'overseeing' %}aria-current="true"{% endif %}
+         title="Pending tasks on forms where you're an admin (you can act on behalf of the assignee)">
+        <i class="bi bi-person-gear me-1"></i>Overseeing
+      </a>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="d-flex align-items-center justify-content-end mb-3">
+      <span class="text-muted small">
+        {% if active_form %}
+          Showing {{ tasks|length }} task{{ tasks|length|pluralize }} in
+          <strong>{{ active_category.name }}</strong> &rsaquo; <strong>{{ active_form.name }}</strong>
+          &mdash;
+          <a href="?{% if role_qs %}{{ role_qs }}&{% endif %}category={{ category_slug }}" class="text-decoration-none">clear form filter</a>
+        {% elif active_category %}
+          Showing {{ tasks|length }} task{{ tasks|length|pluralize }} in
+          <strong>{{ active_category.name }}</strong>
+          &mdash;
+          <a href="?{{ role_qs }}" class="text-decoration-none">clear filter</a>
+        {% else %}
+          {{ total_tasks_count }} pending task{{ total_tasks_count|pluralize }} total
+        {% endif %}
+      </span>
+    </div>
+
+    {# ── Category filter bar ── #}
+    {% if category_counts %}
+    <div class="mb-3 d-flex align-items-center justify-content-between" role="toolbar" aria-label="Filter by category">
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <span class="text-muted small fw-semibold me-1">Filter:</span>
+
+        <a href="?{{ role_qs }}"
+           class="btn btn-sm {% if not category_slug %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+           {% if not category_slug %}aria-current="true"{% endif %}>
+          All
+          <span class="badge {% if not category_slug %}bg-light text-dark{% else %}bg-secondary{% endif %} ms-1">
+            {{ total_tasks_count }}
+          </span>
+        </a>
+
+        {% for cat in category_counts %}
+        <a href="?{% if role_qs %}{{ role_qs }}&{% endif %}category={{ cat.slug }}"
+           class="btn btn-sm {% if category_slug == cat.slug %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+           {% if category_slug == cat.slug %}aria-current="true"{% endif %}>
+          {% if cat.icon %}<i class="bi {{ cat.icon }} me-1"></i>{% endif %}
+          {{ cat.name }}
+          <span class="badge {% if category_slug == cat.slug %}bg-light text-dark{% else %}bg-secondary{% endif %} ms-1">
+            {{ cat.count }}
+          </span>
+        </a>
+        {% endfor %}
+      </div>
+      {% if not form_counts %}<div id="searchContainer"></div>{% endif %}
+    </div>
+    {% endif %}
+
+    {# ── Form filter bar with search (only when a category is active) ── #}
+    {% if form_counts %}
+    <div class="mb-3 d-flex flex-wrap gap-2 align-items-center justify-content-between ps-3 border-start border-2"
+         role="toolbar" aria-label="Filter by form">
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <span class="text-muted small fw-semibold me-1">Form:</span>
+
+        <a href="?{% if role_qs %}{{ role_qs }}&{% endif %}category={{ category_slug }}"
+           class="btn btn-sm {% if not form_slug %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+           {% if not form_slug %}aria-current="true"{% endif %}>
+          All
+        </a>
+
+        {% for form_item in form_counts %}
+        <a href="?{% if role_qs %}{{ role_qs }}&{% endif %}category={{ category_slug }}&form={{ form_item.slug }}"
+           class="btn btn-sm {% if form_slug == form_item.slug %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+           {% if form_slug == form_item.slug %}aria-current="true"{% endif %}>
+          {{ form_item.name }}
+          <span class="badge {% if form_slug == form_item.slug %}bg-light text-dark{% else %}bg-secondary{% endif %} ms-1">
+            {{ form_item.count }}
+          </span>
+        </a>
+        {% endfor %}
+      </div>
+      <div id="searchContainer"></div>
+    </div>
+    {% elif not category_counts %}
+    {# ── Search bar when no filters exist at all ── #}
+    <div class="mb-3 d-flex justify-content-end">
+      <div id="searchContainer"></div>
+    </div>
+    {% endif %}
+
+    {# ── Hidden PDF bulk export form (populated by JS before submit) ── #}
+    {% if any_pdf_exportable %}
+    <form id="bulkPdfExportForm" method="post" action="{% url 'forms_workflows:bulk_export_submissions_pdf' %}" data-download-spinner="Generating PDF…" class="d-none">
+      {% csrf_token %}
+      <div id="pdfSubmissionIds"></div>
+    </form>
+
+    {# ── PDF export mode selection modal ── #}
+    <div class="modal fade" id="bulkPdfModeModal" tabindex="-1" aria-labelledby="bulkPdfModeModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+          <div class="modal-header border-0 pb-0">
+            <h5 class="modal-title fw-bold" id="bulkPdfModeModalLabel">
+              <i class="bi bi-file-earmark-pdf text-danger me-2"></i>Choose PDF Export Format
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body pt-2 pb-4">
+            <p class="text-muted mb-4">Select how you'd like to download the selected submissions as PDF files:</p>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <button type="button" class="btn btn-outline-danger w-100 h-100 p-4 text-start rounded-3 border-2"
+                        onclick="submitBulkPdfMerged()" data-bs-dismiss="modal">
+                  <div class="d-flex align-items-start gap-3">
+                    <i class="bi bi-file-earmark-pdf fs-2 text-danger flex-shrink-0 mt-1"></i>
+                    <div>
+                      <div class="fw-bold fs-6 mb-1">Single Merged PDF</div>
+                      <small class="text-muted">All selected submissions combined into one PDF document, separated by page breaks. Great for printing or sharing as one file.</small>
+                    </div>
+                  </div>
+                </button>
+              </div>
+              <div class="col-md-6">
+                <button type="button" class="btn btn-outline-primary w-100 h-100 p-4 text-start rounded-3 border-2"
+                        onclick="submitBulkPdfSequential()" data-bs-dismiss="modal">
+                  <div class="d-flex align-items-start gap-3">
+                    <i class="bi bi-files fs-2 text-primary flex-shrink-0 mt-1"></i>
+                    <div>
+                      <div class="fw-bold fs-6 mb-1">Individual PDFs</div>
+                      <small class="text-muted">Each submission downloaded as its own separate PDF file. Ideal when you need individual files for archiving or distribution.</small>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Bulk export form (Excel + PDF buttons) ── #}
+    {% if any_exportable or any_pdf_exportable %}
+    <form id="bulkExportForm" method="post" action="{% url 'forms_workflows:bulk_export_submissions' %}" data-download-spinner="Generating Excel…">
+      {% csrf_token %}
+      <div class="mb-2 d-flex align-items-center gap-2">
+        {% if any_exportable %}
+        <button type="submit" class="btn btn-sm btn-success" id="exportBtn" disabled>
+          <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export Selected to Excel
+        </button>
+        {% endif %}
+        {% if any_pdf_exportable %}
+        <button type="button" class="btn btn-sm btn-danger" id="pdfExportBtn" disabled
+                data-bs-toggle="modal" data-bs-target="#bulkPdfModeModal">
+          <i class="bi bi-file-earmark-pdf me-1"></i>Export Selected to PDF
+        </button>
+        {% endif %}
+        <span class="text-muted small" id="selectedCount"></span>
+      </div>
+    {% endif %}
+
+    {# ── Task table — body populated via server-side AJAX ── #}
+    <div class="table-responsive">
+      <table class="table table-hover" id="approvalsTable">
+        <thead>
+          <tr>
+            {% if any_exportable or any_pdf_exportable %}<th class="text-center" style="width:40px;"><input type="checkbox" id="selectAll" title="Select all on page"></th>{% endif %}
+            {% if not category_slug %}<th>Category</th>{% endif %}
+            <th>Actions</th>
+            <th>Form</th>
+            <th>Submitter</th>
+            <th>Step</th>
+            <th>Assigned</th>
+            <th>Submitted</th>
+            {% for field in form_fields %}<th class="extra-form-col" data-field="{{ field.field_name }}">{{ field.field_label }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    {% if any_exportable or any_pdf_exportable %}
+    </form>
+    {% endif %}
+
+  </div>
+</div>
+
+{% if form_fields %}
+{# Column picker dropdown – hidden in-place; JS moves it next to the search box #}
+<div class="dropdown d-none" id="colPickerDropdown">
+  <button class="btn btn-sm btn-outline-secondary" type="button"
+          data-bs-toggle="dropdown" data-bs-auto-close="outside"
+          aria-expanded="false" title="Customize columns">
+    <i class="bi bi-gear-fill"></i>
+  </button>
+  <div class="dropdown-menu dropdown-menu-end p-3" style="min-width: 220px;">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <span class="fw-semibold small text-muted">Additional columns</span>
+      <button type="button" class="btn btn-link btn-sm p-0 small text-decoration-none" id="colToggleAll">Select all</button>
+    </div>
+    <hr class="my-1">
+    {% for field in form_fields %}
+    <div class="form-check">
+      <input class="form-check-input col-toggle-chk" type="checkbox"
+             id="col_chk_{{ field.field_name }}"
+             data-field="{{ field.field_name }}">
+      <label class="form-check-label small" for="col_chk_{{ field.field_name }}">
+        {{ field.field_label }}
+      </label>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha384-1H217gwSVyLSIfaLxHbE7dRb3v4mYCKbpQvzx0cegeju1MVsGrX5xXxAvs/HgeFs" crossorigin="anonymous"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js" integrity="sha384-k5vbMeKHbxEZ0AEBTSdR7UjAgWCcUfrS8c0c5b2AfIh7olfhNkyCZYwOfzOQhauK" crossorigin="anonymous"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js" integrity="sha384-PgPBH0hy6DTJwu7pTf6bkRqPlf/+pjUBExpr/eIfzszlGYFlF9Wi9VTAJODPhgCO" crossorigin="anonymous"></script>
+<script>
+$(document).ready(function() {
+    if ($('#approvalsTable').length) {
+        var LS_PAGE_KEY = 'approvals_page_len';
+        var savedPageLen = parseInt(localStorage.getItem(LS_PAGE_KEY)) || 25;
+
+        // Build colIndexMap BEFORE DataTables init so column picker works.
+        var colIndexMap = {};
+        var extraColTargets = [];
+        $('#approvalsTable thead th.extra-form-col').each(function() {
+            var idx = $(this).index();
+            extraColTargets.push(idx);
+            colIndexMap[$(this).data('field')] = idx;
+        });
+
+        var colDefs = [
+            { orderable: false, targets: {% if any_exportable or any_pdf_exportable %}{% if not category_slug %}2{% else %}1{% endif %}{% else %}{% if not category_slug %}1{% else %}0{% endif %}{% endif %} }
+            {% if any_exportable or any_pdf_exportable %}, { orderable: false, targets: 0 }{% endif %}
+        ];
+        if (extraColTargets.length) {
+            colDefs.push({ visible: false, targets: extraColTargets, orderable: false });
+        }
+
+        var table = $('#approvalsTable').DataTable({
+            serverSide: true,
+            processing: true,
+            searchDelay: 400,
+            ajax: {
+                url: '{% url "forms_workflows:approval_inbox_ajax" %}',
+                type: 'POST',
+                data: function(d) {
+                    d.csrfmiddlewaretoken = '{{ csrf_token }}';
+                    {% if category_slug %}d.category = '{{ category_slug|escapejs }}';{% endif %}
+                    {% if form_slug %}d.form = '{{ form_slug|escapejs }}';{% endif %}
+                    {% if active_role and active_role != 'mine' %}d.role = '{{ active_role|escapejs }}';{% endif %}
+                }
+            },
+            columns: [
+                {% if any_exportable or any_pdf_exportable %}{ data: 'checkbox', name: '', orderable: false, className: 'text-center' },{% endif %}
+                {% if not category_slug %}{ data: 'category', name: 'submission__form_definition__category__name' },{% endif %}
+                { data: 'actions', name: '', orderable: false },
+                { data: 'form', name: 'submission__form_definition__name' },
+                { data: 'submitter', name: 'submission__submitter__last_name' },
+                { data: 'step_num', name: 'workflow_stage__name' },
+                { data: 'assigned', name: 'assigned_group__name' },
+                { data: 'submitted_at', name: 'submission__submitted_at' },
+                {% for field in form_fields %}{ data: '{{ field.field_name }}', name: '', orderable: false },{% endfor %}
+            ],
+            order: [[{{ default_sort_col }}, 'desc']],
+            columnDefs: colDefs,
+            pageLength: savedPageLen,
+            dom: '<"row"<"col-sm-12"tr>><"row mt-3"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
+            language: {
+                search: '',
+                searchPlaceholder: 'Search approvals...',
+                emptyTable: 'No pending approvals found.',
+                zeroRecords: 'No matching approvals found.',
+                info: 'Showing _START_ to _END_ of _TOTAL_ approvals',
+                infoEmpty: 'Showing 0 to 0 of 0 approvals',
+                infoFiltered: '(filtered from _MAX_ total approvals)',
+                processing: '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-secondary" role="status"></div> Loading…</div>',
+                paginate: {
+                    first: '&laquo;',
+                    last: '&raquo;',
+                    next: '&rsaquo;',
+                    previous: '&lsaquo;'
+                }
+            }
+        });
+
+        // Build search box
+        var searchBox = $('<div class="input-group input-group-sm" style="max-width: 300px;">' +
+            '<span class="input-group-text bg-white"><i class="bi bi-search"></i></span>' +
+            '<input type="search" class="form-control form-control-sm" placeholder="Search approvals..." aria-label="Search">' +
+            '</div>');
+        searchBox.find('input').on('keyup change', function() {
+            table.search(this.value).draw();
+        });
+
+        {% if form_fields %}
+        // ── Column picker ──────────────────────────────────────────────────
+        var LS_KEY = 'approvals_col_prefs_{{ form_slug }}';
+        var $picker = $('#colPickerDropdown');
+
+        // Place search + gear together in the search container, then
+        // reveal the picker (d-none removed AFTER move to avoid layout
+        // flash / horizontal scrollbar from the out-of-grid element).
+        var $controls = $('<div class="d-flex align-items-center gap-2"></div>');
+        $controls.append(searchBox).append($picker);
+        $('#searchContainer').append($controls);
+        $picker.removeClass('d-none');
+
+        // colIndexMap was built above BEFORE DataTables init.
+
+        // Restore saved column preferences from localStorage
+        var savedCols = [];
+        try {
+            var stored = localStorage.getItem(LS_KEY);
+            if (stored) savedCols = JSON.parse(stored);
+        } catch(e) { savedCols = []; }
+
+        // Restore visibility without triggering a separate AJAX redraw per column.
+        function adjustTable() {
+            table.table().node().style.width = '';
+            table.columns.adjust().draw(false);
+        }
+
+        var anyRestored = false;
+        savedCols.forEach(function(fieldName) {
+            if (colIndexMap[fieldName] !== undefined) {
+                table.column(colIndexMap[fieldName]).visible(true, false);
+                $('#col_chk_' + fieldName).prop('checked', true);
+                anyRestored = true;
+            }
+        });
+        if (anyRestored) {
+            adjustTable();
+        }
+
+        // Update the Select all / Deselect all link label to reflect current state
+        function updateToggleAllLabel() {
+            var total = $('.col-toggle-chk').length;
+            var checked = $('.col-toggle-chk:checked').length;
+            $('#colToggleAll').text(checked === total ? 'Deselect all' : 'Select all');
+        }
+        updateToggleAllLabel();
+
+        // Select all / Deselect all – suppress per-column redraws; do one at the end.
+        $('#colToggleAll').on('click', function() {
+            var allChecked = $('.col-toggle-chk:checked').length === $('.col-toggle-chk').length;
+            $('.col-toggle-chk').each(function() {
+                var fieldName = $(this).data('field');
+                if (colIndexMap[fieldName] !== undefined) {
+                    $(this).prop('checked', !allChecked);
+                    table.column(colIndexMap[fieldName]).visible(!allChecked, false);
+                }
+            });
+            adjustTable();
+            var visible = !allChecked
+                ? $('.col-toggle-chk').map(function() { return $(this).data('field'); }).get()
+                : [];
+            try { localStorage.setItem(LS_KEY, JSON.stringify(visible)); } catch(e) {}
+            updateToggleAllLabel();
+        });
+
+        // Toggle individual column visibility and persist preference
+        $(document).on('change', '.col-toggle-chk', function() {
+            var fieldName = $(this).data('field');
+            if (colIndexMap[fieldName] !== undefined) {
+                table.column(colIndexMap[fieldName]).visible(this.checked, false);
+                adjustTable();
+            }
+            var visible = [];
+            $('.col-toggle-chk:checked').each(function() { visible.push($(this).data('field')); });
+            try { localStorage.setItem(LS_KEY, JSON.stringify(visible)); } catch(e) {}
+            updateToggleAllLabel();
+        });
+        {% else %}
+        $('#searchContainer').append(searchBox);
+        {% endif %}
+
+        // Add page length selector to bottom with improved styling
+        var lengthSelect = $('<div class="d-flex align-items-center gap-2 mb-2">' +
+            '<label class="mb-0 text-muted small">Show:</label>' +
+            '<select class="form-select form-select-sm" style="width: auto;">' +
+            '<option value="10">10</option>' +
+            '<option value="25">25</option>' +
+            '<option value="50">50</option>' +
+            '<option value="100">100</option>' +
+            '<option value="250">250</option>' +
+            '<option value="500">500</option>' +
+            '<option value="1000">1000</option>' +
+            '</select>' +
+            '<span class="text-muted small">entries</span>' +
+            '</div>');
+
+        // Sync dropdown to the restored page length (localStorage or default)
+        lengthSelect.find('select').val(savedPageLen);
+
+        lengthSelect.find('select').on('change', function() {
+            var len = parseInt($(this).val());
+            table.page.len(len).draw();
+            try { localStorage.setItem(LS_PAGE_KEY, len); } catch(e) {}
+        });
+        $('.dataTables_info').parent().prepend(lengthSelect);
+    }
+
+    // ── Bulk export checkbox handling ──
+    {% if any_exportable or any_pdf_exportable %}
+    function updateExportBtn() {
+        var checked = $('.export-check:checked').length;
+        $('#exportBtn').prop('disabled', checked === 0);
+        $('#pdfExportBtn').prop('disabled', checked === 0);
+        $('#selectedCount').text(checked > 0 ? checked + ' selected' : '');
+    }
+
+    $('#selectAll').on('change', function() {
+        var checked = $(this).prop('checked');
+        if (typeof table !== 'undefined') {
+            table.$('.export-check').prop('checked', checked);
+        } else {
+            $('.export-check').prop('checked', checked);
+        }
+        $('.export-check').trigger('change');
+    });
+
+    $(document).on('change', '.export-check', function() {
+        updateExportBtn();
+        if (!$(this).prop('checked')) {
+            $('#selectAll').prop('checked', false);
+        }
+    });
+    {% endif %}
+
+});
+
+// ── Bulk PDF export helpers (called from the mode-selection modal) ──
+{% if any_pdf_exportable %}
+var _bulkPdfSingleUrl = "{% url 'forms_workflows:submission_pdf' 0 %}";
+
+function submitBulkPdfMerged() {
+    // Existing behaviour: all submissions combined into one PDF.
+    var pdfForm = document.getElementById('bulkPdfExportForm');
+    var container = document.getElementById('pdfSubmissionIds');
+    container.innerHTML = '';
+    document.querySelectorAll('.export-check:checked').forEach(function(cb) {
+        var inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = 'submission_ids';
+        inp.value = cb.value;
+        container.appendChild(inp);
+    });
+    pdfForm.requestSubmit();
+}
+
+function submitBulkPdfSequential() {
+    // New behaviour: download each submission as its own PDF file, one at a time.
+    var ids = [];
+    document.querySelectorAll('.export-check:checked').forEach(function(cb) {
+        ids.push(cb.value);
+    });
+    if (!ids.length) return;
+
+    var total = ids.length;
+    var index = 0;
+    var overlay = document.getElementById('loadingOverlay');
+    var msg = document.getElementById('loadingMessage');
+    if (overlay) overlay.classList.add('active');
+
+    function downloadNext() {
+        if (index >= ids.length) {
+            if (overlay) overlay.classList.remove('active');
+            return;
+        }
+        var id = ids[index++];
+        if (msg) msg.textContent = 'Downloading PDF ' + index + ' of ' + total + '\u2026';
+        var url = _bulkPdfSingleUrl.replace('/0/', '/' + id + '/');
+        fetch(url)
+            .then(function(resp) {
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                var cd = resp.headers.get('Content-Disposition') || '';
+                var m = cd.match(/filename[^;=\n]*=["']?([^"';\n]+)["']?/i);
+                var filename = (m && m[1]) ? m[1].trim() : ('submission_' + id + '.pdf');
+                return resp.blob().then(function(blob) { return { blob: blob, name: filename }; });
+            })
+            .then(function(data) {
+                var blobUrl = URL.createObjectURL(data.blob);
+                var a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = data.name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 10000);
+                setTimeout(downloadNext, 800);
+            })
+            .catch(function(err) {
+                console.error('PDF download failed for submission ' + id + ':', err);
+                setTimeout(downloadNext, 800);
+            });
+    }
+    downloadNext();
+}
+{% endif %}
+</script>
+{% endblock %}

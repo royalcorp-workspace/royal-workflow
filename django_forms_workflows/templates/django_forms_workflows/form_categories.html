@@ -1,0 +1,70 @@
+{% comment %}
+  Inclusion template for render_form_categories template tag.
+
+  Context variables
+  -----------------
+  grouped_forms   : list of category-tree nodes produced by _build_grouped_forms().
+                    Each node is a dict: {"category": FormCategory|None, "forms": [...], "children": [...], "total_count": int}
+  form_url_name   : URL name for the "Fill Out Form" link
+{% endcomment %}
+
+{% if grouped_forms %}
+<div class="accordion" id="formCategoriesAccordion">
+  {% for node in grouped_forms %}
+    {% if node.category %}
+      {# ---- Named category (rendered recursively via _category_node.html) ---- #}
+      {% include "django_forms_workflows/_category_node.html" with node=node depth=0 %}
+    {% else %}
+      {# ---- Uncategorised / "General" bucket ---- #}
+      <div class="accordion-item mb-2 border rounded shadow-sm"
+           data-category-slug="general">
+
+        <h2 class="accordion-header" id="heading-general">
+          <button
+            class="accordion-button fw-semibold"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#cat-general"
+            aria-expanded="true"
+            aria-controls="cat-general">
+            <i class="bi bi-collection me-2"></i>
+            General
+            <span class="badge bg-secondary ms-2 fw-normal">{{ node.total_count }}</span>
+          </button>
+        </h2>
+
+        <div id="cat-general"
+             class="accordion-collapse collapse show"
+             aria-labelledby="heading-general">
+          <div class="accordion-body">
+            <div class="row">
+              {% for form in node.forms %}
+                <div class="col-md-6 col-lg-4 mb-3">
+                  <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body">
+                      <h5 class="card-title">{{ form.name }}</h5>
+                      <p class="card-text text-muted small">{{ form.description|striptags|truncatewords:20 }}</p>
+                    </div>
+                    <div class="card-footer bg-transparent border-0 pt-0">
+                      <a href="{% url form_url_name form.slug %}" class="btn btn-primary btn-sm">
+                        <i class="bi bi-pencil-square"></i> Fill Out Form
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info">
+  <i class="bi bi-info-circle"></i>
+  No forms are currently available. Please check back later or contact your administrator.
+</div>
+{% endif %}
+
+

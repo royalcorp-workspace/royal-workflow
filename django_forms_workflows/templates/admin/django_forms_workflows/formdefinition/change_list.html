@@ -1,0 +1,100 @@
+{% extends "admin/change_list.html" %}
+{% load static %}
+
+{% block extrahead %}
+{{ block.super }}
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+<style>
+    .clone-form-btn {
+        display: inline-block;
+        padding: 5px 10px;
+        background-color: #6c757d;
+        color: white;
+        text-decoration: none;
+        border-radius: 4px;
+        font-size: 13px;
+    }
+    .clone-form-btn:hover {
+        background-color: #5a6268;
+        color: white;
+    }
+    .sync-btn {
+        display: inline-block;
+        padding: 5px 10px;
+        color: white;
+        text-decoration: none;
+        border-radius: 4px;
+        font-size: 13px;
+        margin-left: 4px;
+    }
+    .sync-btn-pull { background-color: #17a2b8; }
+    .sync-btn-pull:hover { background-color: #138496; color: white; }
+    .sync-btn-push { background-color: #6610f2; }
+    .sync-btn-push:hover { background-color: #520dc2; color: white; }
+    .sync-btn-import { background-color: #28a745; }
+    .sync-btn-import:hover { background-color: #1e7e34; color: white; }
+</style>
+{% endblock %}
+
+{% block object-tools-items %}
+{{ block.super }}
+<li>
+    <a href="{% url 'admin:formdefinition_sync_pull' %}" class="sync-btn sync-btn-pull" title="Pull forms from another instance">
+        ↓ Pull from Remote
+    </a>
+</li>
+<li>
+    <a href="{% url 'admin:formdefinition_sync_push' %}" class="sync-btn sync-btn-push" title="Push forms to another instance">
+        ↑ Push to Remote
+    </a>
+</li>
+<li>
+    <a href="{% url 'admin:formdefinition_sync_import' %}" class="sync-btn sync-btn-import" title="Import forms from a JSON file">
+        ⤴ Import JSON
+    </a>
+</li>
+{% endblock %}
+
+{% block footer %}
+{{ block.super }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle clone button clicks
+    document.querySelectorAll('.clone-form-btn').forEach(btn => {
+        btn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            
+            const formId = this.dataset.formId;
+            const formName = this.dataset.formName;
+            
+            if (!confirm(`Clone form "${formName}"?\n\nThis will create a copy with all fields and settings.`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/admin/django_forms_workflows/formdefinition/builder/api/clone/${formId}/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(data.message);
+                    // Redirect to edit the cloned form
+                    window.location.href = `/admin/django_forms_workflows/formdefinition/${data.form_id}/change/`;
+                } else {
+                    alert('Error cloning form: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error cloning form:', error);
+                alert('Failed to clone form: ' + error.message);
+            }
+        });
+    });
+});
+</script>
+{% endblock %}
+

@@ -1,0 +1,43 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Local Databases
+*.sqlite3
+db.sqlite3
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+
+# Media & User Uploads
+media/
+uploads/
+
+# Collected Static Files
+staticfiles/
+
+# IDE & Editor Configurations
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS System Files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs & Diagnostics
+*.log
+*.pot
+*.bak

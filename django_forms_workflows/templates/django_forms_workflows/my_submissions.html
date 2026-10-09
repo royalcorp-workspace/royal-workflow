@@ -1,0 +1,410 @@
+{% extends 'django_forms_workflows/base.html' %}
+
+{% block title %}My Submissions - {{ site_name }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+<style>
+  /* Improve pagination styling */
+  .dataTables_wrapper .dataTables_paginate {
+    margin-top: 0 !important;
+  }
+
+  .dataTables_wrapper .dataTables_paginate .pagination {
+    margin-bottom: 0;
+  }
+
+  .dataTables_wrapper .dataTables_info {
+    padding-top: 0;
+  }
+
+  /* Clean up table controls */
+  .dataTables_wrapper .row {
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  /* Style the page length selector */
+  .form-select-sm {
+    border-color: #dee2e6;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  }
+
+  .form-select-sm:focus {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+  }
+
+  /* Improve search input styling */
+  #searchContainer .input-group-text {
+    border-right: 0;
+  }
+
+  #searchContainer input {
+    border-left: 0;
+  }
+
+  #searchContainer input:focus {
+    border-color: #dee2e6;
+    box-shadow: none;
+  }
+
+  #searchContainer .input-group:focus-within .input-group-text {
+    border-color: #86b7fe;
+  }
+
+  #searchContainer .input-group:focus-within input {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-12">
+
+    {# ── Page header ── #}
+    <div class="d-flex align-items-center justify-content-between mb-3">
+      <h1 class="mb-0"><i class="bi bi-file-earmark-check"></i> My Submissions</h1>
+      <span class="text-muted small">
+        {% if active_form %}
+          Filtered to <strong>{{ active_category.name }}</strong> &rsaquo; <strong>{{ active_form.name }}</strong>
+          &mdash;
+          <a href="?category={{ category_slug }}" class="text-decoration-none">clear form filter</a>
+        {% elif active_category %}
+          Filtered to <strong>{{ active_category.name }}</strong>
+          &mdash;
+          <a href="?" class="text-decoration-none">clear filter</a>
+        {% else %}
+          {{ total_submissions_count }} submission{{ total_submissions_count|pluralize }} total
+        {% endif %}
+      </span>
+    </div>
+
+    {# ── Category filter bar ── #}
+    {% if category_counts %}
+    <div class="mb-3 d-flex align-items-center justify-content-between" role="toolbar" aria-label="Filter by category">
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <span class="text-muted small fw-semibold me-1">Filter:</span>
+
+        {# All pill #}
+        <a href="?"
+           class="btn btn-sm {% if not category_slug %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+           {% if not category_slug %}aria-current="true"{% endif %}>
+          All
+          <span class="badge {% if not category_slug %}bg-light text-dark{% else %}bg-secondary{% endif %} ms-1">
+            {{ total_submissions_count }}
+          </span>
+        </a>
+
+        {# Per-category pills #}
+        {% for cat in category_counts %}
+        <a href="?category={{ cat.slug }}"
+           class="btn btn-sm {% if category_slug == cat.slug %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+           {% if category_slug == cat.slug %}aria-current="true"{% endif %}>
+          {% if cat.icon %}<i class="bi {{ cat.icon }} me-1"></i>{% endif %}
+          {{ cat.name }}
+          <span class="badge {% if category_slug == cat.slug %}bg-light text-dark{% else %}bg-secondary{% endif %} ms-1">
+            {{ cat.count }}
+          </span>
+        </a>
+        {% endfor %}
+      </div>
+      {% if not form_counts %}<div id="searchContainer"></div>{% endif %}
+    </div>
+    {% endif %}
+
+    {# ── Form filter bar with search (only when a category is active) ── #}
+    {% if form_counts %}
+    <div class="mb-3 d-flex flex-wrap gap-2 align-items-center justify-content-between ps-3 border-start border-2"
+         role="toolbar" aria-label="Filter by form">
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <span class="text-muted small fw-semibold me-1">Form:</span>
+
+        {# All-forms pill #}
+        <a href="?category={{ category_slug }}"
+           class="btn btn-sm {% if not form_slug %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+           {% if not form_slug %}aria-current="true"{% endif %}>
+          All
+        </a>
+
+        {# Per-form pills #}
+        {% for form_item in form_counts %}
+        <a href="?category={{ category_slug }}&form={{ form_item.slug }}"
+           class="btn btn-sm {% if form_slug == form_item.slug %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+           {% if form_slug == form_item.slug %}aria-current="true"{% endif %}>
+          {{ form_item.name }}
+          <span class="badge {% if form_slug == form_item.slug %}bg-light text-dark{% else %}bg-secondary{% endif %} ms-1">
+            {{ form_item.count }}
+          </span>
+        </a>
+        {% endfor %}
+      </div>
+      <div id="searchContainer"></div>
+    </div>
+    {% elif not category_counts %}
+    {# ── Search bar when no filters exist at all ── #}
+    <div class="mb-3 d-flex justify-content-end">
+      <div id="searchContainer"></div>
+    </div>
+    {% endif %}
+
+    {# ── Bulk export form (wraps the table) ── #}
+    {% if any_exportable %}
+    <form id="bulkExportForm" method="post" action="{% url 'forms_workflows:bulk_export_submissions' %}" data-download-spinner="Generating Excel…">
+      {% csrf_token %}
+      <div class="mb-2 d-flex align-items-center gap-2">
+        <button type="submit" class="btn btn-sm btn-success" id="exportBtn" disabled>
+          <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export Selected to Excel
+        </button>
+        <span class="text-muted small" id="selectedCount"></span>
+      </div>
+    {% endif %}
+
+    {# ── Submissions table — body populated via server-side AJAX ── #}
+    <div class="table-responsive">
+      <table class="table table-hover" id="submissionsTable">
+        <thead>
+          <tr>
+            {% if any_exportable %}<th class="text-center" style="width:40px;"><input type="checkbox" id="selectAll" title="Select all on page"></th>{% endif %}
+            <th>ID</th>
+            <th>Actions</th>
+            {% if not category_slug %}<th>Category</th>{% endif %}
+            <th>Form</th>
+            <th>Status</th>
+            <th>Submitted</th>
+            {% for field in form_fields %}<th class="extra-form-col" data-field="{{ field.field_name }}">{{ field.field_label }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    {% if any_exportable %}
+    </form>
+    {% endif %}
+
+  </div>
+</div>
+
+{% if form_fields %}
+{# Column picker dropdown – hidden in-place; JS moves it next to the search box #}
+<div class="dropdown d-none" id="colPickerDropdown">
+  <button class="btn btn-sm btn-outline-secondary" type="button"
+          data-bs-toggle="dropdown" data-bs-auto-close="outside"
+          aria-expanded="false" title="Customize columns">
+    <i class="bi bi-gear-fill"></i>
+  </button>
+  <div class="dropdown-menu dropdown-menu-end p-3" style="min-width: 220px;">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <span class="fw-semibold small text-muted">Additional columns</span>
+      <button type="button" class="btn btn-link btn-sm p-0 small text-decoration-none" id="colToggleAll">Select all</button>
+    </div>
+    <hr class="my-1">
+    {% for field in form_fields %}
+    <div class="form-check">
+      <input class="form-check-input col-toggle-chk" type="checkbox"
+             id="col_chk_{{ field.field_name }}"
+             data-field="{{ field.field_name }}">
+      <label class="form-check-label small" for="col_chk_{{ field.field_name }}">
+        {{ field.field_label }}
+      </label>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha384-1H217gwSVyLSIfaLxHbE7dRb3v4mYCKbpQvzx0cegeju1MVsGrX5xXxAvs/HgeFs" crossorigin="anonymous"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js" integrity="sha384-k5vbMeKHbxEZ0AEBTSdR7UjAgWCcUfrS8c0c5b2AfIh7olfhNkyCZYwOfzOQhauK" crossorigin="anonymous"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js" integrity="sha384-PgPBH0hy6DTJwu7pTf6bkRqPlf/+pjUBExpr/eIfzszlGYFlF9Wi9VTAJODPhgCO" crossorigin="anonymous"></script>
+<script>
+$(document).ready(function() {
+    if ($('#submissionsTable').length) {
+        var LS_PAGE_KEY = 'submissions_page_len';
+        var savedPageLen = parseInt(localStorage.getItem(LS_PAGE_KEY)) || 25;
+
+        // Build colIndexMap BEFORE DataTables init so column picker can reference indices.
+        var colIndexMap = {};
+        var extraColTargets = [];
+        $('#submissionsTable thead th.extra-form-col').each(function() {
+            var idx = $(this).index();
+            extraColTargets.push(idx);
+            colIndexMap[$(this).data('field')] = idx;
+        });
+
+        var colDefs = [
+            {% if any_exportable %}{ orderable: false, targets: 0 },{% endif %}
+        ];
+        if (extraColTargets.length) {
+            colDefs.push({ visible: false, targets: extraColTargets, orderable: false });
+        }
+
+        var table = $('#submissionsTable').DataTable({
+            serverSide: true,
+            processing: true,
+            searchDelay: 400,
+            ajax: {
+                url: '{% url "forms_workflows:my_submissions_ajax" %}',
+                type: 'POST',
+                data: function(d) {
+                    d.csrfmiddlewaretoken = '{{ csrf_token }}';
+                    {% if category_slug %}d.category = '{{ category_slug|escapejs }}';{% endif %}
+                    {% if form_slug %}d.form = '{{ form_slug|escapejs }}';{% endif %}
+                }
+            },
+            columns: [
+                {% if any_exportable %}{ data: 'checkbox', name: '', orderable: false, className: 'text-center' },{% endif %}
+                { data: 'id', name: '', orderable: false },
+                { data: 'actions', name: '', orderable: false },
+                {% if not category_slug %}{ data: 'category', name: 'form_definition__category__name' },{% endif %}
+                { data: 'form', name: 'form_definition__name' },
+                { data: 'status', name: 'status', orderable: false },
+                { data: 'submitted_at', name: 'submitted_at' },
+                {% for field in form_fields %}{ data: '{{ field.field_name }}', name: '', orderable: false },{% endfor %}
+            ],
+            order: [[{{ default_sort_col }}, 'desc']],
+            columnDefs: colDefs,
+            pageLength: savedPageLen,
+            dom: '<"row"<"col-sm-12"tr>><"row mt-3"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
+            language: {
+                search: '',
+                searchPlaceholder: 'Search submissions...',
+                emptyTable: 'No submissions found.',
+                zeroRecords: 'No matching submissions found.',
+                info: 'Showing _START_ to _END_ of _TOTAL_ submissions',
+                infoEmpty: 'Showing 0 to 0 of 0 submissions',
+                infoFiltered: '(filtered from _MAX_ total submissions)',
+                processing: '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-secondary" role="status"></div> Loading…</div>',
+                paginate: {
+                    first: '&laquo;',
+                    last: '&raquo;',
+                    next: '&rsaquo;',
+                    previous: '&lsaquo;'
+                }
+            }
+        });
+
+        // Search box
+        var searchBox = $('<div class="input-group input-group-sm" style="max-width: 300px;">' +
+            '<span class="input-group-text bg-white"><i class="bi bi-search"></i></span>' +
+            '<input type="search" class="form-control form-control-sm" placeholder="Search submissions..." aria-label="Search">' +
+            '</div>');
+
+        searchBox.find('input').on('keyup change', function() {
+            table.search(this.value).draw();
+        });
+
+        {% if form_fields %}
+        // ── Column picker ──────────────────────────────────────────────────
+        var LS_KEY = 'my_submissions_col_prefs_{{ form_slug }}';
+        var $picker = $('#colPickerDropdown');
+
+        var $controls = $('<div class="d-flex align-items-center gap-2"></div>');
+        $controls.append(searchBox).append($picker);
+        $('#searchContainer').append($controls);
+        $picker.removeClass('d-none');
+
+        function adjustTable() {
+            table.table().node().style.width = '';
+            table.columns.adjust().draw(false);
+        }
+
+        // Restore saved column preferences from localStorage
+        var savedCols = [];
+        try { var stored = localStorage.getItem(LS_KEY); if (stored) savedCols = JSON.parse(stored); } catch(e) {}
+
+        var anyRestored = false;
+        savedCols.forEach(function(fieldName) {
+            if (colIndexMap[fieldName] !== undefined) {
+                table.column(colIndexMap[fieldName]).visible(true, false);
+                $('#col_chk_' + fieldName).prop('checked', true);
+                anyRestored = true;
+            }
+        });
+        if (anyRestored) { adjustTable(); }
+
+        // Toggle individual column
+        $('.col-toggle-chk').on('change', function() {
+            var fieldName = $(this).data('field');
+            var idx = colIndexMap[fieldName];
+            if (idx !== undefined) {
+                table.column(idx).visible($(this).is(':checked'), false);
+                adjustTable();
+            }
+            var visible = $('.col-toggle-chk:checked').map(function() { return $(this).data('field'); }).get();
+            try { localStorage.setItem(LS_KEY, JSON.stringify(visible)); } catch(e) {}
+        });
+
+        // Select all / deselect all
+        var $toggleAll = $('#colToggleAll');
+        $toggleAll.on('click', function() {
+            var anyUnchecked = $('.col-toggle-chk:not(:checked)').length > 0;
+            $('.col-toggle-chk').prop('checked', anyUnchecked).trigger('change');
+            $toggleAll.text(anyUnchecked ? 'Deselect all' : 'Select all');
+        });
+        {% else %}
+        $('#searchContainer').append(searchBox);
+        {% endif %}
+
+        // Add page length selector to bottom with improved styling
+        var lengthSelect = $('<div class="d-flex align-items-center gap-2 mb-2">' +
+            '<label class="mb-0 text-muted small">Show:</label>' +
+            '<select class="form-select form-select-sm" style="width: auto;">' +
+            '<option value="10">10</option>' +
+            '<option value="25">25</option>' +
+            '<option value="50">50</option>' +
+            '<option value="100">100</option>' +
+            '<option value="250">250</option>' +
+            '<option value="500">500</option>' +
+            '<option value="1000">1000</option>' +
+            '</select>' +
+            '<span class="text-muted small">entries</span>' +
+            '</div>');
+
+        // Sync dropdown to the restored page length (localStorage or default)
+        lengthSelect.find('select').val(savedPageLen);
+
+        lengthSelect.find('select').on('change', function() {
+            var len = parseInt($(this).val());
+            table.page.len(len).draw();
+            try { localStorage.setItem(LS_PAGE_KEY, len); } catch(e) {}
+        });
+
+        $('.dataTables_info').parent().prepend(lengthSelect);
+    }
+
+    // Bulk export checkbox handling
+    {% if any_exportable %}
+    function updateExportBtn() {
+        var checked = $('.export-check:checked').length;
+        $('#exportBtn').prop('disabled', checked === 0);
+        $('#selectedCount').text(checked > 0 ? checked + ' selected' : '');
+    }
+
+    $('#selectAll').on('change', function() {
+        var checked = $(this).prop('checked');
+        if (table) {
+            table.$('.export-check').prop('checked', checked);
+        } else {
+            $('.export-check').prop('checked', checked);
+        }
+        // Trigger change on visible checkboxes so the delegated handler fires
+        // consistently with individual checkbox behaviour (updates count, button, layout).
+        $('.export-check').trigger('change');
+    });
+
+    $(document).on('change', '.export-check', function() {
+        updateExportBtn();
+        if (!$(this).prop('checked')) {
+            $('#selectAll').prop('checked', false);
+        }
+    });
+    {% endif %}
+});
+</script>
+{% endblock %}
+

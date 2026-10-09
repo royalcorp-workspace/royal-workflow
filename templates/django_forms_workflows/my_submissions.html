@@ -1,0 +1,164 @@
+{% extends 'django_forms_workflows/base.html' %}
+{% load static %}
+{% load forms_workflows_tags %}
+
+{% block title %}My Submissions - {{ site_name }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+<link rel="stylesheet" href="{% static 'css/enterprise-tables.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="submissions-grid-wrapper">
+
+  {# ── Header ── #}
+  <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2 mb-3">
+    <div>
+      <h1 class="h4 fw-bold text-dark mb-1">My Submissions</h1>
+      <p class="text-muted small mb-0">Track, manage, and review all your submitted requests and drafts.</p>
+    </div>
+    {% if any_exportable %}
+    <div class="d-flex align-items-center gap-2">
+      <button type="submit" form="bulkExportForm" class="btn btn-sm btn-outline-success d-inline-flex align-items-center gap-1.5" id="exportBtn" disabled>
+        <i class="bi bi-file-earmark-spreadsheet"></i>
+        <span>Export Excel</span>
+      </button>
+      <span class="text-muted small fw-medium" id="selectedCount"></span>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Unified Toolbar ── #}
+  <div class="submissions-toolbar">
+    <div class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center justify-content-between gap-3 submissions-toolbar-main">
+      
+      {# Status Filter Pills on the Left #}
+      <div class="filter-group-row mb-0" role="toolbar" aria-label="Status filters">
+        <span class="filter-label">Status:</span>
+        <div class="filter-pills-scroll">
+          <a href="?status=all{% if category_slug %}&category={{ category_slug }}{% endif %}"
+             class="status-filter-pill {% if not status_filter or status_filter == 'all' %}active{% endif %}">
+            <span>All</span>
+            <span class="badge">{{ status_counts.all }}</span>
+          </a>
+          <a href="?status=draft{% if category_slug %}&category={{ category_slug }}{% endif %}"
+             class="status-filter-pill {% if status_filter == 'draft' %}active{% endif %}">
+            <span>Draft</span>
+            <span class="badge">{{ status_counts.draft }}</span>
+          </a>
+          <a href="?status=pending{% if category_slug %}&category={{ category_slug }}{% endif %}"
+             class="status-filter-pill {% if status_filter == 'pending' %}active{% endif %}">
+            <span>Pending</span>
+            <span class="badge">{{ status_counts.pending }}</span>
+          </a>
+          <a href="?status=approved{% if category_slug %}&category={{ category_slug }}{% endif %}"
+             class="status-filter-pill {% if status_filter == 'approved' %}active{% endif %}">
+            <span>Approved</span>
+            <span class="badge">{{ status_counts.approved }}</span>
+          </a>
+          <a href="?status=rejected{% if category_slug %}&category={{ category_slug }}{% endif %}"
+             class="status-filter-pill {% if status_filter == 'rejected' %}active{% endif %}">
+            <span>Rejected</span>
+            <span class="badge">{{ status_counts.rejected }}</span>
+          </a>
+        </div>
+      </div>
+
+      {# Search Input on the Right #}
+      <div class="d-flex align-items-center gap-2" id="toolbarRightSlot">
+        <div class="input-group submissions-search-group" id="searchContainer">
+          <span class="input-group-text"><i class="bi bi-search"></i></span>
+          <input type="search" class="form-control" id="customSearchInput" placeholder="Search submissions..." aria-label="Search submissions">
+        </div>
+        <div id="colPickerSlot"></div>
+      </div>
+    </div>
+
+    {# Optional Category Filter Pills underneath if available #}
+    {% if category_counts %}
+    <div class="filter-group-row mt-3 mb-0" role="toolbar" aria-label="Category filters">
+      <span class="filter-label"><i class="bi bi-funnel me-1"></i>Category:</span>
+      <div class="filter-pills-scroll">
+        <a href="?{% if status_filter %}status={{ status_filter }}{% endif %}"
+           class="status-filter-pill {% if not category_slug %}active{% endif %}">
+          <span>All Categories</span>
+        </a>
+        {% for cat in category_counts %}
+        <a href="?category={{ cat.slug }}{% if status_filter %}&status={{ status_filter }}{% endif %}"
+           class="status-filter-pill {% if category_slug == cat.slug %}active{% endif %}">
+          {% if cat.icon %}<i class="bi {{ cat.icon }} me-1"></i>{% endif %}
+          <span>{{ cat.name }}</span>
+          <span class="badge">{{ cat.count }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Bulk Export Form wrapper ── #}
+  {% if any_exportable %}
+  <form id="bulkExportForm" method="post" action="{% url 'forms_workflows:bulk_export_submissions' %}" data-download-spinner="Generating Excel…">
+    {% csrf_token %}
+  {% endif %}
+
+  {# ── Table Container ── #}
+  <div class="submissions-table-container mb-4">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0" id="submissionsTable"
+             data-ajax-url="{% url 'forms_workflows:my_submissions_ajax' %}"
+             data-csrf-token="{{ csrf_token }}"
+             data-has-export="{% if any_exportable %}true{% else %}false{% endif %}"
+             data-category="{{ category_slug|default:'' }}"
+             data-form="{{ form_slug|default:'' }}"
+             data-status="{% if status_filter and status_filter != 'all' %}{{ status_filter }}{% endif %}"
+             data-page-length-key="my_submissions_page_len">
+        <thead>
+          <tr>
+            {% if any_exportable %}
+            <th class="text-center" style="width: 44px;">
+              <input type="checkbox" id="selectAll" class="form-check-input" title="Select all on page">
+            </th>
+            {% endif %}
+            <th style="width: 100px;">Ref / ID</th>
+            <th style="min-width: 250px;">Form Name</th>
+            <th style="min-width: 240px;">Current Step / Assignee</th>
+            <th style="width: 150px;">Status</th>
+            <th style="width: 160px;">Submitted Date</th>
+            {% for field in form_fields %}
+            <th class="extra-form-col" data-field="{{ field.field_name }}">{{ field.field_label }}</th>
+            {% endfor %}
+            <th class="text-end" style="min-width: 160px; width: 170px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    {# ── Aligned Footer ── #}
+    <div class="submissions-footer" id="customTableFooter">
+      <div id="footerInfoSlot" class="d-flex align-items-center"></div>
+      <div id="footerControlsSlot" class="d-flex align-items-center gap-3"></div>
+    </div>
+  </div>
+
+  {% if any_exportable %}
+  </form>
+  {% endif %}
+
+  {# ── Bulk Action Drawer (Partial) ── #}
+  {% include 'django_forms_workflows/partials/_bulk_action_bar.html' %}
+
+</div>
+
+{# ── Dynamic Column Visibility Dropdown (Partial) ── #}
+{% include 'django_forms_workflows/partials/_column_visibility.html' %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha384-1H217gwSVyLSIfaLxHbE7dRb3v4mYCKbpQvzx0cegeju1MVsGrX5xXxAvs/HgeFs" crossorigin="anonymous"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js" integrity="sha384-k5vbMeKHbxEZ0AEBTSdR7UjAgWCcUfrS8c0c5b2AfIh7olfhNkyCZYwOfzOQhauK" crossorigin="anonymous"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js" integrity="sha384-PgPBH0hy6DTJwu7pTf6bkRqPlf/+pjUBExpr/eIfzszlGYFlF9Wi9VTAJODPhgCO" crossorigin="anonymous"></script>
+<script src="{% static 'js/submissions-datatable.js' %}"></script>
+{% endblock %}

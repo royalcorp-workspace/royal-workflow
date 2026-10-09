@@ -1,0 +1,366 @@
+{% load forms_workflows_tags %}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Submission #{{ submission.id }} – {{ form_def.name }}</title>
+    <style>
+        /* ── Page setup ── */
+        @page {
+            size: letter;
+            margin: 1.5cm 1cm 2cm 1cm;
+            @bottom-left {
+                content: "{{ form_def.name }} — Submission #{{ submission.id }}";
+                font-family: Helvetica, Arial, sans-serif;
+                font-size: 7pt;
+                color: #888;
+                border-top: 1px solid #65bc7b;
+                padding-top: 4pt;
+            }
+            @bottom-right {
+                content: "Page " counter(page) " of " counter(pages) " · Generated {% now "N j, Y" %}";
+                font-family: Helvetica, Arial, sans-serif;
+                font-size: 7pt;
+                color: #888;
+                border-top: 1px solid #65bc7b;
+                padding-top: 4pt;
+            }
+        }
+
+        body {
+            font-family: Helvetica, Arial, sans-serif;
+            font-size: 9pt;
+            color: #1a1a1a;
+            line-height: 1.3;
+        }
+
+        /* ── Header ── */
+        .header-table { width: 100%; border-collapse: collapse; margin-bottom: 6pt; }
+        .header-left {
+            background-color: #1a3a52;
+            color: #fff;
+            padding: 8pt 12pt;
+            vertical-align: middle;
+            width: 70%;
+        }
+        .header-left .form-title { font-size: 14pt; font-weight: bold; }
+        .header-right {
+            background-color: #65bc7b;
+            color: #fff;
+            padding: 8pt 10pt;
+            vertical-align: middle;
+            text-align: right;
+            font-size: 7.5pt;
+            line-height: 1.6;
+        }
+        .header-right .org-name { font-size: 8.5pt; font-weight: bold; }
+
+        /* ── Meta strip ── */
+        .meta-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 8pt;
+            table-layout: fixed;
+        }
+        .meta-table td { padding: 3pt 6pt; border: 1px solid #d0d0d0; vertical-align: top; }
+        .meta-label { font-weight: bold; color: #444; background-color: #f2f2f2; width: 13%; }
+        .meta-value { width: 37%; }
+        .status-approved  { color: #2a7a3b; font-weight: bold; text-transform: uppercase; }
+        .status-rejected  { color: #b00020; font-weight: bold; text-transform: uppercase; }
+        .status-submitted { color: #1a5fa8; font-weight: bold; text-transform: uppercase; }
+        .status-default   { color: #555;    font-weight: bold; text-transform: uppercase; }
+
+        /* ── Data table ──
+           Fixed 4-column grid:  label(22%) | value(28%) | label(22%) | value(28%)
+           All row types use the same 4 columns with colspan as needed.
+           WeasyPrint respects table-layout:fixed + colgroup widths correctly.
+        ── */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+        .col-label { width: 22%; }
+        .col-value  { width: 28%; }
+
+        .data-table th {
+            background-color: #f0f0f0;
+            font-weight: bold;
+            font-size: 8pt;
+            color: #333;
+            border: 1px solid #d0d0d0;
+            padding: 3pt 6pt;
+            text-align: left;
+            vertical-align: top;
+        }
+        .data-table .field-help {
+            font-size: 7pt;
+            font-style: italic;
+            color: #666;
+            font-weight: normal;
+            margin-top: 1pt;
+        }
+        .data-table td {
+            font-size: 9pt;
+            border: 1px solid #d0d0d0;
+            padding: 3pt 6pt;
+            vertical-align: top;
+        }
+
+        /* Prevent rows from being sliced across page boundaries */
+        .data-table tr {
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        /* Section rows always keep their own colour regardless of position.
+           Also keep each section header with the content that follows it —
+           prevents the ugly case where a header renders at the bottom of one
+           page and its fields start on the next. */
+        .section-row td {
+            background-color: #e8f0f7 !important;
+            color: #1a3a52;
+            font-weight: bold;
+            font-size: 8pt;
+            letter-spacing: 0.3pt;
+            text-transform: uppercase;
+            padding: 4pt 6pt;
+            border: 1px solid #b8ccd8;
+        }
+        .section-row {
+            page-break-after: avoid;
+            break-after: avoid;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        /* Approval-step section header */
+        .step-section-header {
+            background-color: #1a3a52;
+            color: #fff;
+            font-weight: bold;
+            font-size: 9pt;
+            padding: 5pt 8pt;
+            margin-top: 12pt;
+            border: 1px solid #0f2538;
+            display: table;
+            width: 100%;
+            box-sizing: border-box;
+            /* Keep the step header with its meta line / following table */
+            page-break-after: avoid;
+            break-after: avoid;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        .step-section-header .step-name-cell { display: table-cell; vertical-align: middle; }
+        .step-section-header .step-badge-cell {
+            display: table-cell;
+            vertical-align: middle;
+            text-align: right;
+            white-space: nowrap;
+        }
+        /* In-table section divider inside the step's field table. Must NOT
+           share display:table / width:100% from the outer header class —
+           those break <td colspan> and collapse the row to the first column. */
+        .step-field-section {
+            background-color: #1a3a52;
+            color: #fff;
+            font-weight: bold;
+            font-size: 9pt;
+            padding: 4pt 8pt;
+        }
+        /* Section divider row inside the step table: stay attached to the
+           following field row rather than orphaning at the bottom of a page. */
+        tr.step-field-section-row {
+            page-break-after: avoid;
+            break-after: avoid;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        /* Meta line (completed by / date / comment) belongs with its header
+           and the following table. */
+        .step-meta {
+            page-break-before: avoid;
+            break-before: avoid;
+            page-break-after: avoid;
+            break-after: avoid;
+        }
+        .step-badge {
+            display: inline-block;
+            padding: 2pt 7pt;
+            border-radius: 3pt;
+            font-size: 7.5pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.4pt;
+        }
+        .step-badge-approved { background-color: #2a7a3b; color: #fff; }
+        .step-badge-rejected { background-color: #b00020; color: #fff; }
+        .step-meta {
+            font-size: 8pt;
+            color: #333;
+            margin: 3pt 0 5pt 0;
+            padding: 3pt 8pt;
+            background-color: #f5f5f5;
+            border: 1px solid #d0d0d0;
+            border-top: none;
+        }
+        .step-meta-by { font-weight: bold; }
+        .step-meta-comment { font-style: italic; margin-top: 2pt; }
+    </style>
+</head>
+<body>
+
+<!-- Header -->
+<table class="header-table">
+    <tr>
+        <td class="header-left"><span class="form-title">{{ form_def.name }}</span></td>
+        <td class="header-right">
+            <span class="org-name">Saint Joseph's College of Maine</span><br>
+            Submission #{{ submission.id }}
+        </td>
+    </tr>
+</table>
+
+<!-- Meta strip -->
+<table class="meta-table">
+    <colgroup>
+        <col class="meta-label" style="width:13%">
+        <col class="meta-value" style="width:37%">
+        <col class="meta-label" style="width:13%">
+        <col class="meta-value" style="width:37%">
+    </colgroup>
+    <tr>
+        <td class="meta-label">Submitted by</td>
+        <td class="meta-value">{% if submission.submitter %}{{ submission.submitter.get_full_name|default:submission.submitter.username }}{% else %}Anonymous{% endif %}</td>
+        <td class="meta-label">Date</td>
+        <td class="meta-value">{{ submission.submitted_at|date:"N j, Y \a\t g:i a" }}</td>
+    </tr>
+    <tr>
+        <td class="meta-label">Status</td>
+        <td class="meta-value">
+            {% if submission.status == "approved" %}<span class="status-approved">{{ submission.get_status_display }}</span>
+            {% elif submission.status == "rejected" %}<span class="status-rejected">{{ submission.get_status_display }}</span>
+            {% elif submission.status == "submitted" %}<span class="status-submitted">{{ submission.get_status_display }}</span>
+            {% else %}<span class="status-default">{{ submission.get_status_display }}</span>{% endif %}
+        </td>
+        <td class="meta-label">Completed</td>
+        <td class="meta-value">{% if submission.completed_at %}{{ submission.completed_at|date:"N j, Y \a\t g:i a" }}{% else %}&mdash;{% endif %}</td>
+    </tr>
+</table>
+
+<!-- Form data -->
+<table class="data-table">
+    <colgroup>
+        <col class="col-label">
+        <col class="col-value">
+        <col class="col-label">
+        <col class="col-value">
+    </colgroup>
+    <tbody>
+    {% for row in pdf_rows %}
+
+    {% if row.type == 'section' %}
+    <tr class="section-row">
+        <td colspan="4">{{ row.label }}</td>
+    </tr>
+
+    {% elif row.type == 'display_text' %}
+    <tr>
+        <td colspan="4" style="background: #f8f9fa; padding: 8pt;">{{ row.value|render_markdown }}</td>
+    </tr>
+
+    {% elif row.type == 'pair' %}
+    <tr>
+        <th>{{ row.fields.0.label }}{% if row.fields.0.help_text %}<div class="field-help">{{ row.fields.0.help_text }}</div>{% endif %}</th>
+        <td>{% with v=row.fields.0.value %}{% if v|is_signature %}<img src="{{ v }}" style="max-width:200px;max-height:80px;">{% elif v.filename %}{{ v.filename }}{% if v.size %} ({{ v.size|filesizeformat }}){% endif %}{% else %}{{ v }}{% endif %}{% endwith %}</td>
+        <th>{{ row.fields.1.label }}{% if row.fields.1.help_text %}<div class="field-help">{{ row.fields.1.help_text }}</div>{% endif %}</th>
+        <td>{% with v=row.fields.1.value %}{% if v|is_signature %}<img src="{{ v }}" style="max-width:200px;max-height:80px;">{% elif v.filename %}{{ v.filename }}{% if v.size %} ({{ v.size|filesizeformat }}){% endif %}{% else %}{{ v }}{% endif %}{% endwith %}</td>
+    </tr>
+
+    {% elif row.type == 'triple' %}
+    {% for field in row.fields %}
+    <tr>
+        <th>{{ field.label }}{% if field.help_text %}<div class="field-help">{{ field.help_text }}</div>{% endif %}</th>
+        <td colspan="3">{% with v=field.value %}{% if v|is_signature %}<img src="{{ v }}" style="max-width:360px;max-height:120px;">{% elif v.filename %}{{ v.filename }}{% if v.size %} ({{ v.size|filesizeformat }}){% endif %}{% else %}{{ v }}{% endif %}{% endwith %}</td>
+    </tr>
+    {% endfor %}
+
+    {% else %}
+    <tr>
+        <th>{{ row.fields.0.label }}{% if row.fields.0.help_text %}<div class="field-help">{{ row.fields.0.help_text }}</div>{% endif %}</th>
+        <td colspan="3">{% with v=row.fields.0.value %}{% if v|is_signature %}<img src="{{ v }}" style="max-width:360px;max-height:120px;">{% elif v.filename %}{{ v.filename }}{% if v.size %} ({{ v.size|filesizeformat }}){% endif %}{% else %}{{ v }}{% endif %}{% endwith %}</td>
+    </tr>
+    {% endif %}
+
+    {% empty %}
+    <tr><td colspan="4">No form data available.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+{% if resolved_attachments %}
+<h3 style="margin-top: 20px;">Attachments</h3>
+<ul>
+{% for att in resolved_attachments %}
+    <li>{{ att.filename }}</li>
+{% endfor %}
+</ul>
+{% endif %}
+
+{% if not hide_approval_history %}
+{% for section in approval_step_sections %}
+<div class="step-section-header">
+    <span class="step-name-cell">{{ section.display_label|default:section.step_name }}</span>
+    <span class="step-badge-cell">
+        {% if section.status == "approved" %}
+        <span class="step-badge step-badge-approved">&#10003; Approved</span>
+        {% elif section.status == "rejected" %}
+        <span class="step-badge step-badge-rejected">&#10007; Rejected</span>
+        {% endif %}
+    </span>
+</div>
+<p class="step-meta">
+    {% if section.completed_by %}<span class="step-meta-by">{{ section.completed_by }}</span>{% if section.is_surrogate %} <span class="step-meta-by">(on behalf of {{ section.assigned_to }})</span>{% endif %}{% if section.completed_at %} &middot; {{ section.completed_at|date:"N j, Y \a\t g:i a" }}{% endif %}{% endif %}
+    {% if section.comments %}<br><span class="step-meta-comment">&#8220;{{ section.comments }}&#8221;</span>{% endif %}
+</p>
+{% if section.fields %}
+<table class="data-table">
+    <colgroup>
+        <col class="col-label"><col class="col-value">
+        <col class="col-label"><col class="col-value">
+    </colgroup>
+    <tbody>
+    {% for row in section.fields %}
+    {% if row.type == 'section' %}
+    <tr class="step-field-section-row">
+        <td colspan="4" class="step-field-section">{{ row.label }}</td>
+    </tr>
+    {% elif row.type == 'display_text' %}
+    <tr>
+        <td colspan="4" style="background: #f8f9fa; padding: 8pt;">{{ row.value|render_markdown }}</td>
+    </tr>
+    {% elif row.type == 'pair' %}
+    <tr>
+        <th>{{ row.fields.0.label }}{% if row.fields.0.help_text %}<div class="field-help">{{ row.fields.0.help_text }}</div>{% endif %}</th>
+        <td>{% with v=row.fields.0.value %}{% if v|is_signature %}<img src="{{ v }}" style="max-width:200px;max-height:80px;">{% elif v.filename %}{{ v.filename }}{% else %}{{ v }}{% endif %}{% endwith %}</td>
+        <th>{{ row.fields.1.label }}{% if row.fields.1.help_text %}<div class="field-help">{{ row.fields.1.help_text }}</div>{% endif %}</th>
+        <td>{% with v=row.fields.1.value %}{% if v|is_signature %}<img src="{{ v }}" style="max-width:200px;max-height:80px;">{% elif v.filename %}{{ v.filename }}{% else %}{{ v }}{% endif %}{% endwith %}</td>
+    </tr>
+    {% else %}
+    {% for field in row.fields %}
+    <tr>
+        <th>{{ field.label }}{% if field.help_text %}<div class="field-help">{{ field.help_text }}</div>{% endif %}</th>
+        <td colspan="3">{% with v=field.value %}{% if v|is_signature %}<img src="{{ v }}" style="max-width:360px;max-height:120px;">{% elif v.filename %}{{ v.filename }}{% else %}{{ v }}{% endif %}{% endwith %}</td>
+    </tr>
+    {% endfor %}
+    {% endif %}
+    {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% endfor %}
+{% endif %}
+
+</body>
+</html>

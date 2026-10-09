@@ -1,0 +1,471 @@
+{% extends 'django_forms_workflows/base.html' %}
+{% load static %}
+{% load crispy_forms_tags %}
+{% load forms_workflows_tags %}
+
+{% block title %}Review Submission #{{ submission.id }} — {{ submission.form_definition.name }} - {{ site_name }}{% endblock %}
+
+{% block topbar_title %}
+  <a href="{% url 'forms_workflows:approval_inbox' %}" class="text-decoration-none text-muted">Approvals</a>
+  <span class="crumb-sep">/</span>
+  <span class="crumb-current">Review #{{ task.id }}</span>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'django_forms_workflows/css/forms.css' %}">
+<link rel="stylesheet" href="{% static 'css/enterprise-tables.css' %}">
+<link rel="stylesheet" href="{% static 'css/document-review.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="review-wrapper py-3">
+
+  {# ── Permission / Informational Alerts ── #}
+  {% if read_only %}
+    <div class="alert alert-secondary d-flex align-items-center gap-2 mb-3 py-2.5">
+      <i class="bi bi-eye text-secondary fs-5"></i>
+      <div class="small">
+        <strong>View-only mode:</strong> You have reviewer permissions on this form. You can examine the submission data and audit history, but decision actions are reserved for assigned approvers.
+      </div>
+    </div>
+  {% endif %}
+
+  {% if acting_on_behalf %}
+    <div class="alert alert-warning d-flex align-items-center gap-2 mb-3 py-2.5">
+      <i class="bi bi-shield-check text-warning fs-5"></i>
+      <div class="small">
+        <strong>Acting on behalf of {{ assignee_display|default:"the assignee" }}:</strong> Your decision will be recorded under your account, with the original assignee logged in the audit trail.
+      </div>
+    </div>
+  {% endif %}
+
+  {% if sub_workflow_instance %}
+    <div class="alert alert-info d-flex align-items-center gap-2 mb-3 py-2.5">
+      <i class="bi bi-diagram-2 text-info fs-5"></i>
+      <div class="small">
+        <strong>{{ sub_workflow_instance.label }}:</strong> Approval requested for parent
+        <a href="{% url 'forms_workflows:submission_detail' submission.id %}" class="fw-semibold text-decoration-none">Submission #{{ submission.id }}</a>.
+      </div>
+    </div>
+  {% endif %}
+
+  {# ── Document Title Bar & Meta ── #}
+  <div class="doc-card mb-3">
+    <div class="doc-title-bar">
+      <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+        <div>
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+            <h1 class="h4 fw-bold text-dark mb-0">Review Submission #{{ submission.id }}</h1>
+            <span class="badge-status-pill badge-status-{{ submission.status }}">
+              {{ submission.get_status_display }}
+            </span>
+          </div>
+          <div class="text-secondary small d-flex align-items-center gap-2 flex-wrap">
+            <span class="fw-semibold text-dark">{{ submission.form_definition.name }}</span>
+            <span>&bull;</span>
+            <span>Submitted by <strong>{% if submission.submitter %}{{ submission.submitter.get_full_name|default:submission.submitter.username }}{% else %}Anonymous{% endif %}</strong></span>
+            <span>&bull;</span>
+            <span><i class="bi bi-calendar3 me-1"></i>{{ submission.created_at|date:"Y-m-d H:i" }}</span>
+          </div>
+        </div>
+
+        {# Right side actions #}
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          {% if allow_reassign %}
+            <a href="{% url 'forms_workflows:reassign_task' task.id %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1.5">
+              <i class="bi bi-person-lines-fill"></i>
+              <span>Reassign Task</span>
+            </a>
+          {% endif %}
+
+          {% with pdf=submission.form_definition.pdf_generation %}
+            {% if pdf != 'none' %}
+              <a href="{% url 'forms_workflows:submission_pdf' submission.id %}" target="_blank" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1.5">
+                <i class="bi bi-file-earmark-pdf"></i>
+                <span>Download PDF</span>
+              </a>
+            {% endif %}
+          {% endwith %}
+
+          <a href="{% url 'forms_workflows:approval_inbox' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1.5">
+            <i class="bi bi-arrow-left"></i>
+            <span>Back to Inbox</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Approval Pipeline Stepper (Linear Progress Tracker) ── #}
+  {% if workflow_mode == "staged" and approval_stages %}
+    <div class="doc-card mb-3">
+      <div class="doc-card-header">
+        <span class="doc-card-title">Approval Pipeline</span>
+        <span class="text-muted small">Stage {{ current_stage_number|default:1 }} of {{ total_stages }}</span>
+      </div>
+      <div class="doc-card-body">
+        <div class="pipeline-stepper">
+          {% for stage in approval_stages %}
+            <div class="pipeline-step-item {% if stage.is_completed %}is-completed{% elif stage.is_current %}is-current{% elif stage.is_rejected %}is-rejected{% endif %}">
+              <div>
+                <div class="d-flex align-items-center justify-content-between gap-1 mb-1.5">
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="step-index-badge {% if stage.is_completed %}badge-completed{% elif stage.is_current %}badge-current{% elif stage.is_rejected %}badge-rejected{% else %}badge-pending{% endif %}">
+                      {% if stage.is_completed %}
+                        <i class="bi bi-check-lg"></i>
+                      {% elif stage.is_rejected %}
+                        <i class="bi bi-x-lg"></i>
+                      {% else %}
+                        {{ stage.number }}
+                      {% endif %}
+                    </span>
+                    <span class="fw-semibold text-dark small">{{ stage.name }}</span>
+                  </div>
+
+                  {% if stage.is_current %}
+                    <span class="badge bg-dark text-white text-uppercase" style="font-size: 9.5px; letter-spacing: 0.04em;">Active Stage</span>
+                  {% elif stage.is_completed %}
+                    <span class="badge bg-secondary-subtle text-secondary text-uppercase" style="font-size: 9.5px;">Approved</span>
+                  {% elif stage.is_rejected %}
+                    <span class="badge bg-danger-subtle text-danger text-uppercase" style="font-size: 9.5px;">Rejected</span>
+                  {% endif %}
+                </div>
+
+                <div class="text-muted" style="font-size: 11.5px; line-height: 1.4;">
+                  {% if stage.is_completed %}
+                    {% with last_task=stage.tasks|last %}
+                      {% if last_task and last_task.completed_at %}
+                        <span>Completed {{ last_task.completed_at|date:"M d, H:i" }}</span>
+                      {% else %}
+                        <span>Stage Completed</span>
+                      {% endif %}
+                    {% endwith %}
+                  {% elif stage.is_current %}
+                    <span class="text-dark fw-medium">
+                      Assigned:
+                      {% if task.assigned_to %}
+                        {{ task.assigned_to.get_full_name|default:task.assigned_to.username }}
+                      {% elif task.assigned_group %}
+                        {{ task.assigned_group.name }}
+                      {% else %}
+                        Awaiting Review
+                      {% endif %}
+                    </span>
+                  {% else %}
+                    <span>Upcoming stage</span>
+                  {% endif %}
+                </div>
+              </div>
+
+              {% if stage.total_count > 1 %}
+                <div class="mt-2 pt-1.5 border-top text-muted" style="font-size: 11px;">
+                  {{ stage.approved_count }}/{{ stage.total_count }} approvers signed off
+                </div>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% elif workflow_mode == "sequence" and approval_steps %}
+    <div class="doc-card mb-3">
+      <div class="doc-card-header">
+        <span class="doc-card-title">Approval Steps</span>
+        <span class="text-muted small">Step {{ current_step_number|default:1 }} of {{ total_steps }}</span>
+      </div>
+      <div class="doc-card-body">
+        <div class="pipeline-stepper">
+          {% for step in approval_steps %}
+            <div class="pipeline-step-item {% if step.is_completed %}is-completed{% elif step.is_current %}is-current{% elif step.is_rejected %}is-rejected{% endif %}">
+              <div class="d-flex align-items-center justify-content-between gap-1 mb-1">
+                <div class="d-flex align-items-center gap-2">
+                  <span class="step-index-badge {% if step.is_completed %}badge-completed{% elif step.is_current %}badge-current{% elif step.is_rejected %}badge-rejected{% else %}badge-pending{% endif %}">
+                    {% if step.is_completed %}<i class="bi bi-check-lg"></i>{% else %}{{ step.number }}{% endif %}
+                  </span>
+                  <span class="fw-semibold text-dark small">{{ step.group_name }}</span>
+                </div>
+                {% if step.is_current %}
+                  <span class="badge bg-dark text-white text-uppercase" style="font-size: 9.5px;">Active</span>
+                {% endif %}
+              </div>
+              <div class="text-muted small" style="font-size: 11px;">
+                {% if step.is_completed %}Approved{% elif step.is_current %}In Review{% else %}Pending{% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% elif workflow_mode == "all" or workflow_mode == "any" %}
+    <div class="doc-card mb-3">
+      <div class="doc-card-header">
+        <span class="doc-card-title">Parallel Approval Progress</span>
+        <span class="text-muted small">{% if workflow_mode == "all" %}Requires All Groups{% else %}Requires Any Group{% endif %}</span>
+      </div>
+      <div class="doc-card-body">
+        <div class="d-flex flex-wrap gap-2">
+          {% for pt in parallel_tasks %}
+            <div class="border rounded p-2 d-flex align-items-center gap-2 bg-light">
+              <span class="step-index-badge {% if pt.task.status == 'approved' %}badge-completed{% elif pt.task.status == 'rejected' %}badge-rejected{% elif pt.is_current %}badge-current{% else %}badge-pending{% endif %}">
+                {% if pt.task.status == 'approved' %}<i class="bi bi-check-lg"></i>{% elif pt.task.status == 'rejected' %}<i class="bi bi-x-lg"></i>{% else %}&bull;{% endif %}
+              </span>
+              <span class="small fw-semibold text-dark">{{ pt.group_name }}</span>
+              <span class="badge-status-pill badge-status-{{ pt.task.status }} ms-1" style="font-size: 10px; padding: 2px 6px;">{{ pt.task.get_status_display }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {# ── Submitted Form Payload (Key-Value Grid via Partial or Editable Crispy Form) ── #}
+  <div class="doc-card mb-3">
+    <div class="doc-card-header">
+      <span class="doc-card-title">Submitted Form Payload</span>
+      {% if allow_edit_form_data %}
+        <span class="badge bg-warning-subtle text-warning-emphasis small border border-warning-subtle">Editable by Reviewer</span>
+      {% else %}
+        <span class="text-muted small">Read-only Review</span>
+      {% endif %}
+    </div>
+    <div class="doc-card-body">
+      {% if allow_edit_form_data and editable_form %}
+        {# Reviewer is permitted to correct submission data directly #}
+        <form method="post" enctype="multipart/form-data" class="mb-0">
+          {% csrf_token %}
+          {% crispy editable_form %}
+        </form>
+      {% else %}
+        {% include 'django_forms_workflows/partials/_form_data_grid.html' %}
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Previous Stage Notes & Responses (Chronological Audit) ── #}
+  {% if approval_step_sections %}
+    <div class="doc-card mb-3">
+      <div class="doc-card-header">
+        <span class="doc-card-title">Previous Stage Review Notes</span>
+        <span class="text-muted small">{{ approval_step_sections|length }} completed stages</span>
+      </div>
+      <div class="doc-card-body">
+        {% for section in approval_step_sections %}
+          <div class="audit-step-card">
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-1.5">
+              <div class="d-flex align-items-center gap-2">
+                <span class="fw-bold text-dark small">{{ section.display_label|default:section.step_name }}</span>
+                {% if section.completed_by %}
+                  <span class="text-muted" style="font-size: 12px;">
+                    by <strong>{{ section.completed_by }}</strong>
+                    {% if section.is_surrogate %}<span class="text-secondary">(on behalf of {{ section.assigned_to }})</span>{% endif %}
+                  </span>
+                {% endif %}
+              </div>
+              <div class="d-flex align-items-center gap-2">
+                {% if section.completed_at %}
+                  <span class="text-muted" style="font-size: 11.5px;">{{ section.completed_at|date:"M d, Y H:i" }}</span>
+                {% endif %}
+                {% if section.status == "approved" %}
+                  <span class="badge-status-pill badge-status-approved"><i class="bi bi-check me-1"></i>Approved</span>
+                {% elif section.status == "rejected" %}
+                  <span class="badge-status-pill badge-status-rejected"><i class="bi bi-x me-1"></i>Rejected</span>
+                {% endif %}
+              </div>
+            </div>
+
+            {% if section.comments %}
+              <div class="audit-quote-box">
+                <i class="bi bi-chat-left-text me-1 text-muted"></i>
+                <span class="fst-italic">&#8220;{{ section.comments }}&#8221;</span>
+              </div>
+            {% endif %}
+
+            {% if section.fields %}
+              <div class="mt-2.5 pt-2 border-top">
+                <div class="row g-2">
+                  {% for field in section.fields %}
+                    <div class="col-md-6">
+                      <div class="kv-card-cell">
+                        <div class="kv-label">{{ field.label }}</div>
+                        <div class="kv-value" style="font-size: 13px;">
+                          {% if field.value.url %}
+                            <a href="{{ field.value.url }}" target="_blank" class="file-item-pill">
+                              <i class="bi bi-file-earmark-arrow-down text-primary"></i>
+                              <span>{{ field.value.filename }}</span>
+                            </a>
+                          {% elif field.value|is_signature %}
+                            <img src="{{ field.value }}" alt="Signature" class="img-fluid border rounded p-1" style="max-height: 60px;">
+                          {% else %}
+                            {{ field.value|default:"—"|linebreaksbr }}
+                          {% endif %}
+                        </div>
+                      </div>
+                    </div>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  {# ── Decision Form & Bottom Decision Bar ── #}
+  {% if not read_only %}
+    <div class="doc-card mb-4">
+      <div class="doc-card-header">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-clipboard-check text-dark"></i>
+          <span class="doc-card-title">
+            Reviewer Decision: {{ task.display_label|default:"Current Step" }}
+          </span>
+        </div>
+        <span class="badge bg-dark text-white small">Action Required</span>
+      </div>
+
+      <div class="doc-card-body">
+        <form method="post" enctype="multipart/form-data" id="approval-decision-form" data-approval-form-enhancements="true">
+          {% csrf_token %}
+
+          {# Step-specific form fields if defined #}
+          {% if has_approval_step_fields and approval_step_form %}
+            <div class="mb-4">
+              <p class="text-secondary small mb-3">Please fill in the required stage fields below before recording your decision:</p>
+              {% crispy approval_step_form %}
+            </div>
+            <hr class="my-3 border-slate-200">
+          {% endif %}
+
+          {# Reviewer Comments Field #}
+          {% if not hide_comment_field %}
+            <div class="mb-3">
+              <label for="comments" class="form-label fw-semibold text-dark small mb-1">
+                Reviewer Note / Decision Reason
+                <span class="text-muted fw-normal">(Optional — recorded in submission audit trail)</span>
+              </label>
+              <textarea
+                class="form-control"
+                id="comments"
+                name="comments"
+                rows="3"
+                placeholder="Provide notes or feedback regarding your decision..."></textarea>
+            </div>
+          {% endif %}
+
+          {# Unified Bottom Decision Bar #}
+          <div class="decision-bar-container d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-2 pt-3 mt-3 border-top">
+            <div>
+              <a href="{% url 'forms_workflows:approval_inbox' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center gap-1.5 w-100 w-sm-auto">
+                <i class="bi bi-arrow-left"></i>
+                <span>Back to Inbox</span>
+              </a>
+            </div>
+
+            <div class="decision-actions-right d-flex align-items-center gap-2 flex-wrap">
+              {% if send_back_stages %}
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-warning text-dark d-inline-flex align-items-center gap-1.5"
+                  data-bs-toggle="modal"
+                  data-bs-target="#sendBackModal">
+                  <i class="bi bi-arrow-return-left"></i>
+                  <span>Send Back</span>
+                </button>
+              {% endif %}
+
+              <button
+                type="submit"
+                name="decision"
+                value="reject"
+                formnovalidate
+                class="btn btn-sm btn-outline-danger btn-decision-reject d-inline-flex align-items-center gap-1.5">
+                <i class="bi bi-x-circle me-1"></i> Reject
+              </button>
+
+              <button
+                type="submit"
+                name="decision"
+                value="approve"
+                class="btn btn-sm btn-dark btn-decision-approve d-inline-flex align-items-center gap-1.5">
+                <i class="bi bi-check2-circle me-1"></i> Approve
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {# ── Send Back for Correction Modal ── #}
+    {% if send_back_stages %}
+      <div class="modal fade" id="sendBackModal" tabindex="-1" aria-labelledby="sendBackModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content border">
+            <form method="post" data-loading-message="Sending back for correction…">
+              {% csrf_token %}
+              <input type="hidden" name="decision" value="send_back">
+
+              <div class="modal-header bg-light border-bottom">
+                <h5 class="modal-title h6 fw-bold text-dark mb-0" id="sendBackModalLabel">
+                  <i class="bi bi-arrow-return-left me-1"></i> Send Back for Correction
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+
+              <div class="modal-body">
+                <p class="text-secondary small mb-3">
+                  The submission will not be rejected. It will be returned to the selected prior stage so the approver can revise their entries and re-approve.
+                </p>
+
+                <div class="mb-3">
+                  <label for="send_back_stage_id" class="form-label fw-semibold text-dark small">Return to Stage <span class="text-danger">*</span></label>
+                  <select class="form-select form-select-sm" id="send_back_stage_id" name="send_back_stage_id" required>
+                    <option value="">— Select prior stage —</option>
+                    {% for stage in send_back_stages %}
+                      <option value="{{ stage.id }}">{{ stage.name }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+
+                <div class="mb-2">
+                  <label for="send_back_reason" class="form-label fw-semibold text-dark small">Reason for Correction <span class="text-danger">*</span></label>
+                  <textarea
+                    class="form-control form-control-sm"
+                    id="send_back_reason"
+                    name="send_back_reason"
+                    rows="3"
+                    placeholder="Describe what needs correction and why…"
+                    required></textarea>
+                </div>
+              </div>
+
+              <div class="modal-footer bg-light border-top d-flex justify-content-between">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-sm btn-warning text-dark fw-semibold">
+                  <i class="bi bi-arrow-return-left me-1"></i> Confirm Send Back
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'django_forms_workflows/js/form-enhancements.js' %}"></script>
+<script src="{% static 'django_forms_workflows/js/signature-pad.js' %}"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const formElement = document.querySelector('[data-approval-form-enhancements="true"]');
+    const config = {{ approval_form_enhancements_config|default:"null"|safe }};
+    if (formElement && config) {
+      window.approvalFormEnhancements = new FormEnhancements(formElement, config);
+    }
+  });
+</script>
+{% endblock %}

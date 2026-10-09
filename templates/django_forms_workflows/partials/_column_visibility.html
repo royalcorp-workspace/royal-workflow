@@ -1,0 +1,27 @@
+{# ── Column Visibility Dropdown Partial ── #}
+{% if form_fields %}
+<div class="dropdown d-none" id="colPickerDropdown">
+  <button class="btn btn-sm btn-outline-secondary" type="button"
+          data-bs-toggle="dropdown" data-bs-auto-close="outside"
+          aria-expanded="false" title="Customize columns">
+    <i class="bi bi-gear-fill"></i>
+  </button>
+  <div class="dropdown-menu dropdown-menu-end p-3 shadow-sm" style="min-width: 220px;">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <span class="fw-semibold small text-muted">Additional columns</span>
+      <button type="button" class="btn btn-link btn-sm p-0 small text-decoration-none" id="colToggleAll">Select all</button>
+    </div>
+    <hr class="my-1">
+    {% for field in form_fields %}
+    <div class="form-check">
+      <input class="form-check-input col-toggle-chk" type="checkbox"
+             id="col_chk_{{ field.field_name }}"
+             data-field="{{ field.field_name }}">
+      <label class="form-check-label small" for="col_chk_{{ field.field_name }}">
+        {{ field.field_label }}
+      </label>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}

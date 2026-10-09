@@ -1,0 +1,111 @@
+{% extends 'django_forms_workflows/base.html' %}
+{% load static forms_workflows_tags %}
+
+{% block title %}Approval History - {{ site_name }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+<link rel="stylesheet" href="{% static 'css/enterprise-tables.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="approvals-container">
+
+  {# ── Page Title Header ── #}
+  <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-2 mb-3">
+    <div>
+      <h1 class="h4 fw-bold text-dark mb-1">Approval History</h1>
+      <p class="text-muted small mb-0">View past authorization decisions, audit trails, and processed submissions.</p>
+    </div>
+    {% if any_exportable or any_pdf_exportable %}
+    <div class="d-flex align-items-center gap-2">
+      {% if any_exportable %}
+      <button type="submit" form="bulkExportForm" class="btn btn-sm btn-outline-success d-inline-flex align-items-center gap-1.5" id="exportBtn" disabled>
+        <i class="bi bi-file-earmark-spreadsheet"></i>
+        <span>Export Excel</span>
+      </button>
+      {% endif %}
+      {% if any_pdf_exportable %}
+      <button type="button" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1.5" id="pdfExportBtn" disabled data-bs-toggle="modal" data-bs-target="#bulkPdfModeModal">
+        <i class="bi bi-file-earmark-pdf"></i>
+        <span>Export PDF</span>
+      </button>
+      {% endif %}
+      <span class="text-muted small fw-medium" id="selectedCount"></span>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Unified Top Toolbar (Partial) ── #}
+  {% include 'django_forms_workflows/partials/_inbox_toolbar.html' with active_tab='history' is_history=True %}
+
+  {# ── Hidden Bulk Forms & Export Modals (Partial) ── #}
+  {% include 'django_forms_workflows/partials/_export_modals.html' %}
+
+  {% if any_exportable or any_pdf_exportable %}
+  <form id="bulkExportForm" method="post" action="{% url 'forms_workflows:bulk_export_submissions' %}" data-download-spinner="Generating Excel…">
+    {% csrf_token %}
+  {% endif %}
+
+  {# ── Table Card Container ── #}
+  <div class="table-card mb-4">
+    <div class="table-responsive">
+      <table class="table align-middle table-hover mb-0" id="completedTable"
+             data-ajax-url="{% url 'forms_workflows:completed_approvals_ajax' %}"
+             data-csrf-token="{{ csrf_token }}"
+             data-has-export="{% if any_exportable or any_pdf_exportable %}true{% else %}false{% endif %}"
+             data-category="{{ category_slug|default:'' }}"
+             data-form="{{ form_slug|default:'' }}"
+             data-status="{{ status_filter|default:'' }}"
+             data-page-length-key="completed_page_len"
+             data-col-prefs-key="completed_col_prefs_{{ form_slug }}"
+             data-bulk-pdf-single-url="{% if any_pdf_exportable %}{% url 'forms_workflows:submission_pdf' 0 %}{% endif %}">
+        <thead>
+          <tr>
+            {% if any_exportable or any_pdf_exportable %}
+            <th class="text-center" style="width: 44px;">
+              <input type="checkbox" id="selectAll" class="form-check-input" title="Select all on page">
+            </th>
+            {% endif %}
+            <th style="min-width: 240px;">Form &amp; Category</th>
+            <th style="min-width: 170px;">Submitter</th>
+            <th style="min-width: 130px;">Status</th>
+            <th style="min-width: 150px;">Submitted Date</th>
+            <th style="min-width: 150px;">Completed Date</th>
+            {% for field in form_fields %}
+            <th class="extra-form-col" data-field="{{ field.field_name }}">{{ field.field_label }}</th>
+            {% endfor %}
+            <th class="text-end" style="min-width: 100px; width: 110px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    {# ── Aligned Footer Container (populated via DataTables) ── #}
+    <div class="approvals-footer" id="customTableFooter">
+      <div id="footerInfoSlot" class="d-flex align-items-center"></div>
+      <div id="footerControlsSlot" class="d-flex align-items-center gap-3"></div>
+    </div>
+  </div>
+
+  {% if any_exportable or any_pdf_exportable %}
+  </form>
+  {% endif %}
+
+  {# ── Bulk Action Drawer (Partial) ── #}
+  {% include 'django_forms_workflows/partials/_bulk_action_bar.html' %}
+
+</div>
+
+{# ── Dynamic Column Visibility Dropdown (Partial) ── #}
+{% include 'django_forms_workflows/partials/_column_visibility.html' %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha384-1H217gwSVyLSIfaLxHbE7dRb3v4mYCKbpQvzx0cegeju1MVsGrX5xXxAvs/HgeFs" crossorigin="anonymous"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js" integrity="sha384-k5vbMeKHbxEZ0AEBTSdR7UjAgWCcUfrS8c0c5b2AfIh7olfhNkyCZYwOfzOQhauK" crossorigin="anonymous"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js" integrity="sha384-PgPBH0hy6DTJwu7pTf6bkRqPlf/+pjUBExpr/eIfzszlGYFlF9Wi9VTAJODPhgCO" crossorigin="anonymous"></script>
+<script src="{% static 'js/approvals-datatable.js' %}"></script>
+{% endblock %}

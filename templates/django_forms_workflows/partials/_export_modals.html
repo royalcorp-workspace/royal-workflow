@@ -1,0 +1,51 @@
+{# ── Export Modals & Background Helpers Partial ── #}
+{% if any_pdf_exportable %}
+{# Hidden sequential/merged submission IDs container form #}
+<form id="bulkPdfExportForm" method="post" action="{% url 'forms_workflows:bulk_export_submissions_pdf' %}" data-download-spinner="Generating PDF…" class="d-none">
+  {% csrf_token %}
+  <div id="pdfSubmissionIds"></div>
+</form>
+
+{# PDF Export Mode Dialog #}
+<div class="modal fade" id="bulkPdfModeModal" tabindex="-1" aria-labelledby="bulkPdfModeModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title fw-bold" id="bulkPdfModeModalLabel">
+          <i class="bi bi-file-earmark-pdf text-danger me-2"></i>Choose PDF Export Format
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body pt-2 pb-4">
+        <p class="text-muted mb-4">Select how you would like to download the selected submissions as PDF files:</p>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <button type="button" class="btn btn-outline-danger w-100 h-100 p-4 text-start rounded-3 border-2"
+                    onclick="submitBulkPdfMerged()" data-bs-dismiss="modal">
+              <div class="d-flex align-items-start gap-3">
+                <i class="bi bi-file-earmark-pdf fs-2 text-danger flex-shrink-0 mt-1"></i>
+                <div>
+                  <div class="fw-bold fs-6 mb-1">Single Merged PDF</div>
+                  <small class="text-muted">All selected submissions combined into one single PDF document separated by page breaks.</small>
+                </div>
+              </div>
+            </button>
+          </div>
+          <div class="col-md-6">
+            <button type="button" class="btn btn-outline-primary w-100 h-100 p-4 text-start rounded-3 border-2"
+                    onclick="submitBulkPdfSequential()" data-bs-dismiss="modal">
+              <div class="d-flex align-items-start gap-3">
+                <i class="bi bi-files fs-2 text-primary flex-shrink-0 mt-1"></i>
+                <div>
+                  <div class="fw-bold fs-6 mb-1">Individual PDFs</div>
+                  <small class="text-muted">Each submission downloaded as an individual separate PDF document.</small>
+                </div>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}

@@ -1,0 +1,63 @@
+{% extends 'django_forms_workflows/base.html' %}
+{% load static %}
+
+{% block title %}Discard Draft #{{ submission.id }} — {{ submission.form_definition.name }} - {{ site_name }}{% endblock %}
+
+{% block topbar_title %}
+  <a href="{% url 'forms_workflows:my_submissions' %}" class="text-decoration-none text-muted">My Submissions</a>
+  <span class="crumb-sep">/</span>
+  <span class="crumb-current">Discard Draft #{{ submission.id }}</span>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/confirmation-dialogs.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="confirm-dialog-wrapper max-w-lg mx-auto w-100 px-3">
+  <div class="confirm-card p-4 p-md-5 my-4">
+    {# Dialog Header #}
+    <div class="mb-3">
+      <h1 class="h5 fw-bold text-dark mb-1" style="font-size: 1.25rem;">Discard Draft</h1>
+      <p class="text-secondary small mb-0">Are you sure you want to permanently discard draft #{{ submission.id }}?</p>
+    </div>
+
+    {# Body Content: Summary & Consequences #}
+    <div class="confirm-details-box">
+      <div class="confirm-kv-row">
+        <span class="confirm-kv-label">Form Definition</span>
+        <span class="confirm-kv-value">{{ submission.form_definition.name }}</span>
+      </div>
+      <div class="confirm-kv-row">
+        <span class="confirm-kv-label">Draft Reference</span>
+        <span class="confirm-kv-value">#{{ submission.id }}</span>
+      </div>
+      <div class="confirm-kv-row">
+        <span class="confirm-kv-label">Last Saved</span>
+        <span class="confirm-kv-value">{{ submission.updated_at|date:"Y-m-d H:i" }}</span>
+      </div>
+    </div>
+
+    <div class="confirm-consequence-note danger mb-4">
+      <div class="fw-semibold mb-1 text-dark">Action Consequences</div>
+      <div>
+        All saved progress and partially filled fields in draft <strong>#{{ submission.id }}</strong> will be permanently deleted. This action cannot be reversed.
+      </div>
+    </div>
+
+    {# Unified Action Bar #}
+    <form method="post">
+      {% csrf_token %}
+      <div class="confirm-actions-bar d-flex flex-column-reverse flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-2 mt-4 pt-3 border-top">
+        <a href="{% url 'forms_workflows:form_submit' submission.form_definition.slug %}" class="btn btn-outline-secondary btn-sm">
+          Cancel
+        </a>
+        <button type="submit" class="btn btn-danger btn-sm d-inline-flex align-items-center justify-content-center gap-1.5">
+          <i class="bi bi-trash3"></i>
+          <span>Confirm Discard Draft</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,177 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   forms.css — Alignment, spacing & responsive polish for django-forms-workflows
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Side-by-side field alignment (CSS Grid + subgrid) ─────────────────
+   When two or more fields sit in a .row.fields-aligned-row we switch from
+   Bootstrap's flexbox row to a CSS Grid so that labels, inputs, errors,
+   and help text each share a common row track across columns.  This
+   guarantees perfect horizontal alignment regardless of label wrapping
+   or the presence / absence of help text in any column.
+
+   Grid row tracks:  1 = label  |  2 = input  |  3 = errors  |  4 = help text
+
+   We need four tracks because Crispy Bootstrap5's
+   ``help_text_and_errors.html`` renders ``.invalid-feedback`` and
+   ``.form-text`` as siblings of ``.mb-3``, giving an errored field with
+   help text four children. With only three row tracks the help text
+   auto-flowed into an implicit row outside the subgrid, overlapping
+   the error message and inflating sibling column heights. Empty rows
+   collapse to zero height so fields without errors or without help
+   text don't get extra spacing.
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* 1. The row becomes a CSS Grid; columns flow automatically */
+@media (min-width: 768px) {
+    .row.fields-aligned-row {
+        display: grid !important;
+        grid-auto-flow: column;
+        grid-auto-columns: 1fr;
+        grid-template-rows: auto auto auto auto;
+        column-gap: var(--bs-gutter-x, 1.5rem);
+        margin-left: 0;
+        margin-right: 0;
+    }
+
+    /* 2. Each field-wrapper spans all 4 row tracks and inherits them */
+    .row.fields-aligned-row > .field-wrapper {
+        display: grid;
+        grid-template-rows: subgrid;
+        grid-row: span 4;
+        /* Reset Bootstrap column flex/width — grid handles sizing */
+        width: auto !important;
+        max-width: none !important;
+        flex: none !important;
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    /* 3. .mb-3 also inherits the 4 row tracks via subgrid */
+    .row.fields-aligned-row > .field-wrapper > .mb-3 {
+        display: grid;
+        grid-template-rows: subgrid;
+        grid-row: span 4;
+        margin-bottom: 0 !important;  /* grid gap handles spacing */
+    }
+
+    /* 4. Labels sit at the bottom of their row-track so short labels
+       align with the bottom of taller (wrapping) labels. */
+    .row.fields-aligned-row > .field-wrapper > .mb-3 > label {
+        align-self: end;
+    }
+}
+
+/* ── Consistent field spacing ────────────────────────────────────────── */
+
+.field-wrapper {
+    margin-bottom: 1rem;
+}
+/* Slightly more breathing room between label and input */
+.field-wrapper label.form-label,
+.field-wrapper label.form-check-label {
+    margin-bottom: 0.375rem;
+    font-weight: 500;
+}
+/* Help text polish */
+.field-wrapper .form-text {
+    font-size: 0.8125rem;
+    margin-top: 0.375rem;
+    line-height: 1.4;
+}
+
+/* ── Responsive stacking ─────────────────────────────────────────────── */
+
+@media (max-width: 767.98px) {
+    /* Stack side-by-side fields vertically on mobile */
+    .row > [class*="col-md-"] {
+        margin-bottom: 0.75rem;
+    }
+    /* Give the form card a tighter horizontal padding on small screens */
+    .card-body {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+}
+
+/* ── Signature Pad ───────────────────────────────────────────────────── */
+
+.signature-pad-wrapper {
+    margin-top: 0.25rem;
+}
+.signature-pad-wrapper > label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+.signature-pad-canvas-container {
+    display: block;
+    width: 100%;
+    border: 2px solid #6c757d !important;
+    border-radius: 0.5rem;
+    background: #fafbfc;
+    cursor: crosshair;
+    touch-action: none;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+.signature-pad-canvas-container:hover,
+.signature-pad-canvas-container:active {
+    border-color: #86b7fe !important;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
+}
+.signature-pad-canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 0.5rem;
+}
+.signature-pad-buttons {
+    margin-top: 0.5rem;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+.signature-pad-help {
+    font-size: 0.8125rem;
+    color: #6c757d;
+    margin-top: 0.375rem;
+}
+
+/* ── Signature Type mode ────────────────────────────────────────────── */
+
+.signature-mode-toggle {
+    display: flex;
+}
+.signature-type-controls {
+    margin-bottom: 0.5rem;
+}
+.signature-font-options {
+    margin-bottom: 0.25rem;
+}
+.signature-font-btn {
+    min-width: 5rem;
+    padding: 0.25rem 0.75rem;
+}
+
+/* ── Form submit button row ──────────────────────────────────────────── */
+
+.form-actions {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e9ecef;
+}
+
+/* ── Checkbox / radio alignment ──────────────────────────────────────── */
+
+.form-check {
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+}
+
+/* ── Required field asterisk ─────────────────────────────────────────── */
+
+.asteriskField {
+    color: #dc3545;
+    font-weight: 600;
+    margin-left: 0.15em;
+}
+

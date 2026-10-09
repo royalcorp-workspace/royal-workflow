@@ -1,0 +1,30 @@
+<!-- Topbar Component -->
+{% if user.is_authenticated %}
+<header class="topbar-wrapper">
+    <div class="topbar-left">
+        <div class="topbar-breadcrumb">
+            <span class="crumb-root">Dashboard</span>
+            <span class="crumb-sep">/</span>
+            <span class="crumb-current">
+                {% block topbar_title %}
+                    {% if 'approvals' in request.path %}
+                        Approvals
+                    {% elif 'my-submissions' in request.path %}
+                        My Submissions
+                    {% elif 'analytics' in request.path %}
+                        Analytics
+                    {% elif '/submit/' in request.path %}
+                        Submit Form
+                    {% else %}
+                        Forms
+                    {% endif %}
+                {% endblock %}
+            </span>
+        </div>
+    </div>
+    <div class="topbar-right d-flex align-items-center gap-2 pe-2 pe-md-3">
+        {% include "django_forms_workflows/partials/_notification_bell.html" %}
+        {% include "django_forms_workflows/partials/_user_profile_menu.html" %}
+    </div>
+</header>
+{% endif %}

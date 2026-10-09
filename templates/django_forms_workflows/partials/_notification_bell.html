@@ -1,0 +1,48 @@
+<!-- Notification Bell Dropdown Component -->
+<div class="dropdown">
+    <button class="btn btn-icon-subtle position-relative" type="button" id="notificationBellDropdown" data-bs-toggle="dropdown" aria-expanded="false" title="Notifications">
+        <i class="bi bi-bell text-secondary" style="font-size: 1.15rem;"></i>
+        {% if unread_notifications_count > 0 %}
+            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 10px; padding: 0.25em 0.45em; margin-top: 6px; margin-left: -6px;">
+                {{ unread_notifications_count }}
+            </span>
+        {% endif %}
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end shadow-sm border border-light-subtle p-0 mt-2" aria-labelledby="notificationBellDropdown" style="width: 320px; font-size: 13px;">
+        <!-- Header -->
+        <li class="d-flex align-items-center justify-content-between px-3 py-2.5 border-bottom bg-light rounded-top">
+            <span class="fw-semibold text-dark">Notifications</span>
+            {% if unread_notifications_count > 0 %}
+                <span class="badge bg-secondary-subtle text-secondary border fw-medium">{{ unread_notifications_count }} unread</span>
+            {% endif %}
+        </li>
+
+        <!-- Body -->
+        <li class="notification-list-body" style="max-height: 280px; overflow-y: auto;">
+            {% if recent_notifications %}
+                {% for item in recent_notifications %}
+                <a href="{{ item.url }}" class="dropdown-item px-3 py-2.5 border-bottom text-wrap d-flex align-items-start gap-2">
+                    <i class="bi {{ item.icon }} fs-6 mt-0.5"></i>
+                    <div class="flex-grow-1">
+                        <div class="fw-semibold text-dark small">{{ item.title }}</div>
+                        <div class="text-secondary small" style="font-size: 11.5px;">{{ item.text }}</div>
+                        <div class="text-muted" style="font-size: 10.5px;">{{ item.time|timesince }} ago</div>
+                    </div>
+                </a>
+                {% endfor %}
+            {% else %}
+                <div class="p-4 text-center text-muted small">
+                    <i class="bi bi-bell-slash fs-4 d-block mb-1 text-secondary opacity-50"></i>
+                    No new notifications
+                </div>
+            {% endif %}
+        </li>
+
+        <!-- Footer -->
+        <li class="p-2 border-top text-center bg-light rounded-bottom">
+            <a href="{% url 'forms_workflows:notification_preferences' %}" class="text-decoration-none text-secondary small fw-medium">
+                <i class="bi bi-sliders me-1"></i>Notification Settings
+            </a>
+        </li>
+    </ul>
+</div>

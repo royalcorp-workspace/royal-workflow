@@ -1,0 +1,184 @@
+{% extends 'django_forms_workflows/base.html' %}
+
+{% block title %}Masuk - Royal Workflow{% endblock %}
+
+{% block extra_css %}
+<style>
+    body {
+        background-color: #f1f5f9;
+        color: #0f172a;
+    }
+    .login-wrapper {
+        min-height: 100vh;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 24px 16px;
+    }
+    .login-card {
+        width: 100%;
+        max-width: 420px;
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 2px 4px -2px rgba(15, 23, 42, 0.05);
+        padding: 40px 32px;
+    }
+    .login-brand-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 48px;
+        height: 48px;
+        border-radius: 8px;
+        background-color: #0f172a;
+        color: #ffffff;
+        font-size: 22px;
+        margin-bottom: 16px;
+    }
+    .login-title {
+        font-size: 22px;
+        font-weight: 700;
+        color: #0f172a;
+        letter-spacing: -0.02em;
+        margin-bottom: 4px;
+    }
+    .login-subtitle {
+        font-size: 14px;
+        color: #64748b;
+        margin-bottom: 24px;
+    }
+    .login-card .form-label {
+        font-size: 13px;
+        font-weight: 600;
+        color: #334155;
+        margin-bottom: 6px;
+    }
+    .login-card .form-control {
+        font-size: 14px;
+        height: 42px;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        padding: 8px 12px;
+        color: #0f172a;
+        background-color: #ffffff;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .login-card .form-control:focus {
+        border-color: #1e3a8a;
+        box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.12);
+        outline: none;
+    }
+    .login-card .form-control::placeholder {
+        color: #94a3b8;
+    }
+    .btn-login {
+        height: 42px;
+        background-color: #1e3a8a; /* Solid Navy */
+        color: #ffffff;
+        font-size: 14px;
+        font-weight: 600;
+        border-radius: 6px;
+        border: none;
+        transition: background-color 0.15s ease;
+    }
+    .btn-login:hover, .btn-login:focus {
+        background-color: #172554;
+        color: #ffffff;
+    }
+    .btn-login:active {
+        background-color: #0f172a;
+    }
+    .login-footer {
+        margin-top: 28px;
+        text-align: center;
+        border-top: 1px solid #f1f5f9;
+        padding-top: 20px;
+    }
+    .login-footer p {
+        font-size: 13px;
+        color: #64748b;
+        margin-bottom: 0;
+    }
+</style>
+{% endblock %}
+
+{% block app_layout %}
+<div class="login-wrapper">
+    <div class="login-card">
+        <div class="text-center">
+            <div class="login-brand-icon">
+                <i class="bi bi-diagram-3-fill"></i>
+            </div>
+            <h1 class="login-title">Royal Workflow</h1>
+            <p class="login-subtitle">Silakan masuk ke akun Anda</p>
+        </div>
+
+        {% if form.errors %}
+            <div class="alert alert-danger py-2 px-3 mb-3 small" role="alert">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-exclamation-circle-fill me-2 fs-6 flex-shrink-0"></i>
+                    <div>
+                        {% if form.non_field_errors %}
+                            {% for error in form.non_field_errors %}
+                                <div>{{ error }}</div>
+                            {% endfor %}
+                        {% else %}
+                            <div>Username atau password salah. Silakan coba lagi.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+
+        {% if next and user.is_authenticated %}
+            <div class="alert alert-warning py-2 px-3 mb-3 small" role="alert">
+                Akun Anda tidak memiliki hak akses ke halaman ini. Silakan masuk menggunakan akun yang berwenang.
+            </div>
+        {% endif %}
+
+        <form method="post" action="{% url 'login' %}">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ next }}">
+
+            <div class="mb-3">
+                <label for="id_username" class="form-label">Username</label>
+                <input type="text"
+                       name="username"
+                       autofocus
+                       autocapitalize="none"
+                       autocomplete="username"
+                       maxlength="150"
+                       required
+                       id="id_username"
+                       class="form-control"
+                       placeholder="Masukkan username"
+                       value="{{ form.username.value|default:'' }}">
+            </div>
+
+            <div class="mb-4">
+                <label for="id_password" class="form-label">Password</label>
+                <input type="password"
+                       name="password"
+                       autocomplete="current-password"
+                       required
+                       id="id_password"
+                       class="form-control"
+                       placeholder="Masukkan password">
+            </div>
+
+            <div class="d-grid">
+                <button type="submit" class="btn btn-login">
+                    Masuk
+                </button>
+            </div>
+        </form>
+
+        <div class="login-footer">
+            <p>&copy; 2026 Royal Workflow</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

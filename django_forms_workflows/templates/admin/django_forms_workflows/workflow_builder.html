@@ -1,0 +1,1143 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block title %}Workflow Builder - {{ form_definition.name }}{% endblock %}
+
+{% block extrastyle %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+<style>
+    :root {
+        --wb-page-bg: #f5f7fa;
+        --wb-surface: #ffffff;
+        --wb-surface-subtle: #f8fafc;
+        --wb-surface-tint: #fbfcfe;
+        --wb-text-strong: #243b53;
+        --wb-text: #334e68;
+        --wb-text-muted: #627d98;
+        --wb-border: #dee2e6;
+        --wb-border-soft: #e7ebf0;
+        --wb-border-strong: #ced4da;
+        --wb-primary: #667eea;
+        --wb-primary-dark: #5568d3;
+        --wb-primary-alt: #764ba2;
+        --wb-primary-soft: #f0f3ff;
+        --wb-success: #28a745;
+        --wb-warning: #fd7e14;
+        --wb-danger: #dc3545;
+        --wb-info: #0d6efd;
+        --wb-grid-line: rgba(15, 23, 42, 0.07);
+        --wb-shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.08);
+        --wb-shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
+        --wb-shadow-lg: 0 14px 32px rgba(15, 23, 42, 0.12);
+        --wb-radius-md: 12px;
+        --wb-radius-lg: 14px;
+        --wb-radius-pill: 999px;
+        --wb-transition: all 0.2s ease;
+    }
+
+    body {
+        background: var(--wb-page-bg);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        color: var(--wb-text);
+    }
+
+    .builder-panel {
+        background: var(--wb-surface);
+        border-radius: var(--wb-radius-md);
+        box-shadow: var(--wb-shadow-sm);
+    }
+    
+    .workflow-builder-container {
+        display: flex;
+        height: calc(100vh - 100px);
+        gap: 1rem;
+        padding: 1rem;
+        align-items: stretch;
+    }
+    
+    /* Node Palette */
+    .node-palette {
+        width: 250px;
+        padding: 1.5rem;
+        overflow-y: auto;
+    }
+    
+    .palette-header {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        color: var(--wb-text-strong);
+    }
+    
+    .palette-node {
+        --node-accent: var(--wb-primary);
+        --node-accent-2: var(--wb-primary-alt);
+        --node-border: var(--wb-primary);
+        --node-surface-from: var(--wb-primary-soft);
+        --node-surface-to: #e6eaff;
+        --node-shadow-color: rgba(102, 126, 234, 0.2);
+        --node-icon-color: #fff;
+        background: linear-gradient(135deg, var(--node-accent) 0%, var(--node-accent-2) 100%);
+        color: white;
+        padding: 0.75rem 1rem;
+        margin-bottom: 0.75rem;
+        border-radius: 10px;
+        cursor: grab;
+        transition: var(--wb-transition);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .palette-node:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 18px var(--node-shadow-color);
+    }
+    
+    .palette-node:active {
+        cursor: grabbing;
+    }
+    
+    .palette-node.form,
+    .workflow-node.form {
+        --node-accent: #667eea;
+        --node-accent-2: #764ba2;
+        --node-border: #667eea;
+        --node-surface-from: #f0f3ff;
+        --node-surface-to: #e6eaff;
+        --node-shadow-color: rgba(102, 126, 234, 0.16);
+    }
+
+    .palette-node.stage,
+    .palette-node.approval,
+    .workflow-node.stage,
+    .workflow-node.approval {
+        --node-accent: #e83e8c;
+        --node-accent-2: #f5576c;
+        --node-border: #e83e8c;
+        --node-surface-from: #fff0f6;
+        --node-surface-to: #ffe4ef;
+        --node-shadow-color: rgba(232, 62, 140, 0.16);
+    }
+
+    .workflow-node.workflow_settings,
+    .workflow-node.join {
+        --node-accent: #6c757d;
+        --node-accent-2: #87919a;
+        --node-border: #6c757d;
+        --node-surface-from: #f8f9fa;
+        --node-surface-to: #e9ecef;
+        --node-shadow-color: rgba(108, 117, 125, 0.14);
+    }
+
+    .workflow-node.start {
+        --node-accent: #28a745;
+        --node-accent-2: #1f9d55;
+        --node-border: #28a745;
+        --node-surface-from: #f0fff4;
+        --node-surface-to: #e6f9ea;
+        --node-shadow-color: rgba(40, 167, 69, 0.14);
+    }
+
+    .workflow-node.approval_config {
+        --node-accent: #ffc107;
+        --node-accent-2: #ffb300;
+        --node-border: #ffc107;
+        --node-surface-from: #fffbf0;
+        --node-surface-to: #fff8e6;
+        --node-shadow-color: rgba(255, 193, 7, 0.16);
+        --node-icon-color: #333;
+    }
+
+    .palette-node.condition,
+    .workflow-node.condition {
+        --node-accent: #4facfe;
+        --node-accent-2: #00f2fe;
+        --node-border: #00c8df;
+        --node-surface-from: #f0fcff;
+        --node-surface-to: #e6f9ff;
+        --node-shadow-color: rgba(79, 172, 254, 0.16);
+    }
+
+    .palette-node.action,
+    .workflow-node.action {
+        --node-accent: #43e97b;
+        --node-accent-2: #38f9d7;
+        --node-border: #2bcfb5;
+        --node-surface-from: #f0fff9;
+        --node-surface-to: #e6fff5;
+        --node-shadow-color: rgba(67, 233, 123, 0.16);
+        --node-icon-color: #0f5132;
+    }
+
+    .palette-node.email,
+    .workflow-node.email {
+        --node-accent: #fa8bff;
+        --node-accent-2: #2bd2ff;
+        --node-border: #2bd2ff;
+        --node-surface-from: #f0f9ff;
+        --node-surface-to: #e6f5ff;
+        --node-shadow-color: rgba(43, 210, 255, 0.16);
+    }
+
+    .palette-node.sub_workflow,
+    .workflow-node.sub_workflow {
+        --node-accent: #a18cd1;
+        --node-accent-2: #fbc2eb;
+        --node-border: #a18cd1;
+        --node-surface-from: #f5f0ff;
+        --node-surface-to: #fdf2ff;
+        --node-shadow-color: rgba(118, 75, 162, 0.16);
+    }
+
+    .palette-node.end,
+    .workflow-node.end {
+        --node-accent: #fa709a;
+        --node-accent-2: #fee140;
+        --node-border: #fee140;
+        --node-surface-from: #fffef0;
+        --node-surface-to: #fffce6;
+        --node-shadow-color: rgba(250, 112, 154, 0.16);
+        --node-icon-color: #333;
+    }
+    
+    /* Workflow Canvas */
+    .workflow-canvas-container {
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .canvas-header {
+        background: linear-gradient(135deg, var(--wb-primary) 0%, var(--wb-primary-alt) 100%);
+        color: white;
+        padding: 1rem 1.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .canvas-header-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        min-width: 0;
+    }
+
+    .canvas-header-meta h5 {
+        color: #fff;
+    }
+
+    .canvas-header-meta .text-muted,
+    .canvas-header-meta .text-white-50 {
+        color: rgba(255, 255, 255, 0.78) !important;
+    }
+
+    .canvas-admin-link {
+        color: #dbe7ff;
+        font-weight: 500;
+        text-decoration: none;
+        transition: var(--wb-transition);
+    }
+
+    .canvas-admin-link:hover {
+        color: #ffffff;
+        text-decoration: underline;
+    }
+
+    .workflow-track-switcher {
+        max-width: 360px;
+    }
+    
+    .workflow-canvas {
+        width: 100%;
+        height: calc(100% - 60px);
+        min-height: 600px;
+        position: relative;
+        overflow: hidden;
+        background-image:
+            linear-gradient(var(--wb-grid-line) 1px, transparent 1px),
+            linear-gradient(90deg, var(--wb-grid-line) 1px, transparent 1px);
+        background-size: 20px 20px;
+        overflow: auto;
+        scrollbar-gutter: stable;
+        cursor: grab;
+    }
+
+    .workflow-canvas.is-panning,
+    .workflow-canvas.is-panning * {
+        cursor: grabbing !important;
+    }
+
+    .workflow-transform-wrapper {
+        position: absolute;
+        inset: 0;
+        transform-origin: 0 0;
+        min-width: 100%;
+        min-height: 100%;
+    }
+    
+    /* Workflow Nodes */
+    .workflow-node {
+        --node-width: 260px;
+        --node-border: var(--wb-border);
+        --node-surface-from: var(--wb-surface);
+        --node-surface-to: var(--wb-surface);
+        --node-shadow-color: rgba(15, 23, 42, 0.08);
+        position: absolute;
+        background: linear-gradient(180deg, var(--node-surface-from) 0%, var(--node-surface-to) 100%);
+        border: 2px solid var(--node-border);
+        border-radius: var(--wb-radius-md);
+        padding: 1rem;
+        width: var(--node-width);
+        max-width: var(--node-width);
+        box-sizing: border-box;
+        cursor: move;
+        box-shadow: var(--wb-shadow-sm);
+        transition: var(--wb-transition);
+        overflow: visible;
+        user-select: none;
+    }
+    
+    .workflow-node:hover {
+        box-shadow: 0 12px 28px var(--node-shadow-color);
+        border-color: var(--node-border);
+    }
+    
+    .workflow-node.selected {
+        border-color: var(--wb-primary);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        z-index: 20;
+    }
+
+    .workflow-node.dragging {
+        z-index: 30;
+        cursor: grabbing;
+        box-shadow: var(--wb-shadow-lg);
+    }
+
+    .workflow-node.has-validation-error {
+        border-color: #dc3545;
+        box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.12);
+    }
+
+    .workflow-node.has-validation-warning {
+        border-color: #fd7e14;
+        box-shadow: 0 0 0 2px rgba(253, 126, 20, 0.10);
+    }
+    
+    .workflow-node.form,
+    .workflow-node.sub_workflow {
+        --node-width: 300px;
+    }
+
+    .workflow-node.stage,
+    .workflow-node.approval,
+    .workflow-node.approval_config {
+        --node-width: 280px;
+    }
+
+    .workflow-node.workflow_settings {
+        --node-width: 320px;
+    }
+
+    .workflow-node.action,
+    .workflow-node.email,
+    .workflow-node.condition {
+        --node-width: 260px;
+    }
+
+    .workflow-node.start,
+    .workflow-node.end {
+        --node-width: 180px;
+    }
+
+    .workflow-node.join {
+        --node-width: 140px;
+        text-align: center;
+    }
+    
+    .node-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+        padding-bottom: 0.4rem;
+        border-bottom: 1px solid rgba(36, 59, 83, 0.08);
+    }
+
+    .node-header span {
+        color: var(--wb-text-strong);
+        font-size: 0.92rem;
+        overflow-wrap: anywhere;
+    }
+    
+    .node-icon {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        background: var(--node-accent, var(--wb-primary));
+        color: var(--node-icon-color, #fff);
+    }
+    
+    .node-content {
+        font-size: 0.875rem;
+        color: var(--wb-text);
+        line-height: 1.45;
+        min-height: 1.5rem;
+        overflow-wrap: anywhere;
+    }
+
+    .node-content .badge {
+        margin-bottom: 0.35rem;
+    }
+
+    .workflow-node.stage .node-content,
+    .workflow-node.sub_workflow .node-content {
+        color: #3e4c59;
+    }
+    
+    .node-actions {
+        margin-top: 0.75rem;
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .node-actions button {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+    }
+    
+    /* Connection Points */
+    .connection-point {
+        width: 12px;
+        height: 12px;
+        background: var(--wb-primary);
+        border: 2px solid var(--wb-surface);
+        border-radius: 50%;
+        position: absolute;
+        cursor: crosshair;
+        transition: var(--wb-transition);
+        z-index: 100;
+    }
+
+    .connection-point:hover {
+        background: var(--wb-success);
+        transform: translateY(-50%) scale(1.3);
+        box-shadow: 0 0 8px rgba(40, 167, 69, 0.5);
+    }
+
+    .connection-point.is-connect-target {
+        background: var(--wb-success);
+        transform: translateY(-50%) scale(1.5);
+        box-shadow: 0 0 8px rgba(40, 167, 69, 0.5);
+    }
+
+    .connection-point.input {
+        left: -6px;
+        top: 50%;
+        transform: translateY(-50%);
+    }
+
+    .connection-point.output {
+        right: -6px;
+        top: 50%;
+        transform: translateY(-50%);
+    }
+
+    .connection-point.output:hover {
+        background: var(--wb-primary);
+        box-shadow: 0 0 8px rgba(102, 126, 234, 0.5);
+    }
+
+    .workflow-node.stage .connection-point.directional-handle,
+    .workflow-node.sub_workflow .connection-point.directional-handle {
+        width: 26px;
+        height: 26px;
+        border-radius: var(--wb-radius-pill);
+        background: linear-gradient(135deg, var(--wb-primary) 0%, var(--wb-primary-alt) 100%);
+        border: 2px solid var(--wb-surface);
+        box-shadow: 0 3px 10px rgba(102, 126, 234, 0.25);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .workflow-node.stage .connection-point.directional-handle::before,
+    .workflow-node.sub_workflow .connection-point.directional-handle::before {
+        color: #fff;
+        font-size: 0.9rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+
+    .workflow-node.stage .connection-point.input.directional-handle,
+    .workflow-node.sub_workflow .connection-point.input.directional-handle {
+        left: -13px;
+    }
+
+    .workflow-node.stage .connection-point.output.directional-handle,
+    .workflow-node.sub_workflow .connection-point.output.directional-handle {
+        right: -13px;
+    }
+
+    .workflow-node.stage .connection-point.input.directional-handle::before,
+    .workflow-node.sub_workflow .connection-point.input.directional-handle::before {
+        content: '←';
+    }
+
+    .workflow-node.stage .connection-point.output.directional-handle::before,
+    .workflow-node.sub_workflow .connection-point.output.directional-handle::before {
+        content: '→';
+    }
+
+    .workflow-node.stage .connection-point.directional-handle:hover,
+    .workflow-node.sub_workflow .connection-point.directional-handle:hover {
+        background: linear-gradient(135deg, var(--wb-primary-dark) 0%, #653a8b 100%);
+        transform: translateY(-50%) scale(1.08);
+        box-shadow: 0 6px 14px rgba(102, 126, 234, 0.3);
+    }
+
+    .workflow-node.stage .connection-point.directional-handle.is-connect-target,
+    .workflow-node.sub_workflow .connection-point.directional-handle.is-connect-target {
+        background: linear-gradient(135deg, #2cb67d 0%, #1f9d55 100%);
+        transform: translateY(-50%) scale(1.12);
+        box-shadow: 0 6px 14px rgba(40, 167, 69, 0.28);
+    }
+    
+    /* SVG Connections */
+    .connections-svg {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 5;
+        overflow: visible;
+    }
+
+    .connections-svg * {
+        pointer-events: auto;
+    }
+
+    .workflow-node {
+        z-index: 10;
+    }
+    
+    .connection-line {
+        stroke: var(--wb-primary);
+        stroke-width: 2.5;
+        fill: none;
+        marker-end: url(#arrowhead);
+        cursor: pointer;
+        transition: var(--wb-transition);
+        pointer-events: stroke;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .connection-backdrop {
+        stroke: rgba(102, 126, 234, 0.14);
+        stroke-width: 8;
+        fill: none;
+        pointer-events: none;
+        stroke-linecap: round;
+    }
+
+    .connection-hitbox {
+        stroke: transparent;
+        stroke-width: 14;
+        fill: none;
+        pointer-events: stroke;
+        cursor: pointer;
+    }
+
+    .connection-line.hovered,
+    .connection-line:hover {
+        stroke: var(--wb-danger);
+        stroke-width: 3;
+    }
+
+    .connection-backdrop.hovered {
+        stroke: rgba(220, 53, 69, 0.16);
+    }
+
+    .connection-backdrop.selected {
+        stroke: rgba(220, 53, 69, 0.2);
+        stroke-width: 10;
+    }
+
+    .connection-line.selected {
+        stroke: #f5576c;
+        stroke-width: 3;
+    }
+    
+    /* Properties Panel */
+    .properties-panel {
+        width: 320px;
+        padding: 1.5rem;
+        overflow-y: auto;
+    }
+    
+    .properties-header {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        color: var(--wb-text-strong);
+    }
+    
+    .properties-empty {
+        text-align: center;
+        color: var(--wb-text-muted);
+        padding: 2rem 0;
+    }
+
+    .properties-empty-icon {
+        font-size: 2rem;
+        color: #dee2e6;
+    }
+
+    /* Properties Panel Form Controls */
+    .properties-panel .form-select[multiple] {
+        min-height: 120px;
+        padding: 0.5rem;
+        overflow-y: auto;
+        width: 100%;
+        background-color: var(--wb-surface);
+        color: #212529;
+        border-color: var(--wb-border-strong);
+    }
+
+    .properties-panel .builder-multiselect-lg {
+        min-height: 140px;
+    }
+
+    .properties-panel .form-control,
+    .properties-panel .form-select,
+    .properties-panel textarea,
+    .properties-panel input[type="text"],
+    .properties-panel input[type="number"],
+    .properties-panel input[type="time"] {
+        background-color: var(--wb-surface) !important;
+        color: #212529 !important;
+        border-color: var(--wb-border-strong);
+        border-radius: 10px;
+    }
+
+    .properties-panel .form-control::placeholder,
+    .properties-panel textarea::placeholder {
+        color: var(--wb-text-muted);
+        opacity: 1;
+    }
+
+    .properties-panel .form-control:focus,
+    .properties-panel .form-select:focus,
+    .properties-panel textarea:focus,
+    .properties-panel input[type="text"]:focus,
+    .properties-panel input[type="number"]:focus,
+    .properties-panel input[type="time"]:focus {
+        background-color: var(--wb-surface) !important;
+        color: #212529 !important;
+        border-color: #86b7fe;
+        box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
+    }
+
+    .properties-panel .form-check-input {
+        background-color: var(--wb-surface);
+        border-color: #adb5bd;
+    }
+
+    .properties-panel .form-check-input:checked {
+        background-color: var(--wb-primary);
+        border-color: var(--wb-primary);
+    }
+
+    .properties-panel .card,
+    .properties-panel .list-group-item,
+    .properties-panel .trigger-condition-row,
+    .properties-panel .notification-rule-card {
+        background: var(--wb-surface);
+        color: #212529;
+        border-color: var(--wb-border);
+    }
+
+    .properties-panel .card .text-muted,
+    .properties-panel .list-group-item .text-muted,
+    .properties-panel .trigger-condition-row .text-muted {
+        color: #6c757d !important;
+    }
+
+    .properties-panel .btn-outline-secondary,
+    .properties-panel .btn-outline-primary,
+    .properties-panel .btn-outline-danger {
+        background-color: var(--wb-surface);
+    }
+
+    .properties-panel .alert {
+        border-radius: var(--wb-radius-md);
+    }
+
+    .property-section {
+        border: 1px solid var(--wb-border-soft);
+        border-radius: var(--wb-radius-lg);
+        background: linear-gradient(180deg, var(--wb-surface-tint) 0%, var(--wb-surface) 100%);
+        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.04);
+        margin-bottom: 1rem;
+        overflow: hidden;
+    }
+
+    .property-section-header {
+        padding: 0.85rem 1rem 0.6rem;
+        background: linear-gradient(180deg, rgba(102, 126, 234, 0.06) 0%, rgba(102, 126, 234, 0.02) 100%);
+        border-bottom: 1px solid #eef2f7;
+    }
+
+    .property-section-header h6 {
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.88rem;
+        font-weight: 700;
+        color: var(--wb-text);
+        border: 0;
+        padding: 0;
+    }
+
+    .property-section-description {
+        margin: 0.35rem 0 0;
+        font-size: 0.78rem;
+        line-height: 1.45;
+        color: var(--wb-text-muted);
+    }
+
+    .property-section-body {
+        padding: 0.95rem 1rem 1rem;
+    }
+
+    .property-section-body .mb-3:last-child,
+    .property-section-body .row.g-2:last-child,
+    .property-section-body .list-group:last-child {
+        margin-bottom: 0 !important;
+    }
+
+    .properties-panel h6 {
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: #486581;
+        margin-bottom: 0.65rem;
+    }
+
+    .properties-panel hr {
+        margin: 1rem 0;
+        border-color: #edf2f7;
+        opacity: 1;
+    }
+
+    .properties-panel .form-select[multiple] option {
+        padding: 0.5rem 0.75rem;
+        border-radius: 4px;
+        margin-bottom: 2px;
+        cursor: pointer;
+        white-space: normal;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        line-height: 1.4;
+        min-height: 2.5rem;
+        display: block;
+        background: var(--wb-surface);
+        color: #212529;
+    }
+
+    .properties-panel .form-select[multiple] option:checked {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: white !important;
+        font-weight: 500;
+        box-shadow: none !important;
+    }
+
+    .properties-panel .form-select[multiple] option:hover {
+        background: var(--wb-primary-soft);
+    }
+
+    .properties-panel .form-select[multiple] option:checked:hover {
+        background: linear-gradient(135deg, #5568d3 0%, #653a8b 100%) !important;
+    }
+
+    /* Override Bootstrap default select styling */
+    .properties-panel select[multiple] {
+        background-image: none;
+        padding-right: 0.75rem;
+    }
+
+    /* Regular select dropdowns in properties panel */
+    .properties-panel .form-select:not([multiple]) {
+        width: 100%;
+        padding: 0.5rem 2.5rem 0.5rem 0.75rem;
+        height: auto;
+        min-height: 38px;
+        line-height: 1.5;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+        display: flex;
+        align-items: center;
+    }
+
+    .properties-panel .form-select:not([multiple]) option {
+        white-space: normal;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        padding: 0.5rem;
+        line-height: 1.5;
+    }
+
+    /* Toolbar */
+    .workflow-toolbar {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .toolbar-btn {
+        background: rgba(255,255,255,0.18);
+        border: 1px solid rgba(255,255,255,0.3);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: var(--wb-transition);
+    }
+    
+    .toolbar-btn:hover {
+        background: rgba(255,255,255,0.3);
+    }
+
+    .toolbar-btn-sm {
+        padding: 0.3rem 0.5rem;
+        font-size: 0.85rem;
+    }
+
+    .zoom-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        margin-right: 0.75rem;
+        background: rgba(15, 23, 42, 0.18);
+        border-radius: 6px;
+        padding: 0.15rem 0.35rem;
+    }
+
+    .zoom-level {
+        color: rgba(255,255,255,0.9);
+        font-size: 0.8rem;
+        min-width: 3rem;
+        text-align: center;
+        font-weight: 500;
+    }
+
+    .save-status {
+        color: rgba(255,255,255,0.8);
+        font-size: 0.875rem;
+    }
+
+    .save-status[data-tone="success"] { color: #d1f7dd; }
+    .save-status[data-tone="danger"] { color: #ffd6d6; }
+    .save-status[data-tone="info"] { color: #d9ecff; }
+    .save-status[data-tone="warning"] { color: #ffe7b3; }
+
+    .dirty-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.25rem 0.6rem;
+        border-radius: var(--wb-radius-pill);
+        background: rgba(255, 193, 7, 0.18);
+        border: 1px solid rgba(255, 193, 7, 0.35);
+        color: #fff3cd;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+
+    .dirty-indicator[hidden] {
+        display: none;
+    }
+
+    .builder-status-panels {
+        padding: 0.75rem 1.5rem 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .builder-help-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .builder-help-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.35rem 0.7rem;
+        border-radius: 999px;
+        background: var(--wb-surface-subtle);
+        border: 1px solid #e2e8f0;
+        color: #475569;
+        font-size: 0.8rem;
+        white-space: nowrap;
+    }
+
+    .builder-selection-status .alert {
+        border-radius: 12px;
+        border-color: rgba(13, 110, 253, 0.18);
+        background: #f7fbff;
+    }
+
+    .validation-summary ul,
+    #builderMessage ul {
+        padding-left: 1.1rem;
+    }
+
+    .node-issue-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+    }
+
+    .toolbar-btn:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+    }
+
+    @media (max-width: 1400px) {
+        .workflow-builder-container {
+            flex-wrap: wrap;
+            height: auto;
+        }
+
+        .node-palette,
+        .properties-panel {
+            width: 100%;
+        }
+
+        .node-palette {
+            max-height: 240px;
+        }
+
+        .properties-panel {
+            max-height: 520px;
+        }
+
+        .workflow-canvas-container {
+            min-height: 720px;
+            width: 100%;
+        }
+    }
+
+    @media (max-width: 900px) {
+        .canvas-header {
+            align-items: stretch;
+        }
+
+        .workflow-toolbar {
+            flex-wrap: wrap;
+        }
+
+        .builder-help-chip {
+            white-space: normal;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="workflow-builder-container">
+    <!-- Node Palette -->
+    <div class="node-palette builder-panel">
+        <div class="palette-header">
+            <i class="bi bi-box"></i> Workflow Nodes
+        </div>
+
+        <div class="palette-node stage" draggable="true" data-node-type="stage">
+            <i class="bi bi-layers"></i>
+            <span>Approval Stage</span>
+        </div>
+
+        <div class="palette-node action" draggable="true" data-node-type="action">
+            <i class="bi bi-lightning"></i>
+            <span>Action</span>
+        </div>
+
+        <div class="palette-node email" draggable="true" data-node-type="email">
+            <i class="bi bi-envelope"></i>
+            <span>Email</span>
+        </div>
+
+        <div class="palette-node sub_workflow" draggable="true" data-node-type="sub_workflow">
+            <i class="bi bi-diagram-2"></i>
+            <span>Sub-Workflow</span>
+        </div>
+
+        <div class="palette-node end" draggable="true" data-node-type="end">
+            <i class="bi bi-flag"></i>
+            <span>End</span>
+        </div>
+    </div>
+    
+    <!-- Workflow Canvas -->
+    <div class="workflow-canvas-container builder-panel">
+        <div class="canvas-header">
+            <div class="canvas-header-meta">
+                <h5 class="mb-0">{{ form_definition.name }} - {{ selected_workflow_label }}</h5>
+                <small class="text-muted">
+                    Visual workflow builder •
+                    {% if workflow_id %}
+                    <a href="{% url 'admin:django_forms_workflows_workflowdefinition_change' workflow_id %}" target="_blank" class="canvas-admin-link">
+                        <i class="bi bi-gear"></i> Advanced Settings
+                    </a>
+                    {% endif %}
+                </small>
+                {% if workflow_count > 1 %}
+                <div class="mt-2 workflow-track-switcher">
+                    <label for="workflowTrackSelect" class="form-label form-label-sm mb-1 text-white-50">Workflow track</label>
+                    <select class="form-select form-select-sm" id="workflowTrackSelect">
+                        {% for track in workflow_tracks %}
+                        <option value="{{ track.id }}" {% if track.id == workflow_id %}selected{% endif %}>{{ track.label }}</option>
+                        {% endfor %}
+                    </select>
+                    <small class="text-white-50">Existing tracks can be edited one at a time.</small>
+                </div>
+                {% endif %}
+            </div>
+            <div class="workflow-toolbar">
+                <div class="zoom-controls">
+                    <button class="toolbar-btn toolbar-btn-sm" onclick="workflowBuilder.setZoom(workflowBuilder.zoom - 0.1)" title="Zoom out">
+                        <i class="bi bi-dash-lg"></i>
+                    </button>
+                    <span class="zoom-level" id="zoomLevel">100%</span>
+                    <button class="toolbar-btn toolbar-btn-sm" onclick="workflowBuilder.setZoom(workflowBuilder.zoom + 0.1)" title="Zoom in">
+                        <i class="bi bi-plus-lg"></i>
+                    </button>
+                    <button class="toolbar-btn toolbar-btn-sm" onclick="workflowBuilder.resetView()" title="Reset view">
+                        <i class="bi bi-arrows-fullscreen"></i>
+                    </button>
+                </div>
+                <span class="save-status" id="saveStatus">Ready</span>
+                <span class="dirty-indicator" id="dirtyIndicator" hidden>
+                    <i class="bi bi-dot"></i> Unsaved edits
+                </span>
+                <button class="toolbar-btn" id="btnAutoArrange" type="button" title="Spread steps out to reduce overlap">
+                    <i class="bi bi-distribute-horizontal"></i> Auto Arrange
+                </button>
+                <button class="toolbar-btn" id="btnDeleteConnection" disabled>
+                    <i class="bi bi-scissors"></i> Remove Connection
+                </button>
+                <button class="toolbar-btn" id="btnSave">
+                    <i class="bi bi-save"></i> Save Workflow
+                </button>
+                <button class="toolbar-btn" id="btnBack" onclick="window.location.href='{% url 'admin:django_forms_workflows_formdefinition_change' form_id %}'">
+                    <i class="bi bi-arrow-left"></i> Back
+                </button>
+            </div>
+        </div>
+        <div class="builder-status-panels">
+            <div id="builderMessage"></div>
+            <div id="validationSummary"></div>
+            <div class="builder-help-strip" id="builderHelpStrip">
+                <span class="builder-help-chip"><i class="bi bi-arrow-left-right"></i> Drag from the right arrow handle into a left arrow handle to connect steps</span>
+                <span class="builder-help-chip"><i class="bi bi-hand-index-thumb"></i> Drag empty canvas space to pan around the workflow</span>
+                <span class="builder-help-chip"><i class="bi bi-distribute-horizontal"></i> Use Auto Arrange if steps load too close together</span>
+                <span class="builder-help-chip"><i class="bi bi-exclamation-triangle"></i> Red nodes block save; orange nodes are warnings</span>
+                <span class="builder-help-chip"><i class="bi bi-scissors"></i> Click a connection, then press Delete or use Remove Connection</span>
+            </div>
+            <div id="selectionStatus" class="builder-selection-status"></div>
+        </div>
+        <div class="workflow-canvas" id="workflowCanvas">
+            <svg class="connections-svg" id="connectionsSvg">
+                <defs>
+                    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                        <polygon points="0 0, 10 3, 0 6" fill="#667eea" />
+                    </marker>
+                </defs>
+            </svg>
+        </div>
+    </div>
+    
+    <!-- Properties Panel -->
+    <div class="properties-panel builder-panel">
+        <div class="properties-header">
+            <i class="bi bi-sliders"></i> Properties
+        </div>
+        <div id="propertiesContent">
+            <div class="properties-empty">
+                <i class="bi bi-info-circle properties-empty-icon"></i>
+                <p>Select a node to edit its properties</p>
+
+                <hr class="my-4" />
+
+                <div class="text-start">
+                    <h6><i class="bi bi-info-circle"></i> Visual Builder Scope</h6>
+                    <p class="small text-muted mb-2">This visual builder configures:</p>
+                    <ul class="small text-muted">
+                        <li>Approval stages and stage routing basics</li>
+                        <li>Workflow/stage trigger conditions</li>
+                        <li>Notification rules and cadence</li>
+                        <li>Approval-group ordering and approval-only fields</li>
+                        <li>Post-submission actions</li>
+                        <li>Email actions</li>
+                        <li>Sub-workflow configuration</li>
+                    </ul>
+
+                    <p class="small text-muted mb-2 mt-3">For advanced settings, use the
+                        {% if workflow_id %}
+                        <a href="{% url 'admin:django_forms_workflows_workflowdefinition_change' workflow_id %}" target="_blank">
+                            Admin Panel
+                        </a>
+                        {% else %}
+                        Admin Panel
+                        {% endif %}:
+                    </p>
+                    <ul class="small text-muted">
+                        <li>Any advanced configuration not shown in the builder</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extrahead %}
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script type="module">
+    import { WorkflowBuilder } from "{% static 'django_forms_workflows/js/workflow-builder.js' %}";
+
+    const WORKFLOW_CONFIG = {
+        formId: {{ form_id }},
+        currentWorkflowId: {{ workflow_id }},
+        workflowBuilderUrl: '{% url "admin:workflow_builder" form_id %}',
+        csrfToken: '{{ csrf_token }}',
+        apiUrls: {
+            load: '{% url "admin:workflow_builder_load" form_id %}?workflow_id={{ workflow_id }}',
+            save: '{% url "admin:workflow_builder_save" %}',
+        }
+    };
+
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM loaded, initializing workflow builder...');
+        console.log('WORKFLOW_CONFIG:', WORKFLOW_CONFIG);
+        window.workflowBuilder = new WorkflowBuilder(WORKFLOW_CONFIG);
+    });
+</script>
+{% endblock %}
+

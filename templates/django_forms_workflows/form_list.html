@@ -1,0 +1,355 @@
+{% extends 'django_forms_workflows/base.html' %}
+{% load static forms_workflows_tags %}
+
+{% block title %}Available Forms - Royal Workflow{% endblock %}
+
+{% block topbar_title %}Forms{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/enterprise-tables.css' %}">
+<style>
+  .catalog-search-group {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    align-items: center;
+  }
+  .catalog-search-group:focus-within {
+    border-color: #94a3b8;
+    box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.25);
+  }
+  .catalog-search-group .input-group-text {
+    background-color: transparent;
+    border: none;
+    color: #94a3b8;
+    padding-left: 0.85rem;
+    padding-right: 0.35rem;
+    font-size: 13.5px;
+  }
+  .catalog-search-group .form-control {
+    background-color: transparent;
+    border: none;
+    box-shadow: none !important;
+    font-size: 13.5px;
+    color: #0f172a;
+    padding-left: 0.35rem;
+    padding-right: 0.75rem;
+  }
+  .catalog-search-group .form-control:focus {
+    box-shadow: none !important;
+    border: none;
+  }
+  .catalog-search-group .clear-search-btn {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    padding: 0 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+    font-size: 12px;
+  }
+  .catalog-search-group .clear-search-btn:hover {
+    color: #475569;
+  }
+  .catalog-search-col {
+    width: 100%;
+  }
+  @media (min-width: 768px) {
+    .catalog-search-col {
+      width: 320px;
+      max-width: 360px;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+
+        {# ── Page Header & Search Bar ── #}
+        <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3 mb-4 pb-3" style="border-bottom: 1px solid #f1f5f9;">
+            <div>
+                <h1 class="h3 fw-bold text-dark mb-1">Available Forms</h1>
+                <p class="text-muted mb-0 small">Select and submit an operational or procurement form.</p>
+            </div>
+            <div class="catalog-search-col">
+                <form method="get" action="{% url 'forms_workflows:form_list' %}" id="catalogSearchForm" class="d-flex mb-0" role="search">
+                    <div class="input-group catalog-search-group w-100">
+                        <span class="input-group-text">
+                            <i class="bi bi-search"></i>
+                        </span>
+                        <input type="search"
+                               name="q"
+                               id="catalogSearchInput"
+                               class="form-control"
+                               placeholder="Search forms or categories..."
+                               value="{{ request.GET.q|default:'' }}"
+                               aria-label="Search forms or categories...">
+                        {% if request.GET.q or search_query %}
+                        <a href="{% url 'forms_workflows:form_list' %}" class="clear-search-btn" title="Clear search">
+                            <i class="bi bi-x-lg"></i>
+                        </a>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        {# ── Category Filter Pills ── #}
+        {% if grouped_forms and grouped_forms|length > 1 %}
+        <div class="filter-group-row mb-4" role="toolbar" aria-label="Category filters">
+            <span class="filter-label"><i class="bi bi-funnel me-1"></i>Category:</span>
+            <div class="filter-pills-scroll" id="catalogCategoryPills">
+                <button type="button" class="filter-pill active" data-category="all">
+                    <span>All</span>
+                    <span class="badge">{{ forms|length }}</span>
+                </button>
+                {% for node in grouped_forms %}
+                    {% if node.category %}
+                    <button type="button" class="filter-pill" data-category="{{ node.category.slug }}">
+                        {% if node.category.icon %}<i class="bi {{ node.category.icon }}"></i>{% endif %}
+                        <span>{{ node.category.name }}</span>
+                        <span class="badge">{{ node.total_count }}</span>
+                    </button>
+                    {% else %}
+                    <button type="button" class="filter-pill" data-category="general">
+                        <i class="bi bi-collection"></i>
+                        <span>General</span>
+                        <span class="badge">{{ node.total_count }}</span>
+                    </button>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {# ── Active Search Status Indicator ── #}
+        {% if search_query or request.GET.q %}
+        <div class="d-flex align-items-center justify-content-between mb-3 text-muted small bg-light p-2 px-3 rounded border">
+            <div>
+                Showing results for: &ldquo;<strong class="text-dark">{{ search_query|default:request.GET.q }}</strong>&rdquo;
+                {% if forms %}
+                <span class="badge bg-secondary ms-2 fw-normal">{{ forms|length }} form{{ forms|length|pluralize }} found</span>
+                {% endif %}
+            </div>
+            <a href="{% url 'forms_workflows:form_list' %}" class="text-decoration-none text-secondary">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>Reset
+            </a>
+        </div>
+        {% endif %}
+
+        {# ── Forms Listing ── #}
+        {% if grouped_forms %}
+            {% render_form_categories grouped_forms %}
+        {% elif forms %}
+            {# Fallback: flat list when grouped_forms is not provided #}
+            <div class="row">
+                {% for form in forms %}
+                    <div class="col-md-6 col-lg-4 mb-3">
+                        <div class="card h-100 border rounded-3 shadow-sm">
+                            <div class="card-body">
+                                <h5 class="card-title fw-semibold text-dark">{{ form.name }}</h5>
+                                <p class="card-text text-muted small">{{ form.description|striptags|truncatewords:20 }}</p>
+                            </div>
+                            <div class="card-footer bg-transparent border-0 pt-0 d-flex align-items-center gap-2">
+                                <a href="{% url 'forms_workflows:form_submit' form.slug %}" class="btn btn-primary btn-sm">
+                                    <i class="bi bi-pencil-square me-1"></i> Fill Out Form
+                                </a>
+                                <button type="button"
+                                        class="btn btn-outline-secondary btn-sm share-qr-btn"
+                                        data-form-name="{{ form.name }}"
+                                        data-form-slug="{{ form.slug }}"
+                                        data-qr-url="{% url 'forms_workflows:form_qr_code' form.slug %}"
+                                        data-submit-url="{% url 'forms_workflows:form_submit' form.slug %}"
+                                        title="Share form via link or QR code">
+                                    <i class="bi bi-share me-1"></i> Share
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            {# Empty State #}
+            {% if search_query or request.GET.q %}
+            <div class="card border border-light-subtle shadow-sm my-3">
+                <div class="card-body text-center py-5">
+                    <div class="text-muted mb-3">
+                        <i class="bi bi-search" style="font-size: 2.2rem; opacity: 0.4;"></i>
+                    </div>
+                    <h5 class="fw-semibold text-dark mb-2">No Forms Found</h5>
+                    <p class="text-muted mb-4 small">
+                        No forms found matching your search term. Try a different keyword.
+                    </p>
+                    <a href="{% url 'forms_workflows:form_list' %}" class="btn btn-sm btn-outline-primary px-3">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i> View All Forms
+                    </a>
+                </div>
+            </div>
+            {% else %}
+            <div class="alert alert-light border text-muted py-4 text-center">
+                <i class="bi bi-info-circle me-1"></i>
+                No forms are currently available. Please check back later or contact your administrator.
+            </div>
+            {% endif %}
+        {% endif %}
+
+    </div>
+</div>
+
+{# ── Share / QR Code Modal ── #}
+<div class="modal fade" id="shareQrModal" tabindex="-1" aria-labelledby="shareQrModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fs-6 fw-semibold" id="shareQrModalLabel">
+          <i class="bi bi-qr-code me-1"></i> Share Form
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <h6 id="shareQrFormName" class="mb-3 fw-semibold text-dark"></h6>
+        <div id="shareQrImage" class="mb-3 d-flex justify-content-center">
+          {# QR code SVG is injected here by JS #}
+        </div>
+        <div class="input-group input-group-sm">
+          <input type="text" id="shareQrUrl" class="form-control" readonly>
+          <button class="btn btn-outline-secondary" type="button" id="shareQrCopyBtn" title="Copy link">
+            <i class="bi bi-clipboard"></i>
+          </button>
+        </div>
+        <small id="shareQrCopyFeedback" class="text-success d-none mt-1">Link copied to clipboard!</small>
+      </div>
+      <div class="modal-footer justify-content-center">
+        <a id="shareQrDownloadSvg" href="#" download class="btn btn-sm btn-outline-primary">
+          <i class="bi bi-download me-1"></i> SVG
+        </a>
+        <a id="shareQrDownloadPng" href="#" download class="btn btn-sm btn-outline-primary">
+          <i class="bi bi-download me-1"></i> PNG
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // 1. Debounced catalog search auto-filter & Enter submission
+    var searchInput = document.getElementById('catalogSearchInput');
+    var searchForm = document.getElementById('catalogSearchForm');
+    if (searchInput && searchForm) {
+        var debounceTimer;
+        searchInput.addEventListener('input', function() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(function() {
+                searchForm.submit();
+            }, 300);
+        });
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                clearTimeout(debounceTimer);
+                searchForm.submit();
+            }
+        });
+        if (searchInput.value) {
+            searchInput.focus();
+            var len = searchInput.value.length;
+            searchInput.setSelectionRange(len, len);
+        }
+    }
+
+    // 2. Share / QR Code Modal
+    var modal = document.getElementById('shareQrModal');
+    if (!modal) return;
+
+    var bsModal = new bootstrap.Modal(modal);
+
+    document.querySelectorAll('.share-qr-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var formName = this.dataset.formName;
+            var qrUrl    = this.dataset.qrUrl;
+            var submitUrl = this.dataset.submitUrl;
+            var absUrl   = window.location.origin + submitUrl;
+
+            modal.querySelector('#shareQrFormName').textContent = formName;
+            modal.querySelector('#shareQrUrl').value = absUrl;
+            modal.querySelector('#shareQrDownloadSvg').href = qrUrl + '?format=svg';
+            modal.querySelector('#shareQrDownloadSvg').download = this.dataset.formSlug + '-qr.svg';
+            modal.querySelector('#shareQrDownloadPng').href = qrUrl + '?format=png';
+            modal.querySelector('#shareQrDownloadPng').download = this.dataset.formSlug + '-qr.png';
+
+            // Load QR SVG inline
+            var imgContainer = modal.querySelector('#shareQrImage');
+            imgContainer.innerHTML = '<div class="spinner-border spinner-border-sm text-primary" role="status"></div>';
+            fetch(qrUrl + '?format=svg')
+                .then(function(r) { return r.text(); })
+                .then(function(svg) {
+                    imgContainer.innerHTML = svg;
+                    var svgEl = imgContainer.querySelector('svg');
+                    if (svgEl) {
+                        svgEl.setAttribute('width', '200');
+                        svgEl.setAttribute('height', '200');
+                        svgEl.style.maxWidth = '100%';
+                    }
+                })
+                .catch(function() {
+                    imgContainer.innerHTML = '<p class="text-danger small">Failed to load QR code.</p>';
+                });
+
+            var copyFeedback = modal.querySelector('#shareQrCopyFeedback');
+            copyFeedback.classList.add('d-none');
+
+            bsModal.show();
+        });
+    });
+
+    var copyBtn = document.getElementById('shareQrCopyBtn');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', function() {
+            var urlInput = document.getElementById('shareQrUrl');
+            urlInput.select();
+            navigator.clipboard.writeText(urlInput.value).then(function() {
+                var feedback = document.getElementById('shareQrCopyFeedback');
+                feedback.classList.remove('d-none');
+                setTimeout(function() {
+                    feedback.classList.add('d-none');
+                }, 2000);
+            });
+        });
+    }
+
+    // 3. Category pill interactive filtering
+    var catPills = document.querySelectorAll('#catalogCategoryPills .filter-pill');
+    var accordionItems = document.querySelectorAll('#formCategoriesAccordion .accordion-item');
+    if (catPills.length && accordionItems.length) {
+        catPills.forEach(function(pill) {
+            pill.addEventListener('click', function(e) {
+                e.preventDefault();
+                catPills.forEach(function(p) { p.classList.remove('active'); });
+                pill.classList.add('active');
+                var targetSlug = pill.dataset.category;
+                accordionItems.forEach(function(item) {
+                    if (targetSlug === 'all' || item.dataset.categorySlug === targetSlug) {
+                        item.classList.remove('d-none');
+                        if (targetSlug !== 'all') {
+                            var collapseEl = item.querySelector('.accordion-collapse');
+                            if (collapseEl && !collapseEl.classList.contains('show')) {
+                                var bsCollapse = bootstrap.Collapse.getInstance(collapseEl) || new bootstrap.Collapse(collapseEl);
+                                bsCollapse.show();
+                            }
+                        }
+                    } else {
+                        item.classList.add('d-none');
+                    }
+                });
+            });
+        });
+    }
+});
+</script>
+{% endblock %}

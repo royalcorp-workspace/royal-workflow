@@ -1,0 +1,560 @@
+{% extends 'django_forms_workflows/base.html' %}
+{% load crispy_forms_tags %}
+{% load static %}
+
+{% block title %}{{ form_def.name }} - Royal Workflow{% endblock %}
+
+{% block topbar_title %}{{ form_def.name }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'django_forms_workflows/css/forms.css' %}">
+<style>
+    /* ── Enterprise Document UI Styling ── */
+    .form-document-card {
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+        padding: 1.25rem 1rem;
+    }
+    @media (min-width: 576px) {
+        .form-document-card {
+            padding: 2rem 2.25rem;
+        }
+    }
+    @media (min-width: 768px) {
+        .form-document-card {
+            padding: 2.5rem 3rem;
+        }
+    }
+
+    /* Form Title & Subtitle */
+    .form-doc-title {
+        font-size: 1.5rem; /* 24px */
+        font-weight: 700;
+        color: #0f172a;
+        letter-spacing: -0.015em;
+        line-height: 1.3;
+        margin-bottom: 0.25rem;
+    }
+    .form-doc-subtitle {
+        font-size: 0.875rem;
+        color: #64748b;
+        margin-bottom: 0;
+    }
+
+    /* Auto-save Header Badge */
+    #autoSaveSlot {
+        min-height: 32px;
+        display: flex;
+        align-items: center;
+    }
+    #autoSaveSlot .auto-save-indicator,
+    #autoSaveIndicator {
+        position: static !important;
+        bottom: auto !important;
+        right: auto !important;
+        background: #f8fafc !important;
+        padding: 5px 10px !important;
+        border-radius: 6px !important;
+        border: 1px solid #e2e8f0 !important;
+        box-shadow: none !important;
+        z-index: auto !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        font-size: 0.8125rem !important;
+        color: #64748b !important;
+    }
+    #autoSaveSlot .auto-save-indicator.saving {
+        background: #fffbeb !important;
+        border-color: #fef3c7 !important;
+        color: #b45309 !important;
+    }
+    #autoSaveSlot .auto-save-indicator.saved {
+        background: #f0fdf4 !important;
+        border-color: #dcfce7 !important;
+        color: #15803d !important;
+    }
+    #autoSaveSlot .auto-save-indicator.error {
+        background: #fef2f2 !important;
+        border-color: #fee2e2 !important;
+        color: #b91c1c !important;
+    }
+
+    /* Form Fields & Unified Heights */
+    .form-label {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: #1e293b;
+        margin-bottom: 0.35rem;
+    }
+    .asteriskField {
+        color: #dc2626 !important;
+        font-weight: 700;
+        margin-left: 3px;
+    }
+    .form-control, .form-select {
+        height: 42px;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.875rem;
+        border-color: #cbd5e1;
+        border-radius: 6px;
+        color: #0f172a;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    textarea.form-control {
+        height: auto;
+        min-height: 84px;
+        resize: vertical;
+    }
+    .form-control:focus, .form-select:focus {
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    }
+    .input-group-text {
+        height: 42px;
+        background-color: #f8fafc;
+        border-color: #cbd5e1;
+        color: #475569;
+        font-weight: 600;
+        font-size: 0.875rem;
+        border-top-left-radius: 6px;
+        border-bottom-left-radius: 6px;
+    }
+    .form-text, .help-block {
+        font-size: 0.75rem !important;
+        color: #64748b !important;
+        margin-top: 0.3rem !important;
+    }
+
+    /* Rating stars widget */
+    .rating-stars-container { display: inline-flex; gap: 0.15rem; direction: rtl; }
+    .rating-stars-container input { display: none; }
+    .rating-stars-container label { cursor: pointer; font-size: 1.5rem; color: #dee2e6; transition: color 0.15s; }
+    .rating-stars-container label:hover,
+    .rating-stars-container label:hover ~ label,
+    .rating-stars-container input:checked ~ label { color: #ffc107; }
+    /* Slider value display */
+    .slider-value-display { font-weight: 600; min-width: 3rem; text-align: center; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-lg-10 col-xl-9">
+
+        {# ── Main Document Card ── #}
+        <div class="form-document-card">
+            
+            {# ── Document Header ── #}
+            <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center pb-3 mb-4 border-bottom gap-2">
+                <div>
+                    <div class="d-flex align-items-center gap-2">
+                        <h1 class="form-doc-title">{{ form_def.name }}</h1>
+                        {% if is_draft %}
+                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Draft</span>
+                        {% endif %}
+                    </div>
+                    <p class="form-doc-subtitle">Complete all required fields below before submitting for approval.</p>
+                </div>
+                <div id="autoSaveSlot">
+                    {% if form_def.enable_auto_save and user.is_authenticated %}
+                    <div id="autoSaveIndicator" class="auto-save-indicator">
+                        <span id="autoSaveStatus"><i class="bi bi-cloud-check text-success me-1"></i> Auto-save enabled</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            {# ── Instructions Banner ── #}
+            {% if form_def.instructions %}
+                <div class="alert alert-info border-info-subtle mb-4">
+                    <div class="d-flex align-items-start gap-2">
+                        <i class="bi bi-info-circle-fill text-info mt-1"></i>
+                        <div>{{ form_def.instructions|safe }}</div>
+                    </div>
+                </div>
+            {% endif %}
+
+            {# ── Validation Error Banner ── #}
+            {% if form.errors %}
+            <div class="alert alert-danger d-flex align-items-center gap-2 mb-4" role="alert" id="form-error-summary">
+                <i class="bi bi-exclamation-triangle-fill fs-5 flex-shrink-0"></i>
+                <span>
+                    <strong>{{ form.errors|length }} field{{ form.errors|length|pluralize }} need{{ form.errors|length|pluralize:"s," }} attention.</strong>
+                    Please review and correct the highlighted fields before submitting.
+                </span>
+            </div>
+            {% endif %}
+
+            {# ── Main Form Canvas & Action Buttons ── #}
+            <form method="post"
+                  enctype="multipart/form-data"
+                  class="needs-validation"
+                  novalidate
+                  id="form_{{ form_def.slug }}"
+                  data-form-enhancements="true"
+                  data-form-slug="{{ form_def.slug }}">
+                {% csrf_token %}
+                
+                {# Crispy form fields #}
+                <div class="form-fields-wrapper">
+                    {% crispy form %}
+                </div>
+
+                {# Unified Button Bar inside <form> #}
+                <div class="d-flex flex-column flex-sm-row justify-content-between align-items-stretch align-items-sm-center gap-2 mt-4 pt-3 border-top">
+                    <div>
+                        <a href="{% url 'forms_workflows:form_list' %}" class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center w-100 w-sm-auto">
+                            &larr; Back to Forms
+                        </a>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        {% if form_def.allow_save_draft and user.is_authenticated %}
+                        <button type="submit" name="action" value="draft" class="btn btn-secondary d-inline-flex align-items-center justify-content-center flex-grow-1 flex-sm-grow-0" formnovalidate>
+                            Save Draft
+                        </button>
+                        {% endif %}
+                        {% if not is_anonymous and is_draft and draft_id %}
+                        <a href="{% url 'forms_workflows:discard_draft' draft_id %}" class="btn btn-outline-danger d-inline-flex align-items-center justify-content-center flex-grow-1 flex-sm-grow-0">
+                            <i class="bi bi-trash3 me-1"></i> Discard Draft
+                        </a>
+                        {% endif %}
+                        <button type="submit" name="action" value="submit" class="btn btn-primary d-inline-flex align-items-center justify-content-center flex-grow-1 flex-sm-grow-0">
+                            Submit Application
+                        </button>
+                    </div>
+                </div>
+            </form>
+
+        </div>
+
+        {# ── Batch Import Panel (If Enabled) ── #}
+        {% if form_def.allow_batch_import %}
+        <div class="card mt-4 border border-light-subtle rounded-3 shadow-sm">
+            <div class="card-header bg-light d-flex align-items-center gap-2 py-3">
+                <i class="bi bi-table text-primary fs-5"></i>
+                <strong class="text-dark">Batch Import via Excel</strong>
+            </div>
+            <div class="card-body p-4">
+                <p class="mb-3 text-muted small">
+                    Need to submit multiple entries at once? Download the template,
+                    populate your data row by row, and upload it here.
+                </p>
+
+                {# Step 1 – Download template #}
+                <div class="d-flex align-items-start gap-3 mb-3 p-3 bg-light rounded border">
+                    <div class="fs-4 text-primary pt-1"><i class="bi bi-download"></i></div>
+                    <div>
+                        <strong class="d-block mb-1">Step 1 — Download the template</strong>
+                        <p class="mb-2 text-muted small">
+                            Generated from current form definitions with choices and instructions.
+                        </p>
+                        <a href="{% url 'forms_workflows:batch_template_download' form_def.slug %}"
+                           class="btn btn-outline-primary btn-sm">
+                            <i class="bi bi-file-earmark-excel me-1"></i> Download Excel Template
+                        </a>
+                    </div>
+                </div>
+
+                {# Step 2 – Upload #}
+                <div class="d-flex align-items-start gap-3 p-3 bg-light rounded border">
+                    <div class="fs-4 text-success pt-1"><i class="bi bi-upload"></i></div>
+                    <div class="flex-grow-1">
+                        <strong class="d-block mb-1">Step 2 — Upload your completed file</strong>
+                        <p class="mb-2 text-muted small">
+                            Only <code>.xlsx</code> files are accepted.
+                        </p>
+                        <form method="post"
+                              action="{% url 'forms_workflows:batch_import_upload' form_def.slug %}"
+                              enctype="multipart/form-data"
+                              class="d-flex align-items-center gap-2 flex-wrap">
+                            {% csrf_token %}
+                            <input type="file"
+                                   name="batch_file"
+                                   accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                   class="form-control form-control-sm"
+                                   style="max-width: 300px;"
+                                   required>
+                            <button type="submit" class="btn btn-success btn-sm">
+                                <i class="bi bi-cloud-upload me-1"></i> Upload &amp; Validate
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'django_forms_workflows/js/form-enhancements.js' %}"></script>
+<script src="{% static 'django_forms_workflows/js/signature-pad.js' %}"></script>
+<script>
+    // ── 1. Scroll to Error Summary Banner ──────────────────────────────────
+    (function () {
+        const summary = document.getElementById('form-error-summary');
+        const firstInvalid = document.querySelector('.is-invalid');
+        const target = summary || firstInvalid;
+        if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    })();
+
+    // ── 2. Enhancements: Relocate Auto-Save & Fix Currency Prefix ───────────
+    document.addEventListener('DOMContentLoaded', function() {
+        const slot = document.getElementById('autoSaveSlot');
+        let indicator = document.getElementById('autoSaveIndicator');
+
+        // Hook FormEnhancements to use the in-card header indicator
+        if (typeof FormEnhancements !== 'undefined') {
+            FormEnhancements.prototype.createAutoSaveIndicator = function() {
+                if (!indicator) {
+                    indicator = document.createElement('div');
+                    indicator.id = 'autoSaveIndicator';
+                    indicator.className = 'auto-save-indicator';
+                    indicator.innerHTML = '<span id="autoSaveStatus"><i class="bi bi-cloud-check text-success me-1"></i> Auto-save enabled</span>';
+                    if (slot) {
+                        slot.appendChild(indicator);
+                    } else {
+                        document.body.appendChild(indicator);
+                    }
+                }
+            };
+        }
+
+        // Relocate auto-save indicator to header slot if appended to body
+        function relocateAutoSave() {
+            const bodyIndicator = document.getElementById('autoSaveIndicator');
+            if (bodyIndicator && slot && bodyIndicator.parentElement !== slot) {
+                slot.innerHTML = '';
+                slot.appendChild(bodyIndicator);
+            }
+        }
+        relocateAutoSave();
+
+        // Fix Currency Prefix from $ to Rp
+        function fixCurrencyPrefixes() {
+            document.querySelectorAll('input[data-input-type="currency"]').forEach(function (input) {
+                const group = input.closest('.input-group');
+                if (group) {
+                    const addon = group.querySelector('.input-group-text');
+                    if (addon && (addon.textContent.trim() === '$' || addon.textContent.trim() === '')) {
+                        addon.textContent = 'Rp ';
+                    }
+                }
+            });
+            document.querySelectorAll('.input-group-text').forEach(function (addon) {
+                if (addon.textContent.trim() === '$') {
+                    addon.textContent = 'Rp ';
+                }
+            });
+        }
+        fixCurrencyPrefixes();
+
+        // Observer for dynamically added nodes (currency wrapper & auto-save indicator)
+        const observer = new MutationObserver(function() {
+            fixCurrencyPrefixes();
+            relocateAutoSave();
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+
+        // Ensure keperluan_dana textarea has 3 rows
+        const keperluanInput = document.querySelector('textarea[name="keperluan_dana"]');
+        if (keperluanInput) {
+            keperluanInput.setAttribute('rows', '3');
+        }
+
+        // Initialize Form Enhancements with 15s responsive auto-save interval
+        const formElement = document.querySelector('[data-form-enhancements="true"]');
+        if (formElement && typeof FormEnhancements !== 'undefined') {
+            try {
+                const config = {{ form_enhancements_config|default:"{}"|safe }};
+                config.autoSaveInterval = 15000; // 15 seconds
+                const formEnhancements = new FormEnhancements(formElement, config);
+                window.formEnhancements = formEnhancements;
+
+                // Reflect active editing status on user input
+                formElement.addEventListener('input', function() {
+                    const status = document.getElementById('autoSaveStatus');
+                    const ind = document.getElementById('autoSaveIndicator');
+                    if (status && ind && !ind.classList.contains('saving') && !ind.classList.contains('saved')) {
+                        status.innerHTML = '<i class="bi bi-pencil text-secondary me-1"></i> Unsaved changes...';
+                    }
+                });
+            } catch (err) {
+                console.warn('FormEnhancements initialization notice:', err);
+            }
+        }
+    });
+
+    // ── 3. Calculated / Formula Fields ──────────────────────────────────────
+    (function () {
+        function evaluateFormula(formula, form) {
+            return formula.replace(/\{(\w+)\}/g, function (_, name) {
+                const el = form.querySelector('[name="' + name + '"]');
+                if (!el) return '';
+                if (el.type === 'checkbox') return el.checked ? el.value || 'true' : '';
+                return el.value || '';
+            });
+        }
+
+        function wireCalculatedFields(form) {
+            const calcFields = form.querySelectorAll('[data-calculated="true"]');
+            if (!calcFields.length) return;
+
+            const sourceNames = new Set();
+            calcFields.forEach(function (el) {
+                const formula = el.dataset.formula || '';
+                (formula.match(/\{(\w+)\}/g) || []).forEach(function (tok) {
+                    sourceNames.add(tok.slice(1, -1));
+                });
+            });
+
+            function updateAll() {
+                calcFields.forEach(function (el) {
+                    el.value = evaluateFormula(el.dataset.formula || '', form);
+                });
+            }
+
+            sourceNames.forEach(function (name) {
+                const src = form.querySelector('[name="' + name + '"]');
+                if (src) {
+                    src.addEventListener('input', updateAll);
+                    src.addEventListener('change', updateAll);
+                }
+            });
+
+            updateAll();
+        }
+
+        document.querySelectorAll('form').forEach(wireCalculatedFields);
+    })();
+
+    // ── 4. Answer Piping ────────────────────────────────────────────────────
+    (function () {
+        var form = document.querySelector('[data-form-enhancements="true"]') || document.querySelector('form.needs-validation');
+        if (!form) return;
+
+        var TOKEN_RE = /\{(\w+)\}/g;
+        var pipeTargets = [];
+
+        form.querySelectorAll('label, .form-text, .help-block, small').forEach(function (el) {
+            var tpl = el.textContent;
+            if (TOKEN_RE.test(tpl)) {
+                pipeTargets.push({ el: el, template: tpl });
+            }
+            TOKEN_RE.lastIndex = 0;
+        });
+
+        if (!pipeTargets.length) return;
+
+        var sourceNames = new Set();
+        pipeTargets.forEach(function (t) {
+            var m;
+            TOKEN_RE.lastIndex = 0;
+            while ((m = TOKEN_RE.exec(t.template)) !== null) {
+                sourceNames.add(m[1]);
+            }
+        });
+
+        function updatePipes() {
+            pipeTargets.forEach(function (t) {
+                t.el.textContent = t.template.replace(TOKEN_RE, function (_, name) {
+                    var el = form.querySelector('[name="' + name + '"]');
+                    if (!el) return '{' + name + '}';
+                    if (el.type === 'checkbox') return el.checked ? (el.value || 'Yes') : '';
+                    if (el.tagName === 'SELECT') {
+                        var opt = el.options[el.selectedIndex];
+                        return opt ? opt.text : '';
+                    }
+                    return el.value || '';
+                });
+            });
+        }
+
+        sourceNames.forEach(function (name) {
+            var el = form.querySelector('[name="' + name + '"]');
+            if (el) {
+                el.addEventListener('input', updatePipes);
+                el.addEventListener('change', updatePipes);
+            }
+        });
+        updatePipes();
+    })();
+
+    // ── 5. Rating Stars Widget ──────────────────────────────────────────────
+    (function () {
+        document.querySelectorAll('.rating-stars-input').forEach(function (select) {
+            var max = parseInt(select.dataset.maxStars) || 5;
+            var container = document.createElement('div');
+            container.className = 'rating-stars-container';
+            for (var i = max; i >= 1; i--) {
+                var inp = document.createElement('input');
+                inp.type = 'radio';
+                inp.name = select.name + '_stars';
+                inp.value = i;
+                inp.id = select.name + '_star_' + i;
+                if (select.value === String(i)) inp.checked = true;
+                var lbl = document.createElement('label');
+                lbl.htmlFor = inp.id;
+                lbl.innerHTML = '<i class="bi bi-star-fill"></i>';
+                lbl.title = i + ' star' + (i > 1 ? 's' : '');
+                container.appendChild(inp);
+                container.appendChild(lbl);
+            }
+            container.addEventListener('change', function (e) {
+                select.value = e.target.value;
+            });
+            select.style.display = 'none';
+            select.parentNode.insertBefore(container, select.nextSibling);
+        });
+    })();
+
+    // ── 6. Slider Value Display ─────────────────────────────────────────────
+    (function () {
+        document.querySelectorAll('[data-slider-field]').forEach(function (slider) {
+            var display = document.createElement('span');
+            display.className = 'slider-value-display badge bg-primary ms-2';
+            display.textContent = slider.value;
+            slider.parentNode.appendChild(display);
+            slider.addEventListener('input', function () {
+                display.textContent = slider.value;
+            });
+        });
+    })();
+
+    {% if form_def.enable_captcha %}
+    // ── 7. CAPTCHA Widget ───────────────────────────────────────────────────
+    (function () {
+        var siteKey = '{{ captcha_site_key|default:"" }}';
+        var widget = document.querySelector('[data-captcha-widget]');
+        var token = document.querySelector('[data-captcha-field]');
+        if (!widget || !siteKey) return;
+
+        var isHCaptcha = siteKey && document.querySelector('script[src*="hcaptcha"]');
+        var scriptSrc = isHCaptcha
+            ? 'https://js.hcaptcha.com/1/api.js'
+            : 'https://www.google.com/recaptcha/api.js';
+
+        var script = document.createElement('script');
+        script.src = scriptSrc + '?render=explicit';
+        script.async = true;
+        script.defer = true;
+        script.onload = function () {
+            var api = isHCaptcha ? window.hcaptcha : window.grecaptcha;
+            api.ready(function () {
+                api.render(widget, {
+                    sitekey: siteKey,
+                    callback: function (t) { token.value = t; }
+                });
+            });
+        };
+        document.head.appendChild(script);
+    })();
+    {% endif %}
+</script>
+{% endblock %}

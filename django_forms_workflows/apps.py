@@ -1,0 +1,31 @@
+"""
+Django Forms Workflows App Configuration
+"""
+
+from django.apps import AppConfig
+
+
+class DjangoFormsWorkflowsConfig(AppConfig):
+    """App configuration for Django Forms Workflows"""
+
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "django_forms_workflows"
+    verbose_name = "Forms Workflows"
+
+    def ready(self):
+        """
+        Import signal handlers and perform app initialization.
+        """
+        # Import signals to register handlers
+        from . import signals  # noqa: F401
+
+        # Load custom callback handlers from FORMS_WORKFLOWS_CALLBACKS setting
+        from .callback_registry import load_from_settings
+
+        load_from_settings()
+
+        # Auto-register bundled payment providers
+        from .payments import register_provider
+        from .payments.stripe_provider import StripePaymentProvider
+
+        register_provider("stripe", StripePaymentProvider)

@@ -1,0 +1,123 @@
+{# ── Reusable Inbox & History Toolbar Partial ── #}
+<div class="inbox-toolbar-card">
+  {# Row 1: Left Tabs (Pending / History), Right Search Box #}
+  <div class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center justify-content-between gap-3 pb-3 inbox-toolbar-main">
+    {# Tab navigation #}
+    <div class="inbox-nav-pills" role="tablist">
+      <a class="nav-link {% if active_tab == 'pending' %}active{% endif %}"
+         href="{% url 'forms_workflows:approval_inbox' %}" role="tab"
+         aria-selected="{% if active_tab == 'pending' %}true{% else %}false{% endif %}">
+        <i class="bi {% if active_tab == 'pending' %}bi-inbox-fill text-primary{% else %}bi-inbox{% endif %}"></i>
+        <span>Pending</span>
+        <span class="badge-counter">{% if active_tab == 'history' %}{{ pending_tasks_count|default:0 }}{% else %}{{ total_tasks_count|default:0 }}{% endif %}</span>
+      </a>
+      <a class="nav-link {% if active_tab == 'history' %}active{% endif %}"
+         href="{% url 'forms_workflows:completed_approvals' %}" role="tab"
+         aria-selected="{% if active_tab == 'history' %}true{% else %}false{% endif %}">
+        <i class="bi bi-clock-history {% if active_tab == 'history' %}text-primary{% endif %}"></i>
+        <span>Approval History</span>
+        <span class="badge-counter">{% if active_tab == 'history' %}{{ total_count|default:0 }}{% else %}{{ completed_count|default:0 }}{% endif %}</span>
+      </a>
+    </div>
+
+    {# Search Container #}
+    <div class="d-flex align-items-center gap-2" id="toolbarRightSlot">
+      <div class="input-group inbox-search-group" id="searchContainer">
+        <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input type="search" class="form-control" id="customSearchInput"
+               placeholder="{% if active_tab == 'history' %}Search history...{% else %}Search approvals...{% endif %}"
+               aria-label="Search">
+      </div>
+      {# Column picker gear button placeholder if form fields present #}
+      <div id="colPickerSlot"></div>
+    </div>
+  </div>
+
+  {# Row 2: Category Filter Pills & Scope #}
+  <div class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center justify-content-between gap-3 pt-3">
+    <div class="filter-group-row mb-0" role="toolbar" aria-label="Category Filters">
+      <span class="filter-label"><i class="bi bi-funnel me-1"></i>Category:</span>
+      <div class="filter-pills-scroll">
+        <a href="?{% if role_qs %}{{ role_qs }}{% elif status_filter %}status={{ status_filter }}{% endif %}"
+           class="filter-pill {% if not category_slug %}active{% endif %}">
+          <span>All</span>
+          <span class="badge">{% if active_tab == 'history' %}{{ total_count|default:0 }}{% else %}{{ total_tasks_count|default:0 }}{% endif %}</span>
+        </a>
+        {% for cat in category_counts %}
+        <a href="?{% if role_qs %}{{ role_qs }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}category={{ cat.slug }}"
+           class="filter-pill {% if category_slug == cat.slug %}active{% endif %}">
+          {% if cat.icon %}<i class="bi {{ cat.icon }}"></i>{% endif %}
+          <span>{{ cat.name }}</span>
+          <span class="badge">{{ cat.count }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# Role Scope (for inbox) #}
+    {% if active_tab == 'pending' and available_role_filters %}
+    <div class="filter-group-row mb-0" role="toolbar" aria-label="Role Scope Filters">
+      <span class="filter-label">Scope:</span>
+      <div class="filter-pills-scroll">
+        <a href="?{% if category_slug %}category={{ category_slug }}{% endif %}"
+           class="filter-pill {% if active_role == 'mine' or not active_role %}active{% endif %}">
+          <span>Mine</span>
+        </a>
+        {% if 'reviewing' in available_role_filters %}
+        <a href="?role=reviewing{% if category_slug %}&category={{ category_slug }}{% endif %}"
+           class="filter-pill {% if active_role == 'reviewing' %}active{% endif %}"
+           title="Forms where you are a reviewer">
+          <span>Reviewing</span>
+        </a>
+        {% endif %}
+        {% if 'overseeing' in available_role_filters %}
+        <a href="?role=overseeing{% if category_slug %}&category={{ category_slug }}{% endif %}"
+           class="filter-pill {% if active_role == 'overseeing' %}active{% endif %}"
+           title="Forms where you have administrator privileges">
+          <span>Overseeing</span>
+        </a>
+        {% endif %}
+      </div>
+    </div>
+    {% elif active_tab == 'history' %}
+    {# Status Filter Pills (for history) #}
+    <div class="filter-group-row mb-0" role="toolbar" aria-label="Status Filters">
+      <span class="filter-label">Status:</span>
+      <div class="filter-pills-scroll">
+        <a href="?{% if category_slug %}category={{ category_slug }}{% endif %}"
+           class="filter-pill {% if not status_filter %}active{% endif %}">
+          <span>All</span>
+        </a>
+        <a href="?status=approved{% if category_slug %}&category={{ category_slug }}{% endif %}"
+           class="filter-pill {% if status_filter == 'approved' %}active{% endif %}">
+          <span>Approved</span>
+        </a>
+        <a href="?status=rejected{% if category_slug %}&category={{ category_slug }}{% endif %}"
+           class="filter-pill {% if status_filter == 'rejected' %}active{% endif %}">
+          <span>Rejected</span>
+        </a>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# Optional Sub-filter: Form pills if a category is active #}
+  {% if form_counts %}
+  <div class="filter-group-row mt-3 mb-0" role="toolbar" aria-label="Form filters">
+    <span class="filter-label">Form:</span>
+    <div class="filter-pills-scroll">
+      <a href="?{% if role_qs %}{{ role_qs }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}category={{ category_slug }}"
+         class="filter-pill {% if not form_slug %}active{% endif %}">
+        <span>All Forms</span>
+      </a>
+      {% for form_item in form_counts %}
+      <a href="?{% if role_qs %}{{ role_qs }}&{% endif %}{% if status_filter %}status={{ status_filter }}&{% endif %}category={{ category_slug }}&form={{ form_item.slug }}"
+         class="filter-pill {% if form_slug == form_item.slug %}active{% endif %}">
+        <span>{{ form_item.name }}</span>
+        <span class="badge">{{ form_item.count }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
