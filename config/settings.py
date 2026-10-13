@@ -162,3 +162,9 @@ LOGIN_URL = '/accounts/login/'
 FORMS_WORKFLOWS = {
     'SITE_NAME': 'Royal Workflow',
 }
+
+EMAIL_BACKEND = 'django.core.mail.backends.locmem.EmailBackend'
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = False
+CELERY_BROKER_URL = 'memory://'
+CELERY_RESULT_BACKEND = 'cache+memory://'

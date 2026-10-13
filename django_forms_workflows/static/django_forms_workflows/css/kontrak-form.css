@@ -1,0 +1,471 @@
+/* ==========================================================================
+   Permohonan Kontrak (Sales & Marketing) Stylesheet
+   Royal Workflow Design System
+   ========================================================================== */
+
+/* ==========================================================================
+   Readonly & Locked Fields Styling (Clean Enterprise Darker Contrast)
+   ========================================================================== */
+input[readonly],
+textarea[readonly],
+.form-control[readonly],
+.jde-readonly-locked,
+.jde-autofill-readonly,
+#id_nomor_spk[readonly],
+input[name="nomor_spk"][readonly],
+input[name="nama_toko"][readonly],
+#id_nama_toko[readonly],
+input[name="nama_pemilik"][readonly],
+#id_nama_pemilik[readonly],
+input[name="alamat_toko"][readonly],
+#id_alamat_toko[readonly],
+textarea[name="alamat_toko"][readonly],
+#id_no_telepon[readonly],
+input[name="no_telepon"][readonly],
+#id_kota[readonly],
+input[name="kota"][readonly] {
+    background-color: #e2e8f0 !important;
+    border: 1px solid #94a3b8 !important;
+    color: #0f172a !important;
+    font-weight: 500 !important;
+    cursor: not-allowed !important;
+    box-shadow: none !important;
+}
+
+/* Specific accent for Nomor SPK */
+input[name="nomor_spk"][readonly],
+#id_nomor_spk[readonly] {
+    font-weight: 600 !important;
+    letter-spacing: 0.025em !important;
+}
+
+/* Disable focus glow / outline for all readonly fields */
+input[readonly]:focus,
+textarea[readonly]:focus,
+.form-control[readonly]:focus,
+.jde-readonly-locked:focus,
+.jde-autofill-readonly:focus,
+#id_nomor_spk[readonly]:focus,
+input[name="nomor_spk"][readonly]:focus,
+input[name="nama_toko"][readonly]:focus,
+input[name="nama_pemilik"][readonly]:focus,
+input[name="alamat_toko"][readonly]:focus,
+textarea[name="alamat_toko"][readonly]:focus,
+input[name="no_telepon"][readonly]:focus,
+input[name="kota"][readonly]:focus {
+    background-color: #e2e8f0 !important;
+    border-color: #94a3b8 !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+/* Grid container and card */
+.kontrak-grid-container {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 10px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.kontrak-grid-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.kontrak-grid-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1e293b;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.kontrak-grid-hint {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 2px;
+}
+
+/* Grid Table */
+.kontrak-grid-table {
+    width: 100%;
+    margin-bottom: 0;
+    font-size: 13px;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.kontrak-grid-table th {
+    background-color: #f8fafc;
+    color: #475569;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+    padding: 10px 12px;
+    border-bottom: 2px solid #e2e8f0;
+    vertical-align: middle;
+}
+
+.kontrak-grid-table td {
+    padding: 8px 10px;
+    vertical-align: middle;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.kontrak-grid-table tbody tr:hover {
+    background-color: #f8fafc;
+}
+
+.kontrak-grid-table .cell-input {
+    width: 100%;
+    font-size: 13px;
+    padding: 6px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.kontrak-grid-table .cell-input:focus {
+    border-color: #0284c7;
+    outline: 0;
+    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+}
+
+.kontrak-grid-table .cell-readonly {
+    background-color: #f8fafc;
+    color: #0f172a;
+    font-weight: 600;
+    cursor: default;
+}
+
+.kontrak-grid-table .cell-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.kontrak-grid-table .btn-delete-row {
+    background: transparent;
+    color: #ef4444;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.kontrak-grid-table .btn-delete-row:hover {
+    background-color: #fee2e2;
+}
+
+/* Add row button */
+.btn-add-row {
+    background-color: #f1f5f9;
+    color: #0f172a;
+    border: 1px dashed #94a3b8;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease-in-out;
+}
+
+.btn-add-row:hover {
+    background-color: #e2e8f0;
+    border-color: #64748b;
+    color: #0284c7;
+}
+
+/* JDE Lookup Section */
+.jde-lookup-wrap {
+    position: relative;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.jde-lookup-btn {
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+}
+
+.jde-lookup-alert {
+    margin-top: 8px;
+    font-size: 13px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    display: none;
+}
+
+/* Step 3 Tabs & Preview Container */
+.kontrak-tabs-nav {
+    display: flex;
+    border-bottom: 2px solid #e2e8f0;
+    margin-bottom: 24px;
+    gap: 8px;
+}
+
+.kontrak-tab-btn {
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #64748b;
+    border: none;
+    background: transparent;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.15s;
+}
+
+.kontrak-tab-btn.active {
+    color: #0284c7;
+    border-bottom-color: #0284c7;
+}
+
+.kontrak-tab-btn:hover:not(.active) {
+    color: #1e293b;
+}
+
+.kontrak-tab-content {
+    display: none;
+}
+
+.kontrak-tab-content.active {
+    display: block;
+}
+
+/* Legal SPK Document Preview */
+.spk-paper-preview {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 40px;
+    margin: 16px 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+    font-family: 'Times New Roman', Times, serif;
+    color: #111827;
+    line-height: 1.6;
+}
+
+.spk-paper-preview h2,
+.spk-paper-preview h3,
+.spk-paper-preview h4 {
+    font-family: 'Times New Roman', Times, serif;
+    font-weight: bold;
+}
+
+.spk-paper-preview table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.spk-paper-preview th,
+.spk-paper-preview td {
+    padding: 6px 8px;
+    font-size: 13px;
+}
+
+/* Total summary footer row */
+.grid-summary-footer {
+    background-color: #f8fafc;
+    border-top: 2px solid #e2e8f0;
+    font-weight: 600;
+}
+
+/* Responsive Wizard Footer Actions */
+.form-wizard-footer {
+    padding: 16px 0;
+    margin-top: 24px;
+}
+
+.footer-left-actions .btn,
+.footer-right-actions .btn {
+    white-space: nowrap;
+}
+
+.form-wizard-footer .btn.d-none,
+.form-wizard-footer a.d-none {
+    display: none !important;
+}
+
+.btn-discard-draft {
+    font-size: 13px !important;
+    padding: 6px 12px !important;
+    border-color: #fca5a5 !important;
+    color: #ef4444 !important;
+    background-color: transparent !important;
+    transition: all 0.15s ease;
+}
+
+.btn-discard-draft:hover {
+    background-color: #fef2f2 !important;
+    border-color: #ef4444 !important;
+    color: #dc2626 !important;
+}
+
+.btn-save-draft {
+    background-color: #64748b !important;
+    border-color: #64748b !important;
+    color: #ffffff !important;
+    font-size: 14px;
+}
+
+.btn-save-draft:hover {
+    background-color: #475569 !important;
+    border-color: #475569 !important;
+}
+
+.btn-wizard-next {
+    background-color: #0284c7 !important;
+    border-color: #0284c7 !important;
+    color: #ffffff !important;
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.btn-wizard-next:hover {
+    background-color: #0369a1 !important;
+    border-color: #0369a1 !important;
+}
+
+.btn-wizard-submit {
+    background-color: #0284c7 !important;
+    border-color: #0284c7 !important;
+    color: #ffffff !important;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.btn-wizard-submit:hover:not(:disabled) {
+    background-color: #0369a1 !important;
+    border-color: #0369a1 !important;
+}
+
+.btn-preview-spk {
+    border-color: #94a3b8 !important;
+    color: #334155 !important;
+    font-size: 14px;
+}
+
+.btn-preview-spk:hover {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+}
+
+/* ==========================================================================
+   Multi-Step Wizard Panes Isolation
+   ========================================================================== */
+.wizard-step-pane {
+    display: none !important;
+}
+
+.wizard-step-pane.active {
+    display: block !important;
+    animation: fadeInStep 0.2s ease-in-out;
+}
+
+@keyframes fadeInStep {
+    from {
+        opacity: 0;
+        transform: translateY(3px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Interactive Stepper Header (Tab-like Stepper) */
+.step-indicators .step-indicator {
+    cursor: pointer !important;
+    user-select: none;
+    transition: all 0.2s ease-in-out;
+}
+
+.step-indicators .step-indicator:hover {
+    opacity: 0.95 !important;
+}
+
+.step-indicators .step-indicator:hover .step-number {
+    transform: scale(1.12);
+    box-shadow: 0 2px 8px rgba(2, 132, 199, 0.35);
+}
+
+.step-indicators .step-indicator.active .step-number {
+    background-color: #0284c7 !important;
+    color: #ffffff !important;
+    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.25) !important;
+}
+
+.step-indicators .step-indicator.completed .step-number {
+    background-color: #10b981 !important;
+    color: #ffffff !important;
+}
+
+.step-indicators .step-indicator.completed {
+    opacity: 0.9 !important;
+    color: #059669 !important;
+}
+
+/* ── Persistent & Seamless Sidebar Enforcement ── */
+@media (min-width: 992px) {
+    .app-layout {
+        display: flex !important;
+        min-height: 100vh !important;
+        width: 100% !important;
+        align-items: stretch !important;
+    }
+
+    .sidebar-wrapper {
+        position: sticky !important;
+        top: 0 !important;
+        height: 100vh !important;
+        min-height: 100vh !important;
+        max-height: 100vh !important;
+        align-self: flex-start !important;
+        flex-shrink: 0 !important;
+        overflow-y: auto !important;
+    }
+
+    .main-wrapper,
+    .main-content {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        min-height: 100vh !important;
+    }
+}
+
+/* ── Draft Auto-Save Animations & UI Polish ── */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.spin {
+    display: inline-block;
+    animation: spin 1s linear infinite;
+}
+
+.btn-discard-draft {
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+

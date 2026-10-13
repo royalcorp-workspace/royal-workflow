@@ -902,7 +902,22 @@ class DocumentTemplate(models.Model):
         # Add all form field values
         for key, val in form_data.items():
             if isinstance(val, list):
-                context[key] = ", ".join(str(v) for v in val)
+                if val and isinstance(val[0], dict):
+                    headers = list(val[0].keys())
+                    table_rows = ["<table style='width:100%; border-collapse:collapse; margin:10px 0;'><thead><tr>"]
+                    for h in headers:
+                        table_rows.append(f"<th style='border:1px solid #999; padding:6px 10px; background:#f0f0f0; text-align:left; font-size:12px;'>{h.replace('_', ' ').title()}</th>")
+                    table_rows.append("</tr></thead><tbody>")
+                    for r in val:
+                        table_rows.append("<tr>")
+                        for h in headers:
+                            cell_val = r.get(h, "")
+                            table_rows.append(f"<td style='border:1px solid #999; padding:6px 10px; font-size:12px;'>{cell_val}</td>")
+                        table_rows.append("</tr>")
+                    table_rows.append("</tbody></table>")
+                    context[key] = "".join(table_rows)
+                else:
+                    context[key] = ", ".join(str(v) for v in val)
             else:
                 context[key] = str(val) if val is not None else ""
 

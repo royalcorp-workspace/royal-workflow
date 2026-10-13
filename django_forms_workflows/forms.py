@@ -109,6 +109,16 @@ class DisplayTextWidget(forms.Widget):
         if value is not None:
             final_attrs["value"] = value
         hidden = f"<input{flatatt(final_attrs)}>"
+
+        # If display_html is an alert callout, render cleanly without wrapping in a card
+        if "alert" in str(self.display_html):
+            return mark_safe(
+                f'<div class="display-text-content mb-0">'
+                f"{self.display_html}"
+                f"</div>"
+                f"{hidden}"
+            )
+
         return mark_safe(
             f'<div class="display-text-content card card-body bg-light border mb-0">'
             f"{self.display_html}"
@@ -118,17 +128,62 @@ class DisplayTextWidget(forms.Widget):
 
 
 def _render_display_text(raw_text: str) -> str:
-    """Convert *raw_text* to HTML.  Uses ``markdown`` when installed,
-    otherwise falls back to simple escaped text with line-breaks."""
+    """Convert *raw_text* to HTML. Converts callout notes to Bootstrap alert cards,
+    uses ``markdown`` when installed, otherwise falls back to simple escaped text."""
     if not raw_text:
         return ""
+    import re
+
+    raw = str(raw_text).replace("\r\n", "\n").replace("\r", "\n").strip()
+
+    is_callout = (
+        any(tag in raw for tag in ["[!NOTE]", "[!TIP]", "[!WARNING]", "[!IMPORTANT]", "[!CAUTION]", "[!INFO]"])
+        or raw.startswith(">")
+        or "Status Kontrak:" in raw
+    )
+
+    if is_callout:
+        icon_cls = "bi-info-circle-fill text-info"
+        border_cls = "border-info-subtle"
+
+        if "[!WARNING]" in raw or "[!CAUTION]" in raw:
+            icon_cls = "bi-exclamation-triangle-fill text-warning"
+            border_cls = "border-warning-subtle"
+        elif "[!TIP]" in raw:
+            icon_cls = "bi-lightbulb-fill text-success"
+            border_cls = "border-success-subtle"
+
+        lines = []
+        for line in raw.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith(">"):
+                stripped = stripped.lstrip("> ").strip()
+            if re.match(r"^\[!(NOTE|TIP|WARNING|IMPORTANT|CAUTION|INFO)\]", stripped, re.IGNORECASE):
+                continue
+            if stripped:
+                lines.append(stripped)
+
+        content = " ".join(lines)
+        html = re.sub(r"\*\*(.+?)\*\*", r'<strong class="text-dark">\1</strong>', content)
+        html = re.sub(r"\*(.+?)\*", r'<em>\1</em>', html)
+
+        if "Status Kontrak:" in html and '<strong class="text-dark">Status Kontrak:</strong>' not in html:
+            html = html.replace("Status Kontrak:", '<strong class="text-dark">Status Kontrak:</strong>')
+
+        return (
+            f'<div class="alert alert-light border {border_cls} d-flex align-items-center gap-2 p-3 my-2 rounded-2">'
+            f'<i class="bi {icon_cls} fs-5 flex-shrink-0"></i>'
+            f'<div class="text-secondary small mb-0">{html}</div>'
+            f'</div>'
+        )
+
     if _has_markdown:
         return _markdown_lib.markdown(
-            raw_text,
+            raw,
             extensions=["tables", "fenced_code", "nl2br"],
         )
     # Fallback: escape and convert newlines to <br>
-    return html_escape(raw_text).replace("\n", "<br>")
+    return html_escape(raw).replace("\n", "<br>")
 
 
 # ---------------------------------------------------------------------------

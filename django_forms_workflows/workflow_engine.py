@@ -63,16 +63,22 @@ def _dispatch_notification_rules(
     try:
         from .tasks import send_notification_rules
 
+        import threading
+
         def _fire_rules() -> None:
             try:
                 send_notification_rules.delay(submission.id, event, task_id)
             except Exception:
-                logger.warning(
-                    "NotificationRule '%s' fell back to synchronous for submission %s",
+                logger.info(
+                    "NotificationRule '%s' dispatched via background thread for submission %s",
                     event,
                     submission.id,
                 )
-                send_notification_rules(submission.id, event, task_id)
+                threading.Thread(
+                    target=send_notification_rules,
+                    args=(submission.id, event, task_id),
+                    daemon=True,
+                ).start()
 
         transaction.on_commit(_fire_rules)
     except Exception:
@@ -94,6 +100,7 @@ def _dispatch_workflow_webhooks(
     """Dispatch first-class webhook deliveries for a workflow lifecycle event."""
     try:
         from .tasks import dispatch_workflow_webhooks
+        import threading
 
         def _fire_webhooks() -> None:
             try:
@@ -105,18 +112,22 @@ def _dispatch_workflow_webhooks(
                     target_stage_id,
                 )
             except Exception:
-                logger.warning(
-                    "Webhook '%s' fell back to synchronous dispatch for submission %s",
+                logger.info(
+                    "Webhook '%s' dispatched via background thread for submission %s",
                     event,
                     submission.id,
                 )
-                dispatch_workflow_webhooks(
-                    submission.id,
-                    event,
-                    task_id,
-                    workflow_id,
-                    target_stage_id,
-                )
+                threading.Thread(
+                    target=dispatch_workflow_webhooks,
+                    args=(
+                        submission.id,
+                        event,
+                        task_id,
+                        workflow_id,
+                        target_stage_id,
+                    ),
+                    daemon=True,
+                ).start()
 
         transaction.on_commit(_fire_webhooks)
     except Exception:

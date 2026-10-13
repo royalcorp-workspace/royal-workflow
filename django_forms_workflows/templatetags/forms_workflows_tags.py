@@ -4,14 +4,139 @@ Custom template tags and filters for django_forms_workflows.
 
 from django import template
 from django.utils.safestring import mark_safe
+from django.utils.html import escape
 
 register = template.Library()
+
+
+@register.filter
+def is_boolean_value(value):
+    """Return True if value represents a boolean (bool, or string boolean 'true'/'false')."""
+    if isinstance(value, bool):
+        return True
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in ("true", "false"):
+            return True
+    return False
+
+
+@register.filter(is_safe=True)
+def render_boolean_badge(value, label=""):
+    """
+    Render boolean / checklist values as professional corporate badges:
+    - True: Emerald pill with checkmark (Ya / Terpenuhi, or Terkonfirmasi for statements)
+    - False: Neutral muted pill (Tidak)
+    """
+    is_true = False
+    if isinstance(value, bool):
+        is_true = value
+    elif isinstance(value, str):
+        v = value.strip().lower()
+        if v == "true":
+            is_true = True
+        elif v == "false":
+            is_true = False
+        else:
+            return escape(value)
+    elif isinstance(value, (int, float)):
+        if value == 1:
+            is_true = True
+        elif value == 0:
+            is_true = False
+        else:
+            return escape(str(value))
+    else:
+        is_true = bool(value)
+
+    label_str = str(label or "").lower()
+    is_confirmation = any(w in label_str for w in [
+        "saya telah", "memeriksa", "konfirmasi", "pernyataan", "chk_konfirmasi", "draft klausul"
+    ])
+
+    if is_true:
+        text = "Terkonfirmasi" if is_confirmation else "Ya / Terpenuhi"
+        return mark_safe(
+            '<span class="badge rounded-pill text-bg-success-subtle border border-success-subtle text-success-emphasis '
+            'd-inline-flex align-items-center gap-1 px-2.5 py-1.5 font-monospace-normal" '
+            'style="background-color: #ecfdf5 !important; color: #065f46 !important; border-color: #a7f3d0 !important; '
+            'font-size: 0.85rem; font-weight: 500;">'
+            f'<i class="bi bi-check-lg" style="font-size: 0.95rem;"></i> {text}'
+            '</span>'
+        )
+    else:
+        return mark_safe(
+            '<span class="badge rounded-pill text-bg-light border border-secondary-subtle text-secondary '
+            'd-inline-flex align-items-center gap-1 px-2.5 py-1.5" '
+            'style="background-color: #f8fafc !important; color: #64748b !important; border-color: #e2e8f0 !important; '
+            'font-size: 0.85rem; font-weight: 500;">'
+            '<i class="bi bi-dash" style="font-size: 0.95rem;"></i> Tidak'
+            '</span>'
+        )
 
 
 @register.filter
 def is_signature(value):
     """Return True if *value* looks like a signature data-URI (PNG)."""
     return isinstance(value, str) and value.startswith("data:image/png;base64,")
+
+
+@register.filter
+def is_callout_note(value):
+    """Return True if string contains markdown callout/alert syntax like > [!NOTE] or Status Kontrak note."""
+    if not isinstance(value, str):
+        return False
+    v = value.strip()
+    return (
+        any(tag in v for tag in ["[!NOTE]", "[!TIP]", "[!WARNING]", "[!IMPORTANT]", "[!CAUTION]", "[!INFO]"])
+        or v.startswith(">")
+        or "Status Kontrak:" in v
+    )
+
+
+@register.filter(is_safe=True)
+def render_callout_note(value):
+    """Render a GitHub-style alert callout block as an enterprise Bootstrap alert card."""
+    if not value:
+        return ""
+    import re
+
+    raw = str(value).replace("\r\n", "\n").replace("\r", "\n")
+
+    icon_cls = "bi-info-circle-fill text-info"
+    border_cls = "border-info-subtle"
+
+    if "[!WARNING]" in raw or "[!CAUTION]" in raw:
+        icon_cls = "bi-exclamation-triangle-fill text-warning"
+        border_cls = "border-warning-subtle"
+    elif "[!TIP]" in raw:
+        icon_cls = "bi-lightbulb-fill text-success"
+        border_cls = "border-success-subtle"
+
+    lines = []
+    for line in raw.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith(">"):
+            stripped = stripped.lstrip("> ").strip()
+        if re.match(r"^\[!(NOTE|TIP|WARNING|IMPORTANT|CAUTION|INFO)\]", stripped, re.IGNORECASE):
+            continue
+        if stripped:
+            lines.append(stripped)
+
+    content = " ".join(lines)
+    html = re.sub(r"\*\*(.+?)\*\*", r'<strong class="text-dark">\1</strong>', content)
+    html = re.sub(r"\*(.+?)\*", r'<em>\1</em>', html)
+
+    if "Status Kontrak:" in html and '<strong class="text-dark">Status Kontrak:</strong>' not in html:
+        html = html.replace("Status Kontrak:", '<strong class="text-dark">Status Kontrak:</strong>')
+
+    card = (
+        f'<div class="alert alert-light border {border_cls} d-flex align-items-center gap-2 p-3 my-2 rounded-2">'
+        f'<i class="bi {icon_cls} fs-5 flex-shrink-0"></i>'
+        f'<div class="text-secondary small mb-0">{html}</div>'
+        f'</div>'
+    )
+    return mark_safe(card)
 
 
 @register.filter(is_safe=True)
@@ -23,6 +148,8 @@ def render_markdown(value):
     """
     if not value:
         return ""
+    if is_callout_note(value):
+        return render_callout_note(value)
     try:
         import markdown
 
@@ -55,6 +182,189 @@ def get_item(dictionary, key):
     if isinstance(dictionary, dict):
         return dictionary.get(key)
     return None
+
+
+COLUMN_CONFIG = {
+    # Data Asset Toko
+    "no": {"label": "No", "align": "center", "type": "number", "width": "50px"},
+    "keterangan": {"label": "Keterangan", "align": "start", "type": "text"},
+    "alamat": {"label": "Alamat", "align": "start", "type": "text"},
+    "status": {"label": "Status", "align": "center", "type": "badge", "width": "110px"},
+
+    # Data Market Share
+    "bulan": {"label": "Bulan", "align": "start", "type": "text", "width": "110px"},
+    "serenity": {"label": "Royal / SERENITY (Rp)", "align": "end", "type": "currency"},
+    "kompetitor_1": {"label": "Kompetitor 1 (Rp)", "align": "end", "type": "currency"},
+    "kompetitor_2": {"label": "Kompetitor 2 (Rp)", "align": "end", "type": "currency"},
+    "kompetitor_3": {"label": "Kompetitor 3 (Rp)", "align": "end", "type": "currency"},
+    "kompetitor_4": {"label": "Kompetitor 4 (Rp)", "align": "end", "type": "currency"},
+
+    # Target & Incentive Scheme
+    "target_bulanan": {"label": "Target Bulanan (Rp)", "align": "end", "type": "currency"},
+    "exclude_ppn": {"label": "Exclude PPN", "align": "center", "type": "boolean", "width": "110px"},
+    "incentive_pct": {"label": "Incentive (%)", "align": "end", "type": "percentage", "width": "120px"},
+
+    # Discount Scheme
+    "komponen": {"label": "Komponen", "align": "start", "type": "text"},
+    "nilai": {"label": "Nilai", "align": "center", "type": "text", "width": "110px"},
+    "tipe": {"label": "Tipe", "align": "center", "type": "badge", "width": "110px"},
+
+    # Tier Support Tahunan
+    "target_tahunan": {"label": "Target Tahunan (Rp)", "align": "end", "type": "currency"},
+    "support_pct": {"label": "Support (%)", "align": "end", "type": "percentage", "width": "110px"},
+    "pph_pct": {"label": "PPh (%)", "align": "end", "type": "percentage", "width": "110px"},
+    "netto": {"label": "Netto (Rp)", "align": "end", "type": "currency"},
+}
+
+
+def _get_column_info(key):
+    if key in COLUMN_CONFIG:
+        return COLUMN_CONFIG[key]
+    k_lower = key.lower()
+    label = key.replace("_", " ").title()
+    if any(x in k_lower for x in ["rp", "rupiah", "harga", "biaya", "omset", "target", "netto"]):
+        return {"label": label, "align": "end", "type": "currency"}
+    elif any(x in k_lower for x in ["pct", "persen", "percent"]):
+        return {"label": label, "align": "end", "type": "percentage"}
+    elif k_lower in ("no", "nomor", "idx"):
+        return {"label": label, "align": "center", "type": "number", "width": "50px"}
+    return {"label": label, "align": "start", "type": "text"}
+
+
+def _is_empty_template(rows):
+    """Check if all rows are default templates with no meaningful user input."""
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        for k, v in r.items():
+            if k in ("no", "status", "tipe", "exclude_ppn"):
+                continue
+            if isinstance(v, (int, float)) and v != 0:
+                return False
+            if isinstance(v, str) and v.strip() not in ("", "0", "0%"):
+                return False
+    return True
+
+
+@register.filter
+def is_grid_data(value):
+    """Return True if value represents a structured grid (list of dicts or JSON array)."""
+    import json
+    if value is None or value == "":
+        return False
+    if isinstance(value, list):
+        if not value:
+            return True
+        return isinstance(value[0], dict)
+    if isinstance(value, str):
+        v = value.strip()
+        if v in ("[]", "[ ]"):
+            return True
+        if v.startswith("[") and v.endswith("]"):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    if len(parsed) == 0:
+                        return True
+                    return isinstance(parsed[0], dict)
+            except Exception:
+                return False
+    return False
+
+
+@register.filter(is_safe=True)
+def render_grid_table(value):
+    """Render structured grid data (list of dicts or JSON array) as a clean Bootstrap table."""
+    import json
+    from django.utils.html import escape
+
+    if value is None or value == "":
+        return mark_safe('<span class="text-muted">—</span>')
+
+    rows = value
+    if isinstance(value, str):
+        v_str = value.strip()
+        if v_str in ("[]", "[ ]"):
+            return mark_safe('<span class="text-muted">—</span>')
+        try:
+            rows = json.loads(v_str)
+        except Exception:
+            return escape(str(value))
+
+    if not isinstance(rows, list):
+        return escape(str(value))
+
+    if not rows or _is_empty_template(rows):
+        return mark_safe('<span class="text-muted">—</span>')
+
+    if not isinstance(rows[0], dict):
+        return escape(str(value))
+
+    headers = list(rows[0].keys())
+
+    out = [
+        '<div class="table-responsive my-1 border rounded bg-white">'
+        '<table class="table table-sm table-hover align-middle mb-0" style="font-size: 0.84rem;">'
+        '<thead class="table-light text-secondary border-bottom">'
+        '<tr>'
+    ]
+    for h in headers:
+        cinfo = _get_column_info(h)
+        align_class = f"text-{cinfo.get('align', 'start')}"
+        width_style = f"width: {cinfo['width']};" if 'width' in cinfo else ""
+        out.append(f'<th class="py-2 px-3 fw-semibold text-nowrap {align_class}" style="{width_style}">{escape(cinfo["label"])}</th>')
+    out.append('</tr></thead><tbody>')
+
+    for r in rows:
+        out.append('<tr>')
+        for h in headers:
+            cinfo = _get_column_info(h)
+            align_class = f"text-{cinfo.get('align', 'start')}"
+            col_type = cinfo.get("type", "text")
+            val = r.get(h)
+
+            if val is None or val == "":
+                cell_html = '<span class="text-muted">—</span>'
+            elif col_type == "boolean":
+                if val:
+                    cell_html = '<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">Ya</span>'
+                else:
+                    cell_html = '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1">Tidak</span>'
+            elif col_type == "badge":
+                cell_html = f'<span class="badge bg-light text-dark border px-2 py-1">{escape(str(val))}</span>'
+            elif col_type == "currency":
+                try:
+                    num = float(val)
+                    if num == 0:
+                        cell_html = '<span class="text-muted">Rp 0</span>'
+                    else:
+                        cell_html = f'<span class="font-monospace fw-semibold">Rp {num:,.0f}</span>'.replace(",", ".")
+                except (ValueError, TypeError):
+                    cell_html = escape(str(val))
+            elif col_type == "percentage":
+                try:
+                    num = float(val)
+                    if num == 0:
+                        cell_html = '<span class="text-muted">0%</span>'
+                    else:
+                        cell_html = f'<span class="font-monospace">{num:g}%</span>'
+                except (ValueError, TypeError):
+                    s = str(val).strip()
+                    cell_html = f'<span class="font-monospace">{escape(s)}</span>'
+            elif col_type == "number":
+                cell_html = f'<span class="fw-semibold text-secondary">{escape(str(val))}</span>'
+            else:
+                if isinstance(val, (int, float)) and val >= 10000:
+                    cell_html = f'<span class="font-monospace">Rp {val:,.0f}</span>'.replace(",", ".")
+                else:
+                    cell_html = escape(str(val))
+
+            out.append(f'<td class="py-2 px-3 {align_class}">{cell_html}</td>')
+        out.append('</tr>')
+
+    out.append('</tbody></table></div>')
+
+    return mark_safe("".join(out))
 
 
 @register.inclusion_tag(

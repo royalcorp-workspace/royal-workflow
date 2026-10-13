@@ -637,6 +637,23 @@ class FormEnhancements {
         // Insert at the beginning of the form
         this.form.insertBefore(progressContainer, this.form.firstChild);
 
+        // Make step indicators clickable
+        progressContainer.querySelectorAll('.step-indicator').forEach((indicator, i) => {
+            indicator.style.cursor = 'pointer';
+            indicator.title = `Beralih ke Step ${i + 1}`;
+            indicator.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (i === this.currentStep) return;
+                if (i < this.currentStep) {
+                    this.showStep(i);
+                } else {
+                    if (this.validateCurrentStep()) {
+                        this.showStep(i);
+                    }
+                }
+            });
+        });
+
         // Add CSS for step indicators
         this.addProgressStyles();
     }
@@ -703,6 +720,34 @@ class FormEnhancements {
      * Create step navigation buttons
      */
     createStepNavigation() {
+        // If wizard buttons already exist in the form footer, wire them directly
+        const existingNext = this.form.querySelector('#btnWizardNext');
+        const existingPrev = this.form.querySelector('#btnWizardPrev');
+        if (existingNext || existingPrev) {
+            // If the form has custom isolated wizard panes (.wizard-step-pane) or permohonan-kontrak,
+            // navigation and validation are handled by the specialized wizard controller (kontrak-grid-widget.js).
+            // Do not bind duplicate handlers to avoid double-stepping and premature validation.
+            if (this.form.querySelector('.wizard-step-pane') || this.form.dataset.formSlug === 'permohonan-kontrak') {
+                return;
+            }
+
+            if (existingPrev && !existingPrev.dataset.bound) {
+                existingPrev.dataset.bound = 'true';
+                existingPrev.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.previousStep();
+                });
+            }
+            if (existingNext && !existingNext.dataset.bound) {
+                existingNext.dataset.bound = 'true';
+                existingNext.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.nextStep();
+                });
+            }
+            return;
+        }
+
         const navContainer = document.createElement('div');
         navContainer.className = 'step-navigation d-flex justify-content-between align-items-center gap-2';
         navContainer.innerHTML = `
@@ -715,14 +760,14 @@ class FormEnhancements {
             </button>
         `;
 
-        // Find the submit button and insert navigation before it
-        const submitButton = this.form.querySelector('[type="submit"]');
+        // Find the submit button specifically (not draft button)
+        const submitButton = this.form.querySelector('button[type="submit"][value="submit"]') || this.form.querySelector('#btnSubmitApplication') || this.form.querySelector('[type="submit"]:not([value="draft"])');
         if (submitButton) {
             submitButton.style.display = 'none'; // Hide until last step
             submitButton.parentElement.insertBefore(navContainer, submitButton);
 
             // Also add Save Draft button if enabled
-            if (this.options.enableAutoSave) {
+            if (this.options.enableAutoSave && !this.form.querySelector('[value="draft"]')) {
                 const saveDraftBtn = document.createElement('button');
                 saveDraftBtn.type = 'button';
                 saveDraftBtn.className = 'btn btn-outline-secondary';
@@ -736,8 +781,10 @@ class FormEnhancements {
         }
 
         // Add event listeners
-        document.getElementById('btnPrevStep').addEventListener('click', () => this.previousStep());
-        document.getElementById('btnNextStep').addEventListener('click', () => this.nextStep());
+        const prevEl = document.getElementById('btnPrevStep');
+        const nextEl = document.getElementById('btnNextStep');
+        if (prevEl) prevEl.addEventListener('click', () => this.previousStep());
+        if (nextEl) nextEl.addEventListener('click', () => this.nextStep());
     }
 
     /**
@@ -773,20 +820,44 @@ class FormEnhancements {
             }
         });
 
-        // Show current step
-        if (step.elements) {
-            step.elements.forEach(el => el.style.display = '');
-        } else if (step.fields) {
-            step.fields.forEach(fieldName => {
-                const field = this.form.querySelector(`[name="${fieldName}"]`);
-                if (field) {
-                    const container = field.closest('.field-wrapper, .form-group, .mb-3') || field.parentElement;
-                    if (container) {
-                        container.style.display = '';
-                        console.log(`Showing field: ${fieldName}`);
-                    }
+        // Toggle isolated wizard step panes if present
+        const wizardPanes = this.form.querySelectorAll('.wizard-step-pane');
+        if (wizardPanes.length > 0) {
+            wizardPanes.forEach((pane, idx) => {
+                if (idx === stepIndex) {
+                    pane.classList.add('active');
+                    pane.style.removeProperty('display');
+                    pane.style.display = 'block';
+                    pane.querySelectorAll('.field-wrapper, .fields-aligned-row, .mb-3').forEach(el => {
+                        if (el.tagName !== 'INPUT') {
+                            el.style.removeProperty('display');
+                        }
+                    });
+
+                    // Reset errors on the newly activated pane so it opens clean and neutral
+                    pane.querySelectorAll('.is-invalid').forEach(el => {
+                        el.classList.remove('is-invalid');
+                        this.clearFieldError(el);
+                    });
+                    pane.querySelectorAll('.invalid-feedback').forEach(el => {
+                        el.style.display = 'none';
+                        el.textContent = '';
+                    });
+                } else {
+                    pane.classList.remove('active');
+                    pane.style.setProperty('display', 'none', 'important');
                 }
             });
+        }
+
+        // Clear global validation alert banners
+        const existingAlert = this.form.querySelector('.validation-alert');
+        if (existingAlert) {
+            existingAlert.remove();
+        }
+        const errSummary = document.getElementById('form-error-summary');
+        if (errSummary) {
+            errSummary.style.display = 'none';
         }
 
         // Update progress bar
@@ -808,13 +879,62 @@ class FormEnhancements {
         });
 
         // Update navigation buttons
-        const prevBtn = document.getElementById('btnPrevStep');
-        const nextBtn = document.getElementById('btnNextStep');
-        const submitBtn = this.form.querySelector('[type="submit"]');
+        const prevBtn = this.form.querySelector('#btnWizardPrev') || document.getElementById('btnPrevStep');
+        const nextBtn = this.form.querySelector('#btnWizardNext') || document.getElementById('btnNextStep');
+        const nextText = this.form.querySelector('#btnWizardNextText');
+        const backToForms = this.form.querySelector('#btnBackToForms');
+        const previewSpkBtn = this.form.querySelector('#btnPreviewSPK');
+        const submitBtn = this.form.querySelector('button[type="submit"][value="submit"]') || this.form.querySelector('#btnSubmitApplication') || this.form.querySelector('[type="submit"]:not([value="draft"])');
 
-        if (prevBtn) prevBtn.style.display = stepIndex === 0 ? 'none' : '';
-        if (nextBtn) nextBtn.style.display = stepIndex === this.steps.length - 1 ? 'none' : '';
-        if (submitBtn) submitBtn.style.display = stepIndex === this.steps.length - 1 ? '' : 'none';
+        const isFirstStep = (stepIndex === 0);
+        const isLastStep = (stepIndex === this.steps.length - 1);
+
+        const setVisibility = (el, show) => {
+            if (!el) return;
+            if (show) {
+                el.classList.remove('d-none');
+                el.style.removeProperty('display');
+            } else {
+                el.classList.add('d-none');
+                el.style.setProperty('display', 'none', 'important');
+            }
+        };
+
+        setVisibility(backToForms, isFirstStep);
+        setVisibility(prevBtn, !isFirstStep);
+        setVisibility(nextBtn, !isLastStep);
+        setVisibility(previewSpkBtn, isLastStep);
+        setVisibility(submitBtn, isLastStep);
+
+        if (nextText) {
+            if (stepIndex === 0) {
+                nextText.textContent = 'Lanjut Detail Kontrak';
+            } else if (stepIndex === 1) {
+                nextText.textContent = 'Lanjut Preview';
+            } else {
+                nextText.textContent = 'Lanjut';
+            }
+        }
+
+        // Smooth scroll to top of form
+        if (stepIndex > 0) {
+            const formCard = this.form.closest('.card') || this.form;
+            if (formCard) {
+                const rect = formCard.getBoundingClientRect();
+                const topY = window.pageYOffset + rect.top - 80;
+                window.scrollTo({ top: Math.max(0, topY), behavior: 'smooth' });
+            }
+        }
+
+        // Notify other components of step change
+        this.form.dispatchEvent(new CustomEvent('stepChanged', {
+            detail: {
+                stepIndex: stepIndex,
+                isFirstStep: isFirstStep,
+                isLastStep: isLastStep,
+                totalSteps: this.steps.length
+            }
+        }));
     }
 
     /**
@@ -844,33 +964,52 @@ class FormEnhancements {
      * Validate current step
      */
     validateCurrentStep() {
-        const step = this.steps[this.currentStep];
         let isValid = true;
         let firstInvalidField = null;
 
-        // Get fields in current step
+        // Check if form has isolated wizard step panes (.wizard-step-pane)
+        const activePane = this.form.querySelector('.wizard-step-pane.active');
         let fields = [];
-        if (step.elements) {
-            step.elements.forEach(el => {
-                fields.push(...el.querySelectorAll('input, select, textarea'));
-            });
-        } else if (step.fields) {
-            step.fields.forEach(fieldName => {
-                const field = this.form.querySelector(`[name="${fieldName}"]`);
-                if (field) fields.push(field);
-            });
+
+        if (activePane) {
+            // ONLY validate fields within currently active pane!
+            fields = Array.from(activePane.querySelectorAll('input, select, textarea'));
+        } else if (this.steps && this.steps[this.currentStep]) {
+            const step = this.steps[this.currentStep];
+            if (step.elements && step.elements.length > 0) {
+                step.elements.forEach(el => {
+                    fields.push(...el.querySelectorAll('input, select, textarea'));
+                });
+            } else if (step.fields && step.fields.length > 0) {
+                step.fields.forEach(fieldName => {
+                    const field = this.form.querySelector(`[name="${fieldName}"]`);
+                    if (field) fields.push(field);
+                });
+            }
         }
 
-        // Validate each field
+        // Validate each field in current step only
         fields.forEach(field => {
+            // Skip hidden, disabled, or non-visible fields
+            if (field.type === 'hidden' || field.disabled || field.style.display === 'none') {
+                return;
+            }
+            const parentPane = field.closest('.wizard-step-pane');
+            if (parentPane && !parentPane.classList.contains('active')) {
+                return;
+            }
+
             // Clear previous errors first
             this.clearFieldError(field);
 
-            if (field.required && !this.getFieldValue(field)) {
+            const val = this.getFieldValue(field);
+            const isEmpty = (val === null || val === undefined || (typeof val === 'string' && val.trim() === '') || (Array.isArray(val) && val.length === 0));
+
+            if (field.required && isEmpty) {
                 this.showFieldError(field, 'This field is required');
                 isValid = false;
                 if (!firstInvalidField) firstInvalidField = field;
-            } else if (field.value) {
+            } else if (!isEmpty) {
                 // Only validate non-empty optional fields
                 this.performFieldValidation(field);
                 if (field.classList.contains('is-invalid')) {
@@ -887,6 +1026,11 @@ class FormEnhancements {
 
             // Show alert message
             this.showValidationAlert('Please fill in all required fields before continuing.');
+        } else {
+            const existingAlert = this.form.querySelector('.validation-alert');
+            if (existingAlert) {
+                existingAlert.remove();
+            }
         }
 
         return isValid;

@@ -27,6 +27,7 @@ from config.views import (
     custom_my_submissions,
     custom_my_submissions_ajax,
     toggle_notification_preference,
+    jde_customer_lookup,
 )
 
 # Pasang custom views untuk form_list, form_submit, my_submissions, my_submissions_ajax
@@ -61,6 +62,7 @@ urlpatterns = [
     path('accounts/', include('django.contrib.auth.urls')),
 
     path('api/notifications/toggle/', toggle_notification_preference, name='toggle_notification_preference'),
+    path('api/lookup/jde-customer/', jde_customer_lookup, name='jde_customer_lookup'),
 
     path('forms/', include('django_forms_workflows.urls')),
     path('_nested_admin/', include('nested_admin.urls')),

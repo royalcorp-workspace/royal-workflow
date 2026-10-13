@@ -319,7 +319,7 @@
 
       <div class="decision-actions-right d-flex align-items-center gap-2 flex-wrap">
         {% if submission.status == 'draft' and submission.submitter == user %}
-          <a href="{% url 'forms_workflows:form_submit' submission.form_definition.slug %}" class="btn btn-sm btn-dark d-inline-flex align-items-center gap-1">
+          <a href="{% url 'forms_workflows:form_submit' submission.form_definition.slug %}?draft_id={{ submission.id }}" class="btn btn-sm btn-dark d-inline-flex align-items-center gap-1">
             <i class="bi bi-pencil"></i>
             <span>Continue Editing</span>
           </a>

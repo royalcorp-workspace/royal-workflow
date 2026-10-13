@@ -8,6 +8,7 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'django_forms_workflows/css/forms.css' %}">
+<link rel="stylesheet" href="{% static 'django_forms_workflows/css/kontrak-form.css' %}">
 <style>
     /* ── Enterprise Document UI Styling ── */
     .form-document-card {
@@ -196,6 +197,9 @@
                   data-form-enhancements="true"
                   data-form-slug="{{ form_def.slug }}">
                 {% csrf_token %}
+                {% if is_draft and draft_id %}
+                <input type="hidden" name="draft_id" value="{{ draft_id }}">
+                {% endif %}
                 
                 {# Crispy form fields #}
                 <div class="form-fields-wrapper">
@@ -203,25 +207,38 @@
                 </div>
 
                 {# Unified Button Bar inside <form> #}
-                <div class="d-flex flex-column flex-sm-row justify-content-between align-items-stretch align-items-sm-center gap-2 mt-4 pt-3 border-top">
-                    <div>
-                        <a href="{% url 'forms_workflows:form_list' %}" class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center w-100 w-sm-auto">
-                            &larr; Back to Forms
+                <div class="d-flex justify-content-between align-items-center mt-4 pt-3 border-top w-100 form-wizard-footer">
+                    <div class="footer-left-actions d-flex gap-2 align-items-center">
+                        <a href="{% url 'forms_workflows:form_list' %}" class="btn btn-outline-secondary btn-back-to-forms" id="btnBackToForms">
+                            <i class="bi bi-arrow-left me-1"></i> Kembali ke Daftar Form
                         </a>
-                    </div>
-                    <div class="d-flex align-items-center gap-2 flex-wrap">
-                        {% if form_def.allow_save_draft and user.is_authenticated %}
-                        <button type="submit" name="action" value="draft" class="btn btn-secondary d-inline-flex align-items-center justify-content-center flex-grow-1 flex-sm-grow-0" formnovalidate>
-                            Save Draft
+                        {% if form_def.enable_multi_step %}
+                        <button type="button" class="btn btn-outline-secondary btn-wizard-prev d-none" id="btnWizardPrev">
+                            <i class="bi bi-arrow-left me-1"></i> Kembali
                         </button>
                         {% endif %}
+                    </div>
+                    <div class="footer-right-actions d-flex gap-2 align-items-center flex-wrap">
                         {% if not is_anonymous and is_draft and draft_id %}
-                        <a href="{% url 'forms_workflows:discard_draft' draft_id %}" class="btn btn-outline-danger d-inline-flex align-items-center justify-content-center flex-grow-1 flex-sm-grow-0">
+                        <a href="{% url 'forms_workflows:discard_draft' draft_id %}" class="btn btn-outline-danger btn-sm btn-discard-draft" id="btnDiscardDraft">
                             <i class="bi bi-trash3 me-1"></i> Discard Draft
                         </a>
                         {% endif %}
-                        <button type="submit" name="action" value="submit" class="btn btn-primary d-inline-flex align-items-center justify-content-center flex-grow-1 flex-sm-grow-0">
-                            Submit Application
+                        {% if form_def.allow_save_draft and user.is_authenticated %}
+                        <button type="submit" name="action" value="draft" class="btn btn-secondary btn-save-draft" id="btnSaveDraft" formnovalidate>
+                            <i class="bi bi-save me-1"></i> Simpan Draft
+                        </button>
+                        {% endif %}
+                        {% if form_def.enable_multi_step %}
+                        <button type="button" class="btn btn-outline-secondary btn-preview-spk d-none" id="btnPreviewSPK">
+                            <i class="bi bi-file-earmark-text me-1"></i> Preview SPK
+                        </button>
+                        <button type="button" class="btn btn-primary btn-wizard-next" id="btnWizardNext">
+                            <span id="btnWizardNextText">Lanjut Detail Kontrak</span> <i class="bi bi-arrow-right ms-1"></i>
+                        </button>
+                        {% endif %}
+                        <button type="submit" name="action" value="submit" class="btn btn-primary btn-wizard-submit {% if form_def.enable_multi_step %}d-none{% endif %}" id="btnSubmitApplication">
+                            <i class="bi bi-check2-circle me-1"></i> Submit Pengajuan
                         </button>
                     </div>
                 </div>

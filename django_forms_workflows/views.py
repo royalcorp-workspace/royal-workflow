@@ -373,12 +373,16 @@ def form_submit(request, slug):
             messages.error(request, "You have already submitted this form.")
             return redirect("forms_workflows:my_submissions")
 
-    # Drafts are only available for authenticated users
+    # Drafts are only loaded when explicitly requested via draft_id / draft parameter
     draft = None
-    if not is_anonymous:
-        draft = FormSubmission.objects.filter(
-            form_definition=form_def, submitter=request.user, status="draft"
-        ).first()
+    draft_id_param = request.GET.get("draft_id") or request.GET.get("draft") or request.POST.get("draft_id")
+    if not is_anonymous and draft_id_param:
+        try:
+            draft = FormSubmission.objects.filter(
+                id=draft_id_param, form_definition=form_def, submitter=request.user, status="draft"
+            ).first()
+        except (ValueError, TypeError):
+            draft = None
 
     user_or_none = request.user if not is_anonymous else None
 
@@ -415,16 +419,23 @@ def form_submit(request, slug):
                     # Ignore malformed client metadata; draft data remains usable.
                     pass
 
-            draft_obj, created = FormSubmission.objects.update_or_create(
-                form_definition=form_def,
-                submitter=request.user,
-                status="draft",
-                defaults={
-                    "form_data": raw_data,
-                    "submission_ip": get_client_ip(request),
-                    "user_agent": request.META.get("HTTP_USER_AGENT", ""),
-                },
-            )
+            if draft:
+                draft.form_data = raw_data
+                draft.submission_ip = get_client_ip(request)
+                draft.user_agent = request.META.get("HTTP_USER_AGENT", "")
+                draft.save(update_fields=["form_data", "submission_ip", "user_agent"])
+                draft_obj = draft
+                created = False
+            else:
+                draft_obj = FormSubmission.objects.create(
+                    form_definition=form_def,
+                    submitter=request.user,
+                    status="draft",
+                    form_data=raw_data,
+                    submission_ip=get_client_ip(request),
+                    user_agent=request.META.get("HTTP_USER_AGENT", ""),
+                )
+                created = True
 
             # Persist uploaded files with the draft
             if request.FILES:
@@ -2693,31 +2704,122 @@ def submission_pdf(request, submission_id):
             },
         )
 
-    # --- convert HTML to PDF using WeasyPrint ---
+    # --- convert HTML to PDF using WeasyPrint (with graceful print-preview fallback) ---
     try:
         from weasyprint import HTML
 
         base_url = request.build_absolute_uri("/")
         pdf_bytes = HTML(string=html_string, base_url=base_url).write_pdf()
-    except ImportError:
-        return HttpResponse(
-            "PDF generation requires the weasyprint package. "
-            "Please install it with: pip install weasyprint",
-            status=501,
-        )
-    except Exception as exc:
-        logger.error("WeasyPrint error for submission %s: %s", submission_id, exc)
-        return HttpResponse("An error occurred while generating the PDF.", status=500)
 
-    template_name = (
-        custom_template.name.replace(" ", "_").lower()
-        if custom_template
-        else "submission"
-    )
-    filename = f"{template_name}_{submission_id}.pdf"
-    response = HttpResponse(pdf_bytes, content_type="application/pdf")
-    response["Content-Disposition"] = f'inline; filename="{filename}"'
-    return response
+        template_name = (
+            custom_template.name.replace(" ", "_").lower()
+            if custom_template
+            else "submission"
+        )
+        filename = f"{template_name}_{submission_id}.pdf"
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = f'inline; filename="{filename}"'
+        return response
+    except Exception as exc:
+        logger.warning(
+            "WeasyPrint unavailable or failed on current system for submission %s: %s. Serving print-preview HTML fallback.",
+            submission_id,
+            exc,
+        )
+        doc_title = (
+            custom_template.name
+            if custom_template
+            else f"Submission #{submission.id} – {form_def.name}"
+        )
+        fallback_html = _render_print_preview_fallback(
+            html_string, title=doc_title, submission_id=submission.id
+        )
+        return HttpResponse(fallback_html, content_type="text/html; charset=utf-8")
+
+
+def _render_print_preview_fallback(html_string, title="Cetak Dokumen", submission_id=None):
+    """Render a clean, professional print-preview HTML page when WeasyPrint is unavailable.
+
+    Provides an interactive floating top action bar with 'Cetak / Unduh PDF'
+    and 'Kembali' buttons that automatically disappears during printing (@media print).
+    """
+    sub_text = f" (Submission #{submission_id})" if submission_id else ""
+    toolbar_html = f"""
+    <div class="no-print d-print-none print-preview-bar" style="position: sticky; top: 0; left: 0; right: 0; z-index: 99999; background: #0f172a; color: #f8fafc; padding: 12px 24px; box-shadow: 0 4px 14px rgba(0,0,0,0.2); display: flex; justify-content: space-between; align-items: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="background: #0284c7; color: #ffffff; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px;">Print Preview</span>
+            <span style="font-weight: 600; font-size: 14px; color: #f8fafc;">{title}{sub_text}</span>
+            <span style="font-size: 12px; color: #94a3b8;">· Gunakan menu cetak browser untuk menyimpan PDF</span>
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button type="button" onclick="window.history.back()" style="background: #334155; color: #f8fafc; border: 1px solid #475569; padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s;">
+                ← Kembali
+            </button>
+            <button type="button" onclick="window.print()" style="background: #0284c7; color: #ffffff; border: none; padding: 7px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 6px rgba(2,132,199,0.4); transition: all 0.15s;">
+                🖨️ Cetak / Unduh PDF
+            </button>
+        </div>
+    </div>
+    <style>
+        @media print {{
+            .no-print, .d-print-none, .print-preview-bar {{
+                display: none !important;
+            }}
+            body {{
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #ffffff !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }}
+            @page {{
+                margin: 12mm 15mm !important;
+                size: auto;
+            }}
+            .spk-paper-preview {{
+                box-shadow: none !important;
+                border: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                max-width: 100% !important;
+            }}
+        }}
+        @media screen {{
+            body {{
+                background-color: #f1f5f9;
+                margin: 0;
+                padding: 0;
+            }}
+            .spk-paper-preview {{
+                max-width: 860px !important;
+                margin: 28px auto !important;
+                background: #ffffff !important;
+                padding: 48px !important;
+                border-radius: 8px !important;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.08) !important;
+            }}
+        }}
+    </style>
+    """
+
+    import re
+    if re.search(r'<body[^>]*>', html_string, re.IGNORECASE):
+        return re.sub(r'(<body[^>]*>)', r'\1' + toolbar_html, html_string, count=1, flags=re.IGNORECASE)
+    else:
+        return f"""<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{title}</title>
+</head>
+<body>
+    {toolbar_html}
+    <div style="padding: 20px 0;">
+        {html_string}
+    </div>
+</body>
+</html>"""
 
 
 # Helper functions
@@ -3012,6 +3114,22 @@ def get_file_url(file_info):
     return None
 
 
+def _extract_choice_val_and_label(choice):
+    """Safely extract (value, label) from a choice item whether it is a dict, tuple/list, or str."""
+    if isinstance(choice, dict):
+        val = choice.get("value", choice.get("id", choice.get("key", "")))
+        lbl = choice.get("label", choice.get("name", choice.get("text", val)))
+        return str(val) if val is not None else "", str(lbl) if lbl is not None else ""
+    elif isinstance(choice, (tuple, list)):
+        val = choice[0] if len(choice) > 0 else ""
+        lbl = choice[1] if len(choice) > 1 else val
+        return str(val) if val is not None else "", str(lbl) if lbl is not None else ""
+    elif choice is not None:
+        val = str(choice).strip()
+        return val, val
+    return "", ""
+
+
 def _get_choice_label(field, value):
     """Resolve a stored field value to its human-readable display string.
 
@@ -3044,14 +3162,16 @@ def _get_choice_label(field, value):
     if field.field_type in ("select", "radio"):
         str_val = str(value) if value is not None else ""
         for choice in choices:
-            if str(choice.get("value", "")) == str_val:
-                return choice.get("label", value)
+            c_val, c_lbl = _extract_choice_val_and_label(choice)
+            if c_val == str_val:
+                return c_lbl
         return value
 
     if field.field_type in ("multiselect", "multiselect_list", "checkboxes"):
-        label_map = {
-            str(c.get("value", "")): c.get("label", c.get("value", "")) for c in choices
-        }
+        label_map = {}
+        for c in choices:
+            c_val, c_lbl = _extract_choice_val_and_label(c)
+            label_map[c_val] = c_lbl
         if isinstance(value, list):
             return [label_map.get(str(v), v) for v in value]
         return value
@@ -3592,18 +3712,19 @@ def _build_approval_step_sections(submission):
                 if field_type in ("select", "radio"):
                     str_val = str(raw_value) if raw_value is not None else ""
                     for choice in f["choices"]:
-                        if str(choice.get("value", "")) == str_val:
-                            raw_value = choice.get("label", raw_value)
+                        c_val, c_lbl = _extract_choice_val_and_label(choice)
+                        if c_val == str_val:
+                            raw_value = c_lbl
                             break
                 elif field_type in (
                     "multiselect",
                     "multiselect_list",
                     "checkboxes",
                 ) and isinstance(raw_value, list):
-                    label_map = {
-                        str(c.get("value", "")): c.get("label", c.get("value", ""))
-                        for c in f["choices"]
-                    }
+                    label_map = {}
+                    for c in f["choices"]:
+                        c_val, c_lbl = _extract_choice_val_and_label(c)
+                        label_map[c_val] = c_lbl
                     raw_value = [label_map.get(str(v), v) for v in raw_value]
             flat_fields.append(
                 {

@@ -94,15 +94,44 @@ def custom_form_list(request):
 def custom_form_submit(request, slug):
     """
     Enhanced form submission view supporting both standard POST and action="draft"/"submit"
-    from the unified button bar.
+    from the unified button bar, plus auto-numbering for permohonan-kontrak.
     """
+    import datetime
+
     if request.method == "POST":
-        action = request.POST.get("action")
-        if action == "draft" and "save_draft" not in request.POST:
-            post = request.POST.copy()
+        post = request.POST.copy()
+        action = post.get("action")
+        if action == "draft" and "save_draft" not in post:
             post["save_draft"] = "Save Draft"
-            request.POST = post
-    return upstream_form_submit(request, slug)
+
+        if slug == "permohonan-kontrak":
+            brand = (post.get("brand") or "LADY").upper().replace(" ", "")
+            cabang_raw = post.get("cabang") or "Tangerang"
+            cabang = cabang_raw.title().replace(" ", "")
+            today = datetime.date.today()
+            year = today.year
+            month = today.month
+            current_spk = post.get("nomor_spk", "").strip()
+            if not current_spk or "OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-"):
+                seq = FormSubmission.objects.filter(form_definition__slug="permohonan-kontrak").count() + 1
+                post["nomor_spk"] = f"No. {seq:04d}/{brand}/{cabang}/{month}/{year}"
+
+        request.POST = post
+
+    response = upstream_form_submit(request, slug)
+
+    if slug == "permohonan-kontrak" and request.method == "POST":
+        latest = FormSubmission.objects.filter(form_definition__slug="permohonan-kontrak").order_by("-id").first()
+        if latest and latest.form_data:
+            spk = latest.form_data.get("nomor_spk", "")
+            if not spk or "OTOMATIS" in str(spk).upper() or str(spk).startswith("AUTO-") or "{" in str(spk) or str(spk).startswith("SPK-"):
+                b = str(latest.form_data.get("brand", "LADY")).upper().replace(" ", "")
+                c = str(latest.form_data.get("cabang", "Tangerang")).title().replace(" ", "")
+                today = latest.submitted_at if latest.submitted_at else datetime.date.today()
+                latest.form_data["nomor_spk"] = f"No. {latest.id:04d}/{b}/{c}/{today.month}/{today.year}"
+                latest.save(update_fields=["form_data"])
+
+    return response
 
 
 @login_required
@@ -296,7 +325,7 @@ def custom_my_submissions_ajax(request):
         # Action Buttons: Solid dark neutral primary action (btn btn-sm btn-dark) + standard outline secondary action (btn btn-sm btn-outline-secondary)
         actions_parts = []
         if sub.status == "draft":
-            submit_url = reverse("forms_workflows:form_submit", args=[sub.form_definition.slug])
+            submit_url = reverse("forms_workflows:form_submit", args=[sub.form_definition.slug]) + f"?draft_id={sub.id}"
             discard_url = reverse("forms_workflows:discard_draft", args=[sub.id])
             actions_parts.append(
                 f'<a href="{submit_url}" class="btn btn-sm btn-dark"><i class="bi bi-pencil me-1"></i>Continue</a>'
@@ -457,5 +486,89 @@ def toggle_notification_preference(request):
     is_muted = UserNotificationPreference.objects.filter(user=request.user, muted=True).exists()
     current_enabled = request.session.get("notifications_enabled", not is_muted)
     return JsonResponse({"success": True, "enabled": current_enabled})
+
+
+def jde_customer_lookup(request):
+    """
+    Mock API endpoint for JDE customer lookup (/api/lookup/jde-customer/).
+    Returns mock customer data for auto-filling Step 1 of Permohonan Kontrak.
+    """
+    mock_customers = {
+        "150731": {
+            "customer_code": "150731",
+            "nama_toko": "SENIKMAT MEUBEL",
+            "nama_pemilik": "ABDUL MURAD",
+            "jabatan_pihak_kedua": "Owner / Pemilik",
+            "no_identitas": "5108011205750001",
+            "nomor_identitas": "5108011205750001",
+            "jenis_identitas": "NIK / NPWP",
+            "alamat_toko": "JLN IMAM BONJOL NO 92 SINGARAJA",
+            "kota": "Singaraja",
+            "no_telepon": "0362-7023538",
+            "cabang": "Bali",
+        },
+        "150820": {
+            "customer_code": "150820",
+            "nama_toko": "MEUBEL MAJU JAYA",
+            "nama_pemilik": "HENDRA WIJAYA",
+            "jabatan_pihak_kedua": "Direktur Utama",
+            "no_identitas": "3171012304800002",
+            "nomor_identitas": "3171012304800002",
+            "jenis_identitas": "NIK / NPWP",
+            "alamat_toko": "JL. RAYA SERPONG KM 7",
+            "kota": "Tangerang",
+            "no_telepon": "021-5378901",
+            "cabang": "Jakarta",
+        },
+        "150999": {
+            "customer_code": "150999",
+            "nama_toko": "INDAH FURNITURE",
+            "nama_pemilik": "SITI RAHMAWATI",
+            "jabatan_pihak_kedua": "Pemilik Toko",
+            "no_identitas": "3273014506820003",
+            "nomor_identitas": "3273014506820003",
+            "jenis_identitas": "NIK / NPWP",
+            "alamat_toko": "JL. SOEKARNO HATTA NO. 120",
+            "kota": "Bandung",
+            "no_telepon": "022-7561234",
+            "cabang": "Bandung",
+        },
+    }
+
+    code = (
+        request.GET.get("code")
+        or request.GET.get("q")
+        or request.GET.get("search")
+        or request.GET.get("value")
+        or ""
+    ).strip()
+
+    if code:
+        customer = mock_customers.get(code)
+        if not customer:
+            # Case-insensitive / partial search
+            for c_code, c_data in mock_customers.items():
+                if code.lower() in c_code.lower() or code.lower() in c_data["nama_toko"].lower():
+                    customer = c_data
+                    break
+
+        if customer:
+            return JsonResponse({
+                "success": True,
+                "found": True,
+                "customer": customer,
+                "data": customer,
+            })
+        return JsonResponse({
+            "success": False,
+            "found": False,
+            "message": f"Customer dengan kode/nama '{code}' tidak ditemukan di database JDE.",
+        }, status=404)
+
+    return JsonResponse({
+        "success": True,
+        "customers": list(mock_customers.values()),
+    })
+
 
 

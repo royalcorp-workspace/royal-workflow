@@ -9,9 +9,13 @@
         </div>
       {% elif row.type == 'display_text' %}
         <div class="col-12">
-          <div class="p-3 bg-light border rounded small text-secondary">
-            {{ row.value|render_markdown }}
-          </div>
+          {% if row.value|is_callout_note %}
+            {{ row.value|render_callout_note }}
+          {% else %}
+            <div class="p-3 bg-light border rounded small text-secondary">
+              {{ row.value|render_markdown }}
+            </div>
+          {% endif %}
         </div>
       {% elif row.type == 'pair' or row.type == 'triple' or row.type == 'quad' %}
         {% for field in row.fields %}
@@ -41,6 +45,14 @@
                       {% endif %}
                     {% endfor %}
                   </div>
+                {% elif field.value|is_boolean_value %}
+                  {{ field.value|render_boolean_badge:field.label }}
+                {% elif field.value|is_grid_data %}
+                  {{ field.value|render_grid_table }}
+                {% elif field.value|is_callout_note %}
+                  {{ field.value|render_callout_note }}
+                {% elif field.value == '[]' or field.value == '""' or field.value == '[ ]' %}
+                  <span class="text-muted">—</span>
                 {% else %}
                   {{ field.value|default:"—"|linebreaksbr }}
                 {% endif %}
@@ -76,6 +88,14 @@
                       {% endif %}
                     {% endfor %}
                   </div>
+                {% elif field.value|is_boolean_value %}
+                  {{ field.value|render_boolean_badge:field.label }}
+                {% elif field.value|is_grid_data %}
+                  {{ field.value|render_grid_table }}
+                {% elif field.value|is_callout_note %}
+                  {{ field.value|render_callout_note }}
+                {% elif field.value == '[]' or field.value == '""' or field.value == '[ ]' %}
+                  <span class="text-muted">—</span>
                 {% else %}
                   {{ field.value|default:"—"|linebreaksbr }}
                 {% endif %}

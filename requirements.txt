@@ -6,3 +6,4 @@ django-nested-admin>=4.1.0
 requests>=2.31.0
 celery>=5.3.0
 django-forms-workflows @ git+https://github.com/opensensor/django-forms-workflows.git@e1583948e3c3aef2ac8c56856b8c039f36909e2f
+weasyprint>=60.0
