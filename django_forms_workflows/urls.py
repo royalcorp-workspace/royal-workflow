@@ -133,6 +133,8 @@ urlpatterns = [
         views.notification_preferences,
         name="notification_preferences",
     ),
+    # Form submission hub (direct landing from sidebar menu)
+    path("<slug:slug>/", views.form_submission_hub, name="form_submission_hub"),
     # Server-side DataTables AJAX endpoints
     path("my-submissions/data/", views.my_submissions_ajax, name="my_submissions_ajax"),
     path("approvals/data/", views.approval_inbox_ajax, name="approval_inbox_ajax"),

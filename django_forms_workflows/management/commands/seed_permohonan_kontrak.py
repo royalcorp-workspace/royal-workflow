@@ -67,7 +67,7 @@ class Command(BaseCommand):
         # 3. Category
         category = self._ensure_category(
             slug="sales-marketing",
-            name="Sales & Marketing",
+            name="Sales & Marketing PT RAS",
             description="Formulir pengajuan kontrak ritel, diskon promo, dan perjanjian kerjasama.",
             icon="bi-graph-up-arrow",
             order=20,
@@ -114,7 +114,7 @@ class Command(BaseCommand):
             slug="permohonan-kontrak",
             defaults={
                 "category": category,
-                "name": "Permohonan Kontrak",
+                "name": "Surat Permohonan Kontrak & Pencairan Kontrak",
                 "description": clean_description,
                 "enable_multi_step": True,
                 "form_steps": form_steps,
@@ -159,13 +159,14 @@ class Command(BaseCommand):
             },
         )
 
-        # Stage 1: ASM / Branch Manager
+        # Stage 1: Review SPK oleh ASM (Dinamis: supervisor_1)
         st1 = self._ensure_stage(
             workflow,
-            name="Review ASM / Branch Manager",
+            name="Review SPK oleh ASM",
             order=1,
             defaults={
                 "approval_logic": "any",
+                "requires_manager_approval": True,
                 "allow_edit_form_data": False,
                 "allow_send_back": True,
                 "allow_reassign": True,
@@ -174,53 +175,75 @@ class Command(BaseCommand):
         )
         self._set_stage_groups(st1, [groups["Sales Area Manager"], groups["Branch Manager"]])
 
-        # Stage 2: GM / Commercial Director
+        # Stage 2: Review SPK oleh RSOM (Dinamis: supervisor_2)
         st2 = self._ensure_stage(
             workflow,
-            name="Review GM / Commercial Director",
+            name="Review SPK oleh RSOM",
             order=2,
             defaults={
-                "approval_logic": "all",
-                "allow_edit_form_data": False,
-                "allow_send_back": False,
-                "approve_label": "Setujui (GM)",
-            },
-        )
-        self._set_stage_groups(st2, [groups["General Manager Sales"], groups["Commercial Director"]])
-
-        # Stage 3: Finance Review
-        st3 = self._ensure_stage(
-            workflow,
-            name="Finance Review",
-            order=3,
-            defaults={
-                "approval_logic": "all",
+                "approval_logic": "any",
+                "requires_manager_approval": True,
                 "allow_edit_form_data": False,
                 "allow_send_back": True,
-                "approve_label": "Verifikasi Finance",
+                "allow_reassign": True,
+                "approve_label": "Setujui (RSOM)",
             },
         )
-        self._set_stage_groups(st3, [groups["Finance Team"]])
+        self._set_stage_groups(st2, [groups["Sales Area Manager"], groups["General Manager Sales"]])
 
-        # Stage 4: Final Sign-Off / Legal
+        # Stage 3: Review SPK & Pemberian Materai oleh Sales Support
+        st3 = self._ensure_stage(
+            workflow,
+            name="Review & Penomoran Materai (Sales Support)",
+            order=3,
+            defaults={
+                "approval_logic": "any",
+                "requires_manager_approval": False,
+                "allow_edit_form_data": False,
+                "allow_send_back": True,
+                "allow_reassign": True,
+                "approve_label": "Verifikasi & Beri Materai",
+            },
+        )
+        self._set_stage_groups(st3, [groups["Sales Support"]])
+
+        # Stage 4: Review & TTD oleh Toko / Verifikasi Dokumen
         st4 = self._ensure_stage(
             workflow,
-            name="Final Sign-Off / Legal",
+            name="Verifikasi TTD Toko",
             order=4,
             defaults={
                 "approval_logic": "any",
+                "requires_manager_approval": False,
                 "allow_edit_form_data": False,
-                "allow_send_back": False,
-                "approve_label": "Tandatangani",
+                "allow_send_back": True,
+                "allow_reassign": True,
+                "approve_label": "Verifikasi TTD Toko",
             },
         )
-        self._set_stage_groups(st4, [groups["Legal Team"]])
+        self._set_stage_groups(st4, [groups["Sales Support"]])
+
+        # Stage 5: Review & TTD Final oleh Direksi
+        st5 = self._ensure_stage(
+            workflow,
+            name="Review & TTD Final Direksi",
+            order=5,
+            defaults={
+                "approval_logic": "any",
+                "requires_manager_approval": False,
+                "allow_edit_form_data": False,
+                "allow_send_back": True,
+                "allow_reassign": False,
+                "approve_label": "Sahkan SPK (Direksi)",
+            },
+        )
+        self._set_stage_groups(st5, [groups["Direksi"]])
 
         # 7. Document Template (Surat Perjanjian Kerjasama)
         self._ensure_document_template(form)
 
         # 8. Notification Rules
-        self._ensure_notification_rules(workflow, st1, st4)
+        self._ensure_notification_rules(workflow, st1, st5)
 
         # 9. Clean up any existing submissions with raw markdown in info_kontrak_lama & official SPK format
         for sub in FormSubmission.objects.filter(form_definition=form):
@@ -279,6 +302,8 @@ class Command(BaseCommand):
             "Commercial Director",
             "Finance Team",
             "Legal Team",
+            "Sales Support",
+            "Direksi",
         ]
         groups = {}
         for name in group_names:
@@ -328,6 +353,14 @@ class Command(BaseCommand):
                 "last_name": "Officer",
                 "is_staff": True,
                 "groups": ["Legal Team"],
+            },
+            {
+                "username": "aalvin",
+                "email": "aalvin@royalcorp.co.id",
+                "first_name": "Alvin",
+                "last_name": "Steven",
+                "is_staff": False,
+                "groups": ["Direksi"],
             },
         ]
 
@@ -408,9 +441,8 @@ class Command(BaseCommand):
     def _ensure_stage(self, workflow, name, order, defaults):
         st, _ = WorkflowStage.objects.update_or_create(
             workflow=workflow,
-            name=name,
             order=order,
-            defaults=defaults,
+            defaults={"name": name, **defaults},
         )
         return st
 

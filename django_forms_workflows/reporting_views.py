@@ -28,7 +28,7 @@ def analytics_export_csv(request):
     cutoff = timezone.now() - timedelta(days=range_days)
     form_slug = request.GET.get("form", "")
 
-    submissions_qs = FormSubmission.objects.exclude(status="draft")
+    submissions_qs = FormSubmission.objects.filter(submitter=request.user).exclude(status="draft")
     if form_slug:
         submissions_qs = submissions_qs.filter(form_definition__slug=form_slug)
 
@@ -71,9 +71,9 @@ def analytics_dashboard(request):
     prev_cutoff = cutoff - timedelta(days=range_days)  # Previous period
     form_slug = request.GET.get("form", "")
 
-    # Base querysets
-    submissions_qs = FormSubmission.objects.exclude(status="draft")
-    tasks_qs = ApprovalTask.objects.all()
+    # Base querysets (user-scoped metrics)
+    submissions_qs = FormSubmission.objects.filter(submitter=request.user).exclude(status="draft")
+    tasks_qs = ApprovalTask.objects.filter(submission__submitter=request.user)
 
     if form_slug:
         submissions_qs = submissions_qs.filter(form_definition__slug=form_slug)
@@ -193,9 +193,9 @@ def analytics_dashboard(request):
     }
 
     # ── 7. Bottleneck stages ────────────────────────────────────────────
-    # Stages with the most pending tasks right now
+    # Stages with the most pending tasks right now for user's submissions
     bottleneck_stages = list(
-        ApprovalTask.objects.filter(status="pending", workflow_stage__isnull=False)
+        tasks_qs.filter(status="pending", workflow_stage__isnull=False)
         .values(
             "workflow_stage__name", "workflow_stage__workflow__form_definition__name"
         )
@@ -238,7 +238,7 @@ def analytics_dashboard(request):
     )
 
     # ── 10. Overdue tasks ───────────────────────────────────────────────
-    overdue_count = ApprovalTask.objects.filter(
+    overdue_count = tasks_qs.filter(
         status="pending",
         due_date__isnull=False,
         due_date__lt=timezone.now(),

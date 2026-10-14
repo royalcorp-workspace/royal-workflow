@@ -303,6 +303,9 @@
                         <button type="submit" name="decision" value="approve" class="btn btn-success btn-lg">
                             <i class="bi bi-check-circle"></i> {{ approve_label|default:"Approve" }}
                         </button>
+                        <button type="button" class="btn btn-warning btn-lg fw-semibold" data-bs-toggle="modal" data-bs-target="#modalRequestRevision">
+                            <i class="bi bi-pencil-square"></i> Minta Revisi
+                        </button>
                         <button type="submit" name="decision" value="reject" formnovalidate class="btn btn-danger btn-lg">
                             <i class="bi bi-x-circle"></i> Reject
                         </button>
@@ -484,6 +487,9 @@
                         <button type="submit" name="decision" value="approve" class="btn btn-success btn-lg">
                             <i class="bi bi-check-circle"></i> {{ approve_label|default:"Approve" }}
                         </button>
+                        <button type="button" class="btn btn-warning btn-lg fw-semibold" data-bs-toggle="modal" data-bs-target="#modalRequestRevision">
+                            <i class="bi bi-pencil-square"></i> Minta Revisi
+                        </button>
                         <button type="submit" name="decision" value="reject" formnovalidate class="btn btn-danger btn-lg">
                             <i class="bi bi-x-circle"></i> Reject
                         </button>
@@ -553,6 +559,40 @@
         {% endif %}{# /if not read_only — branch 2 write actions #}
 
         {% endif %}
+        {% if not read_only %}
+        <!-- Modal Minta Revisi -->
+        <div class="modal fade" id="modalRequestRevision" tabindex="-1" aria-labelledby="modalRequestRevisionLabel" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="decision" value="request_revision">
+                        <div class="modal-header bg-warning text-dark">
+                            <h5 class="modal-title" id="modalRequestRevisionLabel"><i class="bi bi-pencil-square me-2"></i>Minta Revisi ke Admin Sales Cabang</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p class="text-muted small mb-3">
+                                Permohonan akan dikembalikan ke Admin Sales Cabang (inisiator/submitter) dengan status <strong>Needs Revision</strong>.
+                                Nomor SPK dan ID tiket dipertahankan. Setelah Admin Sales Cabang memperbarui data dan klik <em>Kirim Ulang Revisi</em>, tiket akan dialirkan kembali ke Tahap 1 (ASM).
+                            </p>
+                            <div class="mb-3">
+                                <label for="modal_revision_reason" class="form-label fw-bold">Catatan / Alasan Revisi <span class="text-danger">*</span></label>
+                                <textarea class="form-control" id="modal_revision_reason" name="revision_reason" rows="4" placeholder="Jelaskan secara spesifik data atau lampiran apa yang perlu diperbaiki..." required></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                            <button type="submit" class="btn btn-warning fw-bold">
+                                <i class="bi bi-send me-1"></i> Kirim Permintaan Revisi
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
     </div>
 </div>
 {% endblock %}

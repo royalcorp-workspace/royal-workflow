@@ -18,8 +18,10 @@ from django.contrib import admin
 from django.urls import path, include
 from django.contrib.auth import logout
 from django.shortcuts import redirect
+from django.views.generic import RedirectView
 from django.contrib.auth.decorators import login_required
 import django_forms_workflows.urls as fw_urls
+from django_forms_workflows.reporting_views import analytics_dashboard
 
 from config.views import (
     custom_form_list,
@@ -42,19 +44,14 @@ for pattern in fw_urls.urlpatterns:
         pattern.callback = custom_my_submissions_ajax
 
 
-def root_redirect(request):
-    if request.user.is_authenticated:
-        return redirect('/forms/')
-    return redirect('/accounts/login/')
-
-
 def custom_logout(request):
     logout(request)
     return redirect('/accounts/login/')
 
 
 urlpatterns = [
-    path('', root_redirect, name='root-redirect'),
+    path('', RedirectView.as_view(url='/dashboard/', permanent=False), name='root-redirect'),
+    path('dashboard/', analytics_dashboard, name='dashboard'),
     path('admin/', admin.site.urls),
 
     # Override logout agar menerima GET tanpa error 405 dan redirect ke login

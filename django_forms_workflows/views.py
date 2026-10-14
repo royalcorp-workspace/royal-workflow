@@ -335,8 +335,38 @@ def form_submit(request, slug):
             from django.contrib.auth.views import redirect_to_login
 
             return redirect_to_login(request.get_full_path())
+    revision_id_param = request.GET.get("revision_id") or request.POST.get("revision_id")
+    revision_submission = None
+    if revision_id_param:
+        if is_anonymous:
+            return HttpResponseForbidden("Anda harus masuk untuk merevisi pengajuan.")
+        try:
+            revision_submission = FormSubmission.objects.filter(
+                id=revision_id_param, form_definition=form_def
+            ).first()
+        except (ValueError, TypeError):
+            revision_submission = None
+
+        if not revision_submission:
+            messages.error(request, "Pengajuan revisi tidak ditemukan.")
+            return redirect("forms_workflows:form_list")
+
+        # Exclusivity check: strictly original submitter only
+        if revision_submission.submitter != request.user:
+            return HttpResponseForbidden(
+                "Akses Ditolak: Hak akses revisi bersifat eksklusif hanya untuk Admin Sales Cabang (inisiator tiket asli)."
+            )
+
+        if revision_submission.status != "needs_revision":
+            messages.warning(
+                request, "Pengajuan ini tidak berstatus membutuhkan revisi."
+            )
+            return redirect(
+                "forms_workflows:submission_detail",
+                submission_id=revision_submission.id,
+            )
     else:
-        # Authenticated permission checks
+        # Authenticated permission checks for new submissions
         if not user_can_view_form(request.user, form_def):
             messages.error(request, "You don't have permission to access this form.")
             return redirect("forms_workflows:form_list")
@@ -349,40 +379,42 @@ def form_submit(request, slug):
         messages.error(request, "This form is no longer accepting submissions.")
         return redirect("forms_workflows:form_list")
 
-    if form_def.max_submissions is not None:
-        submitted_count = (
-            FormSubmission.objects.filter(form_definition=form_def)
-            .exclude(status="draft")
-            .count()
-        )
-        if submitted_count >= form_def.max_submissions:
-            messages.error(
-                request, "This form has reached its maximum number of submissions."
+    if not revision_submission:
+        if form_def.max_submissions is not None:
+            submitted_count = (
+                FormSubmission.objects.filter(form_definition=form_def)
+                .exclude(status="draft")
+                .count()
             )
-            return redirect("forms_workflows:form_list")
+            if submitted_count >= form_def.max_submissions:
+                messages.error(
+                    request, "This form has reached its maximum number of submissions."
+                )
+                return redirect("forms_workflows:form_list")
 
-    if form_def.one_per_user and not is_anonymous:
-        existing = (
-            FormSubmission.objects.filter(
-                form_definition=form_def, submitter=request.user
+        if form_def.one_per_user and not is_anonymous:
+            existing = (
+                FormSubmission.objects.filter(
+                    form_definition=form_def, submitter=request.user
+                )
+                .exclude(status__in=["draft", "withdrawn"])
+                .exists()
             )
-            .exclude(status__in=["draft", "withdrawn"])
-            .exists()
-        )
-        if existing:
-            messages.error(request, "You have already submitted this form.")
-            return redirect("forms_workflows:my_submissions")
+            if existing:
+                messages.error(request, "You have already submitted this form.")
+                return redirect("forms_workflows:my_submissions")
 
     # Drafts are only loaded when explicitly requested via draft_id / draft parameter
     draft = None
-    draft_id_param = request.GET.get("draft_id") or request.GET.get("draft") or request.POST.get("draft_id")
-    if not is_anonymous and draft_id_param:
-        try:
-            draft = FormSubmission.objects.filter(
-                id=draft_id_param, form_definition=form_def, submitter=request.user, status="draft"
-            ).first()
-        except (ValueError, TypeError):
-            draft = None
+    if not revision_submission:
+        draft_id_param = request.GET.get("draft_id") or request.GET.get("draft") or request.POST.get("draft_id")
+        if not is_anonymous and draft_id_param:
+            try:
+                draft = FormSubmission.objects.filter(
+                    id=draft_id_param, form_definition=form_def, submitter=request.user, status="draft"
+                ).first()
+            except (ValueError, TypeError):
+                draft = None
 
     user_or_none = request.user if not is_anonymous else None
 
@@ -480,9 +512,42 @@ def form_submit(request, slug):
             data=request.POST,
             files=request.FILES,
             stashed_files=stashed_files or None,
+            is_revision=revision_submission is not None,
+            revision_id=revision_submission.id if revision_submission else None,
         )
 
         if form.is_valid():
+            if revision_submission:
+                _existing_files = dict(stashed_files)
+                if revision_submission.form_data:
+                    for k, v in revision_submission.form_data.items():
+                        if isinstance(v, dict) and v.get("filename"):
+                            _existing_files.setdefault(k, v)
+                        elif isinstance(v, list) and v and isinstance(v[0], dict):
+                            _existing_files.setdefault(k, v)
+
+                updated_data = serialize_form_data(
+                    form.cleaned_data,
+                    submission_id=revision_submission.pk,
+                    existing_file_data=_existing_files or None,
+                )
+                updated_data = _re_evaluate_calculated_fields(
+                    updated_data, form_def
+                )
+
+                from .workflow_engine import handle_resubmit_revision
+
+                handle_resubmit_revision(revision_submission, updated_data, user=request.user)
+
+                messages.success(
+                    request,
+                    f"Revisi SPK #{revision_submission.id} berhasil dikirim ulang ke Tahap 1 (ASM).",
+                )
+                return redirect(
+                    "forms_workflows:submission_detail",
+                    submission_id=revision_submission.id,
+                )
+
             submission = draft or FormSubmission(
                 form_definition=form_def,
                 submitter=user_or_none,
@@ -584,10 +649,20 @@ def form_submit(request, slug):
             messages.success(request, "Form submitted successfully.")
             return redirect("forms_workflows:my_submissions")
     else:
-        initial_data = draft.form_data if draft else None
-        form = DynamicForm(
-            form_definition=form_def, user=user_or_none, initial_data=initial_data
-        )
+        if revision_submission:
+            initial_data = revision_submission.form_data or {}
+            form = DynamicForm(
+                form_definition=form_def,
+                user=user_or_none,
+                initial_data=initial_data,
+                is_revision=True,
+                revision_id=revision_submission.id,
+            )
+        else:
+            initial_data = draft.form_data if draft else None
+            form = DynamicForm(
+                form_definition=form_def, user=user_or_none, initial_data=initial_data
+            )
 
     form_enhancements_config = json.dumps(form.get_enhancements_config())
 
@@ -599,6 +674,16 @@ def form_submit(request, slug):
             django_settings, "FORMS_WORKFLOWS_CAPTCHA_SITE_KEY", ""
         )
 
+    last_revision_task = None
+    if revision_submission:
+        last_revision_task = (
+            revision_submission.approval_tasks.filter(
+                status="returned", decision="request_revision"
+            )
+            .order_by("-completed_at")
+            .first()
+        )
+
     return render(
         request,
         "django_forms_workflows/form_submit.html",
@@ -607,6 +692,10 @@ def form_submit(request, slug):
             "form": form,
             "is_draft": draft is not None,
             "draft_id": draft.id if draft else None,
+            "is_revision": revision_submission is not None,
+            "revision_id": revision_submission.id if revision_submission else None,
+            "revision_submission": revision_submission,
+            "last_revision_task": last_revision_task,
             "form_enhancements_config": form_enhancements_config,
             "is_anonymous": is_anonymous,
             "captcha_site_key": captcha_site_key,
@@ -902,6 +991,145 @@ def form_auto_save(request, slug):
         return JsonResponse(
             {"success": False, "error": "An internal error occurred."}, status=500
         )
+
+
+@login_required
+def form_submission_hub(request, slug):
+    """
+    Direct Form Submission Hub view.
+    Renders a unified submissions table for a specific form definition,
+    with header CTA to create a new submission, search bar, and status filtering.
+    """
+    form_def = get_object_or_404(FormDefinition, slug=slug, is_active=True)
+    user = request.user
+    user_groups = user.groups.all()
+
+    # Determine access scope: Staff/superusers/reviewers see all, regular users see their own
+    is_privileged = (
+        user.is_superuser
+        or user.is_staff
+        or form_def.reviewer_groups.filter(id__in=user_groups).exists()
+        or form_def.admin_groups.filter(id__in=user_groups).exists()
+    )
+
+    if is_privileged:
+        submissions_qs = FormSubmission.objects.filter(form_definition=form_def)
+    else:
+        submissions_qs = FormSubmission.objects.filter(
+            form_definition=form_def,
+            submitter=user,
+        )
+
+    # Filter Bar: Input pencarian: placeholder "Cari no. SPK / toko..."
+    search_query = request.GET.get("q", "").strip()
+    if search_query:
+        submissions_qs = submissions_qs.filter(
+            models.Q(form_data__icontains=search_query)
+            | models.Q(id__icontains=search_query)
+        )
+
+    # Filter Bar: Dropdown filter status: [ Semua Status | Menunggu Review | Disetujui | Ditolak | Draft ]
+    status_filter = request.GET.get("status", "all").strip().lower()
+    if status_filter in ["menunggu", "pending", "pending_approval"]:
+        submissions_qs = submissions_qs.filter(status__in=["pending_approval", "submitted"])
+    elif status_filter in ["disetujui", "approved"]:
+        submissions_qs = submissions_qs.filter(status="approved")
+    elif status_filter in ["ditolak", "rejected"]:
+        submissions_qs = submissions_qs.filter(status="rejected")
+    elif status_filter in ["draft"]:
+        submissions_qs = submissions_qs.filter(status="draft")
+
+    # Order newest first
+    submissions_qs = submissions_qs.select_related("submitter").order_by("-created_at")
+
+    # Pending approval tasks assigned to current user for these submissions
+    pending_tasks_sub_ids = set(
+        ApprovalTask.objects.filter(
+            status="pending",
+            submission__in=submissions_qs,
+        )
+        .filter(models.Q(assigned_to=user) | models.Q(assigned_group__in=user_groups))
+        .values_list("submission_id", flat=True)
+    )
+
+    # Transform to unified table rows
+    rows = []
+    for sub in submissions_qs:
+        fd = sub.form_data or {}
+
+        # 1. No. SPK (semi-bold)
+        spk_no = fd.get("nomor_spk") or f"SPK-{sub.id:04d}"
+
+        # 2. Toko / Dealer
+        toko = fd.get("nama_toko") or fd.get("kode_customer_jde") or "—"
+
+        # 3. Jenis (Baru / Perpanjangan)
+        jenis = fd.get("jenis_kontrak")
+        if not jenis:
+            if fd.get("chk_lampiran_spk_lalu") or "perpanjangan" in str(fd.get("info_kontrak_lama", "")).lower():
+                jenis = "Perpanjangan"
+            else:
+                jenis = "Baru"
+
+        # 4. Tanggal Diajukan
+        tanggal = sub.submitted_at or sub.created_at
+
+        # 5. Status (Badge status halus: Menunggu, Disetujui, Ditolak, Draft)
+        status_raw = sub.status
+        if status_raw in ["pending_approval", "submitted"]:
+            status_label = "Menunggu Review"
+            badge_class = "badge-status-menunggu"
+        elif status_raw == "approved":
+            status_label = "Disetujui"
+            badge_class = "badge-status-disetujui"
+        elif status_raw == "rejected":
+            status_label = "Ditolak"
+            badge_class = "badge-status-ditolak"
+        elif status_raw == "draft":
+            status_label = "Draft"
+            badge_class = "badge-status-draft"
+        elif status_raw == "withdrawn":
+            status_label = "Ditarik"
+            badge_class = "badge-status-draft"
+        else:
+            status_label = sub.get_status_display()
+            badge_class = "badge-status-draft"
+
+        # 6. Aksi (Link "Detail" / "Review")
+        if status_raw == "draft" and sub.submitter_id == user.id:
+            action_url = reverse("forms_workflows:form_submit", kwargs={"slug": form_def.slug}) + f"?draft={sub.id}"
+            action_label = "Lanjutkan Draft"
+            action_is_review = False
+        else:
+            action_url = reverse("forms_workflows:submission_detail", kwargs={"submission_id": sub.id})
+            action_is_review = sub.id in pending_tasks_sub_ids
+            action_label = "Review" if action_is_review else "Detail"
+
+        rows.append({
+            "submission": sub,
+            "spk_no": spk_no,
+            "toko": toko,
+            "jenis": jenis,
+            "tanggal": tanggal,
+            "status_label": status_label,
+            "badge_class": badge_class,
+            "action_url": action_url,
+            "action_label": action_label,
+            "action_is_review": action_is_review,
+        })
+
+    return render(
+        request,
+        "django_forms_workflows/form_submission_hub.html",
+        {
+            "form_def": form_def,
+            "rows": rows,
+            "total_count": len(rows),
+            "search_query": search_query,
+            "status_filter": status_filter,
+            "submit_url": reverse("forms_workflows:form_submit", kwargs={"slug": form_def.slug}),
+        },
+    )
 
 
 @login_required
@@ -1629,9 +1857,33 @@ def approve_submission(request, task_id):
         decision = request.POST.get("decision")
         comments = request.POST.get("comments", "")
 
-        if decision not in ["approve", "reject", "send_back"]:
+        if decision not in ["approve", "reject", "send_back", "request_revision"]:
             messages.error(request, "Invalid decision.")
             return redirect("forms_workflows:approve_submission", task_id=task_id)
+
+        # Revision request path — approver requests changes from the original submitter
+        if decision == "request_revision":
+            revision_reason = (request.POST.get("revision_reason", "") or comments).strip()
+            if not revision_reason:
+                messages.error(
+                    request, "Catatan/alasan perbaikan wajib diisi saat meminta revisi."
+                )
+                return redirect("forms_workflows:approve_submission", task_id=task_id)
+
+            from .workflow_engine import handle_request_revision
+
+            handle_request_revision(submission, task, revision_reason, request.user)
+
+            submitter_name = (
+                submission.submitter.get_full_name() or submission.submitter.username
+                if submission.submitter
+                else "Admin Sales Cabang"
+            )
+            messages.warning(
+                request,
+                f"Permohonan #{submission.id} dikembalikan ke {submitter_name} untuk perbaikan/revisi data.",
+            )
+            return redirect("forms_workflows:approval_inbox")
 
         # Send-back path — no approval-step-field validation needed.
         if decision == "send_back":
@@ -4179,6 +4431,7 @@ _STATUS_BADGE = {
     "rejected": '<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Rejected</span>',
     "withdrawn": '<span class="badge bg-secondary"><i class="bi bi-dash-circle me-1"></i>Withdrawn</span>',
     "pending_approval": '<span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Pending Approval</span>',
+    "needs_revision": '<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle-fill me-1"></i>Needs Revision</span>',
     "submitted": '<span class="badge bg-info">Submitted</span>',
     "draft": '<span class="badge bg-secondary">Draft</span>',
 }
@@ -4616,6 +4869,7 @@ def my_submissions_ajax(request):
             status__in=[
                 "submitted",
                 "pending_approval",
+                "needs_revision",
                 "approved",
                 "rejected",
                 "withdrawn",
@@ -4715,6 +4969,12 @@ def my_submissions_ajax(request):
             actions_parts.append(
                 f'<a href="{resubmit_url}" class="btn btn-sm btn-outline-info">'
                 f'<i class="bi bi-arrow-repeat"></i> Resubmit</a>'
+            )
+        if sub.status == "needs_revision" and sub.submitter == request.user:
+            revise_url = f"{reverse('forms_workflows:form_submit', args=[sub.form_definition.slug])}?revision_id={sub.id}"
+            actions_parts.append(
+                f'<a href="{revise_url}" class="btn btn-sm btn-warning fw-semibold">'
+                f'<i class="bi bi-pencil-square"></i> Revisi</a>'
             )
 
         submitted_html = (

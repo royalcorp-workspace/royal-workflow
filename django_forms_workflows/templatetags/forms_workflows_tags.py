@@ -199,21 +199,21 @@ COLUMN_CONFIG = {
     "kompetitor_3": {"label": "Kompetitor 3 (Rp)", "align": "end", "type": "currency"},
     "kompetitor_4": {"label": "Kompetitor 4 (Rp)", "align": "end", "type": "currency"},
 
-    # Target & Incentive Scheme
-    "target_bulanan": {"label": "Target Bulanan (Rp)", "align": "end", "type": "currency"},
-    "exclude_ppn": {"label": "Exclude PPN", "align": "center", "type": "boolean", "width": "110px"},
-    "incentive_pct": {"label": "Incentive (%)", "align": "end", "type": "percentage", "width": "120px"},
+    # Tabel Pasal 3 (Target & Incentive Scheme)
+    "target_bulanan": {"label": "Target Bulanan", "align": "end", "type": "currency"},
+    "exclude_ppn": {"label": "Ketentuan Pajak", "align": "center", "type": "ppn_boolean", "width": "130px"},
+    "incentive_pct": {"label": "Insentif (%)", "align": "center", "type": "percentage", "width": "120px"},
 
-    # Discount Scheme
+    # Tabel Pasal 6 (Discount Scheme)
     "komponen": {"label": "Komponen", "align": "start", "type": "text"},
-    "nilai": {"label": "Nilai", "align": "center", "type": "text", "width": "110px"},
-    "tipe": {"label": "Tipe", "align": "center", "type": "badge", "width": "110px"},
+    "nilai": {"label": "Nilai", "align": "center", "type": "discount_value", "width": "110px"},
+    "tipe": {"label": "Tipe", "align": "center", "type": "discount_type", "width": "110px"},
 
-    # Tier Support Tahunan
-    "target_tahunan": {"label": "Target Tahunan (Rp)", "align": "end", "type": "currency"},
-    "support_pct": {"label": "Support (%)", "align": "end", "type": "percentage", "width": "110px"},
-    "pph_pct": {"label": "PPh (%)", "align": "end", "type": "percentage", "width": "110px"},
-    "netto": {"label": "Netto (Rp)", "align": "end", "type": "currency"},
+    # Tabel Pasal 7 (Tier Support Tahunan / Biaya Sewa)
+    "target_tahunan": {"label": "Target Tahunan", "align": "end", "type": "currency"},
+    "support_pct": {"label": "Dukungan (%)", "align": "center", "type": "percentage", "width": "120px"},
+    "pph_pct": {"label": "PPh (%)", "align": "center", "type": "percentage", "width": "100px"},
+    "netto": {"label": "Nilai Netto (Rp)", "align": "end", "type": "currency"},
 }
 
 
@@ -225,7 +225,7 @@ def _get_column_info(key):
     if any(x in k_lower for x in ["rp", "rupiah", "harga", "biaya", "omset", "target", "netto"]):
         return {"label": label, "align": "end", "type": "currency"}
     elif any(x in k_lower for x in ["pct", "persen", "percent"]):
-        return {"label": label, "align": "end", "type": "percentage"}
+        return {"label": label, "align": "center", "type": "percentage"}
     elif k_lower in ("no", "nomor", "idx"):
         return {"label": label, "align": "center", "type": "number", "width": "50px"}
     return {"label": label, "align": "start", "type": "text"}
@@ -274,8 +274,9 @@ def is_grid_data(value):
 
 @register.filter(is_safe=True)
 def render_grid_table(value):
-    """Render structured grid data (list of dicts or JSON array) as a clean Bootstrap table."""
+    """Render structured grid data (list of dicts or JSON array) as a clean corporate table."""
     import json
+    import re
     from django.utils.html import escape
 
     if value is None or value == "":
@@ -303,16 +304,21 @@ def render_grid_table(value):
     headers = list(rows[0].keys())
 
     out = [
-        '<div class="table-responsive my-1 border rounded bg-white">'
-        '<table class="table table-sm table-hover align-middle mb-0" style="font-size: 0.84rem;">'
-        '<thead class="table-light text-secondary border-bottom">'
+        '<div class="table-responsive my-1 border rounded bg-white shadow-sm">'
+        '<table class="table table-sm table-hover align-middle mb-0" style="border-collapse: collapse; width: 100%; font-size: 0.85rem;">'
+        '<thead>'
         '<tr>'
     ]
     for h in headers:
         cinfo = _get_column_info(h)
         align_class = f"text-{cinfo.get('align', 'start')}"
         width_style = f"width: {cinfo['width']};" if 'width' in cinfo else ""
-        out.append(f'<th class="py-2 px-3 fw-semibold text-nowrap {align_class}" style="{width_style}">{escape(cinfo["label"])}</th>')
+        out.append(
+            f'<th class="text-nowrap {align_class}" '
+            f'style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; '
+            f'border: 1px solid #cbd5e1; font-weight: 600; {width_style}">'
+            f'{escape(cinfo["label"])}</th>'
+        )
     out.append('</tr></thead><tbody>')
 
     for r in rows:
@@ -323,8 +329,41 @@ def render_grid_table(value):
             col_type = cinfo.get("type", "text")
             val = r.get(h)
 
+            num_style = ""
+            if col_type in ("currency", "number"):
+                num_style = "font-variant-numeric: tabular-nums;"
+
             if val is None or val == "":
                 cell_html = '<span class="text-muted">—</span>'
+            elif col_type == "ppn_boolean":
+                if val in (True, "True", "true", 1, "1"):
+                    cell_html = '<span class="badge bg-warning-subtle text-dark border border-warning-subtle px-2 py-1">Exclude PPN</span>'
+                else:
+                    cell_html = '<span class="badge bg-info-subtle text-primary border border-info-subtle px-2 py-1">Include PPN</span>'
+            elif col_type == "discount_type":
+                s_low = str(val).strip().lower()
+                lbl = "Persentase" if s_low in ("percentage", "persentage", "persentase") else ("Nominal" if s_low == "nominal" else str(val))
+                cell_html = f'<span class="badge bg-light text-dark border px-2 py-1">{escape(lbl)}</span>'
+            elif col_type == "discount_value":
+                s = str(val).strip()
+                row_tipe = str(r.get("tipe", "")).strip().lower()
+                if row_tipe in ("percentage", "persentage", "persentase") or s.endswith("%"):
+                    if not s.endswith("%"):
+                        try:
+                            n = float(s)
+                            s = f"{int(n)}%" if n.is_integer() else f"{n:g}%"
+                        except (ValueError, TypeError):
+                            s = f"{s}%"
+                    cell_html = f'<span class="font-monospace fw-semibold">{escape(s)}</span>'
+                else:
+                    try:
+                        n = float(re.sub(r"[^\d.-]", "", s))
+                        if n >= 1000:
+                            cell_html = f'<span class="font-monospace fw-semibold">Rp {int(round(n)):,}</span>'.replace(",", ".")
+                        else:
+                            cell_html = escape(s)
+                    except Exception:
+                        cell_html = escape(s)
             elif col_type == "boolean":
                 if val:
                     cell_html = '<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">Ya</span>'
@@ -334,32 +373,42 @@ def render_grid_table(value):
                 cell_html = f'<span class="badge bg-light text-dark border px-2 py-1">{escape(str(val))}</span>'
             elif col_type == "currency":
                 try:
-                    num = float(val)
+                    cleaned = re.sub(r"[^\d.-]", "", str(val))
+                    num = float(cleaned) if cleaned else 0.0
                     if num == 0:
                         cell_html = '<span class="text-muted">Rp 0</span>'
                     else:
-                        cell_html = f'<span class="font-monospace fw-semibold">Rp {num:,.0f}</span>'.replace(",", ".")
+                        cell_html = f'<span class="font-monospace fw-semibold text-dark">Rp {int(round(num)):,}</span>'.replace(",", ".")
                 except (ValueError, TypeError):
                     cell_html = escape(str(val))
             elif col_type == "percentage":
-                try:
-                    num = float(val)
-                    if num == 0:
-                        cell_html = '<span class="text-muted">0%</span>'
-                    else:
-                        cell_html = f'<span class="font-monospace">{num:g}%</span>'
-                except (ValueError, TypeError):
-                    s = str(val).strip()
-                    cell_html = f'<span class="font-monospace">{escape(s)}</span>'
+                s = str(val).strip()
+                if s.endswith("%"):
+                    cell_html = f'<span class="font-monospace fw-semibold">{escape(s)}</span>'
+                else:
+                    try:
+                        num = float(s)
+                        if num == 0:
+                            cell_html = '<span class="text-muted">0%</span>'
+                        elif num.is_integer():
+                            cell_html = f'<span class="font-monospace fw-semibold">{int(num)}%</span>'
+                        else:
+                            cell_html = f'<span class="font-monospace fw-semibold">{num:g}%</span>'
+                    except (ValueError, TypeError):
+                        cell_html = f'<span class="font-monospace fw-semibold">{escape(s)}</span>'
             elif col_type == "number":
                 cell_html = f'<span class="fw-semibold text-secondary">{escape(str(val))}</span>'
             else:
                 if isinstance(val, (int, float)) and val >= 10000:
-                    cell_html = f'<span class="font-monospace">Rp {val:,.0f}</span>'.replace(",", ".")
+                    cell_html = f'<span class="font-monospace">Rp {int(round(val)):,}</span>'.replace(",", ".")
                 else:
                     cell_html = escape(str(val))
 
-            out.append(f'<td class="py-2 px-3 {align_class}">{cell_html}</td>')
+            out.append(
+                f'<td class="py-2 px-3 {align_class}" '
+                f'style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; {num_style}">'
+                f'{cell_html}</td>'
+            )
         out.append('</tr>')
 
     out.append('</tbody></table></div>')

@@ -857,7 +857,7 @@
             let rows = getRows();
             if (!rows.length) {
                 rows = [
-                    { komponen: '', nilai: '', tipe: 'Persentage', keterangan: '' }
+                    { komponen: '', nilai: '', tipe: 'Persentase', keterangan: '' }
                 ];
                 saveRows(rows);
             }
@@ -878,13 +878,16 @@
             `;
 
             rows.forEach((r, idx) => {
+                const tipeVal = (r.tipe === 'Persentage' || r.tipe === 'Percentage') ? 'Persentase' : (r.tipe || 'Persentase');
+                r.tipe = tipeVal;
+
                 html += `
                     <tr data-index="${idx}">
                         <td><input type="text" class="cell-input" data-key="komponen" value="${escapeHtml(r.komponen || '')}" placeholder="Komponen diskon"></td>
                         <td><input type="text" class="cell-input" data-key="nilai" value="${escapeHtml(r.nilai || '')}" placeholder="Misal: 10%"></td>
                         <td>
                             <select class="cell-input" data-key="tipe">
-                                <option value="Persentage" ${r.tipe === 'Persentage' ? 'selected' : ''}>Persentage</option>
+                                <option value="Persentase" ${r.tipe === 'Persentase' ? 'selected' : ''}>Persentase</option>
                                 <option value="Nominal" ${r.tipe === 'Nominal' ? 'selected' : ''}>Nominal</option>
                             </select>
                         </td>
@@ -926,7 +929,7 @@
             });
 
             container.querySelector('.btn-add-row').addEventListener('click', () => {
-                rows.push({ komponen: '', nilai: '0%', tipe: 'Persentage', keterangan: '' });
+                rows.push({ komponen: '', nilai: '0%', tipe: 'Persentase', keterangan: '' });
                 saveRows(rows);
                 render();
             });
@@ -1221,91 +1224,270 @@
             return el ? el.value : '';
         };
 
+        const formatRupiahAccounting = (val) => {
+            if (val === null || val === undefined || val === '') return '—';
+            const clean = String(val).replace(/[^0-9.-]/g, '');
+            const num = parseFloat(clean);
+            if (isNaN(num)) return escapeHtml(String(val));
+            if (num === 0) return 'Rp 0';
+            return 'Rp ' + Math.round(num).toLocaleString('id-ID');
+        };
+
+        const formatPercent = (val) => {
+            if (val === null || val === undefined || val === '') return '—';
+            const s = String(val).trim();
+            if (s.endsWith('%')) return escapeHtml(s);
+            const num = parseFloat(s);
+            if (isNaN(num)) return escapeHtml(s) + '%';
+            return (Number.isInteger(num) ? num : parseFloat(num.toFixed(2))) + '%';
+        };
+
+        const formatPPN = (val) => {
+            if (val === true || val === 'true' || val === 1 || val === '1') return 'Exclude PPN';
+            return 'Include PPN';
+        };
+
+        const formatDiscountType = (val) => {
+            const s = String(val || '').trim().toLowerCase();
+            if (s === 'persentage' || s === 'percentage' || s === 'persentase') return 'Persentase';
+            if (s === 'nominal') return 'Nominal';
+            return escapeHtml(String(val || 'Persentase'));
+        };
+
+        const getGridRows = (name) => {
+            const el = form.querySelector(`[name="${name}"]`);
+            if (!el || !el.value) return [];
+            try {
+                const parsed = JSON.parse(el.value);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (e) {
+                return [];
+            }
+        };
+
         const nomorSPK = getV('nomor_spk') || '—';
         const toko = getV('nama_toko') || '[Nama Toko / Dealer]';
         const pemilik = getV('nama_pemilik') || '[Nama Pemilik]';
         const alamat = getV('alamat_toko') || '[Alamat Lengkap Toko]';
         const identitas = getV('nomor_identitas') || '[NIK / NPWP]';
+        const jenisIdentitas = getV('jenis_identitas') || 'KTP / NPWP';
+        const noTelepon = getV('no_telepon') || '—';
         const brand = getV('brand') || '[Brand Produk]';
+        const cabang = getV('cabang') || '[Cabang]';
+        const perusahaan = getV('perusahaan') || 'PT BESTARI MULIA';
+        const rekening = getV('rekening_perusahaan') || 'BCA 123-456-7890 a/n PT Bestari Mulia';
+        const jdeCode = getV('kode_customer_jde') || '—';
         const tglMulai = getV('tanggal_mulai') || '[Tanggal Mulai]';
         const tglAkhir = getV('tanggal_berakhir') || '[Tanggal Berakhir]';
         const durasi = getV('durasi') || '[Durasi Kontrak]';
+        const gracePeriod = getV('grace_period') || '—';
+        const pctSupportPromo = getV('pct_support_promo') || '0';
+        const frekuensiPencairan = getV('frekuensi_pencairan') || 'Setiap Bulan';
+        const syaratPencairan = getV('syarat_pencairan') || 'Setelah pembayaran lunas';
+        const komponenBiaya = getV('komponen_biaya') || 'Sewa, Listrik, Asuransi';
+        const pengecualianSupport = getV('pengecualian_ketentuan_support') || 'Sesuai kesepakatan';
         const top = getV('top') || '0';
         const bayar = getV('metode_pembayaran') || 'Transfer / Cek / Giro';
+        const discountDO = getV('discount_do') || '0';
+        const ketentuanDO = getV('ketentuan_do') || 'Pengambilan mandiri';
+        const jenisPajak = getV('jenis_pajak') || 'Exclude PPN';
+        const catatanLain = getV('catatan_lain') || '';
         const kota = getV('kota_penandatanganan') || getV('kota') || 'Tangerang';
         const tglTtd = getV('tanggal_penandatanganan') || 'Tanggal Submit';
 
+        const targetRows = getGridRows('target_incentive');
+        const discountRows = getGridRows('discount_scheme');
+        const tierRows = getGridRows('tier_support');
+
+        let targetTableHtml = '';
+        if (targetRows.length > 0) {
+            targetTableHtml = `
+                <table class="clause-table" style="width: 100%; border-collapse: collapse; margin: 10px 0 16px 0; border: 1px solid #cbd5e1;">
+                    <thead>
+                        <tr>
+                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: right;">Target Bulanan</th>
+                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center; width: 140px;">Ketentuan Pajak</th>
+                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center; width: 120px;">Insentif (%)</th>
+                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: left;">Keterangan</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${targetRows.map(r => `
+                            <tr>
+                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: right; font-variant-numeric: tabular-nums; font-weight: 500;">${formatRupiahAccounting(r.target_bulanan)}</td>
+                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${formatPPN(r.exclude_ppn)}</td>
+                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${formatPercent(r.incentive_pct)}</td>
+                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: left;">${escapeHtml(r.keterangan || '—')}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        let discountTableHtml = '';
+        if (discountRows.length > 0) {
+            discountTableHtml = `
+                <table class="clause-table" style="width: 100%; border-collapse: collapse; margin: 10px 0 16px 0; border: 1px solid #cbd5e1;">
+                    <thead>
+                        <tr>
+                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: left;">Komponen</th>
+                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: right; width: 120px;">Nilai</th>
+                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center; width: 120px;">Tipe</th>
+                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: left;">Keterangan</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${discountRows.map(r => {
+                            const isPct = String(r.tipe || '').toLowerCase().includes('persen') || String(r.nilai || '').includes('%');
+                            const valFormatted = isPct ? formatPercent(r.nilai) : formatRupiahAccounting(r.nilai);
+                            return `
+                                <tr>
+                                    <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: left;">${escapeHtml(r.komponen || '—')}</td>
+                                    <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: right; font-variant-numeric: tabular-nums;">${valFormatted}</td>
+                                    <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${formatDiscountType(r.tipe)}</td>
+                                    <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: left;">${escapeHtml(r.keterangan || '—')}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        let tierTableHtml = '';
+        if (tierRows.length > 0) {
+            tierTableHtml = `
+                <table class="clause-table" style="width: 100%; border-collapse: collapse; margin: 10px 0 16px 0; border: 1px solid #cbd5e1;">
+                    <thead>
+                        <tr>
+                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: right;">Target Tahunan</th>
+                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center; width: 120px;">Dukungan (%)</th>
+                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center; width: 100px;">PPh (%)</th>
+                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: right;">Nilai Netto (Rp)</th>
+                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: left;">Keterangan</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tierRows.map(r => `
+                            <tr>
+                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: right; font-variant-numeric: tabular-nums; font-weight: 500;">${formatRupiahAccounting(r.target_tahunan)}</td>
+                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${formatPercent(r.support_pct)}</td>
+                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${formatPercent(r.pph_pct)}</td>
+                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: right; font-variant-numeric: tabular-nums; font-weight: 500;">${formatRupiahAccounting(r.netto)}</td>
+                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: left;">${escapeHtml(r.keterangan || '—')}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
         container.innerHTML = `
-            <div style="text-align: center; margin-bottom: 24px;">
-                <h3 style="font-size: 18px; margin-bottom: 4px; text-decoration: underline;">SURAT PERJANJIAN KERJASAMA</h3>
-                <p style="font-size: 14px; margin: 0;">Nomor: <strong>${nomorSPK}</strong></p>
+            <div style="text-align: center; margin-bottom: 25px;">
+                <h2 style="font-size: 20px; text-decoration: underline; margin-bottom: 4px;">SURAT PERJANJIAN KERJASAMA (SPK)</h2>
+                <p style="font-size: 14px; margin: 0; font-weight: bold;">Nomor: ${nomorSPK}</p>
             </div>
 
-            <p>Pada hari ini, tanggal <strong>${tglTtd}</strong>, bertempat di <strong>${kota}</strong>, dibuat dan ditandatangani perjanjian kerjasama oleh dan antara:</p>
+            <p style="text-align: justify;">
+                Pada hari ini, tanggal <strong>${tglTtd}</strong>, bertempat di <strong>${kota}</strong>, dibuat dan ditandatangani perjanjian kerjasama penjualan dan pemasaran oleh dan antara:
+            </p>
 
-            <table style="margin-bottom: 16px;">
+            <table style="width: 100%; margin-bottom: 15px; font-size: 14px;">
                 <tr>
-                    <td style="width: 140px; font-weight: bold;">I. PIHAK PERTAMA</td>
-                    <td style="width: 10px;">:</td>
-                    <td><strong>PT BESTARI MULIA</strong></td>
+                    <td style="width: 160px; font-weight: bold; vertical-align: top;">I. PIHAK PERTAMA</td>
+                    <td style="width: 10px; vertical-align: top;">:</td>
+                    <td><strong>${perusahaan}</strong></td>
                 </tr>
                 <tr>
-                    <td>Alamat</td>
-                    <td>:</td>
+                    <td style="vertical-align: top;">Alamat Domisili</td>
+                    <td style="vertical-align: top;">:</td>
                     <td>Jl. Industri Raya Blok A No. 10, Tangerang, Banten</td>
                 </tr>
                 <tr>
-                    <td>Diwakili Oleh</td>
-                    <td>:</td>
-                    <td>Direktur Komersial (bertindak atas nama PT Bestari Mulia)</td>
+                    <td style="vertical-align: top;">Rekening Pembayaran</td>
+                    <td style="vertical-align: top;">:</td>
+                    <td>${rekening}</td>
                 </tr>
             </table>
 
-            <table style="margin-bottom: 24px;">
+            <table style="width: 100%; margin-bottom: 20px; font-size: 14px;">
                 <tr>
-                    <td style="width: 140px; font-weight: bold;">II. PIHAK KEDUA</td>
-                    <td style="width: 10px;">:</td>
+                    <td style="width: 160px; font-weight: bold; vertical-align: top;">II. PIHAK KEDUA</td>
+                    <td style="width: 10px; vertical-align: top;">:</td>
                     <td><strong>${pemilik}</strong> (Pemilik / Penanggung Jawab)</td>
                 </tr>
                 <tr>
-                    <td>Nama Toko / Usaha</td>
-                    <td>:</td>
-                    <td><strong>${toko}</strong></td>
+                    <td style="vertical-align: top;">Nama Toko / Usaha</td>
+                    <td style="vertical-align: top;">:</td>
+                    <td><strong>${toko}</strong> (Kode JDE: ${jdeCode})</td>
                 </tr>
                 <tr>
-                    <td>Alamat Toko</td>
-                    <td>:</td>
-                    <td>${alamat}</td>
+                    <td style="vertical-align: top;">Alamat Toko</td>
+                    <td style="vertical-align: top;">:</td>
+                    <td>${alamat}, ${kota}</td>
                 </tr>
                 <tr>
-                    <td>NIK / NPWP</td>
-                    <td>:</td>
+                    <td style="vertical-align: top;">No. Identitas (${jenisIdentitas})</td>
+                    <td style="vertical-align: top;">:</td>
                     <td>${identitas}</td>
+                </tr>
+                <tr>
+                    <td style="vertical-align: top;">No. Telepon / HP</td>
+                    <td style="vertical-align: top;">:</td>
+                    <td>${noTelepon}</td>
                 </tr>
             </table>
 
-            <h5 style="font-size: 14px; border-bottom: 1px solid #000; padding-bottom: 4px; margin-top: 20px;">BAB I - RUANG LINGKUP & PERIODE KERJASAMA</h5>
-            <p><strong>Pasal 1:</strong> PIHAK PERTAMA menunjuk PIHAK KEDUA sebagai dealer/mitra resmi produk dengan merek <strong>${brand}</strong>.</p>
-            <p><strong>Pasal 2:</strong> Perjanjian kerjasama ini berlaku efektif terhitung sejak tanggal <strong>${tglMulai}</strong> sampai dengan <strong>${tglAkhir}</strong> (Durasi: <strong>${durasi}</strong>).</p>
+            <h4 style="font-size: 15px; border-bottom: 1px solid #333; padding-bottom: 4px; margin-top: 25px;">BAB I - PENUNJUKAN & PERIODE KERJASAMA</h4>
+            <p style="text-align: justify;">
+                <strong>Pasal 1:</strong> PIHAK PERTAMA menunjuk PIHAK KEDUA sebagai dealer/mitra resmi penjualan produk dengan brand <strong>${brand}</strong> untuk wilayah <strong>${cabang}</strong>.<br>
+                <strong>Pasal 2:</strong> Perjanjian kerjasama ini berlaku efektif terhitung sejak <strong>${tglMulai}</strong> sampai dengan <strong>${tglAkhir}</strong> (Durasi: <strong>${durasi}</strong>, Grace Period: <strong>${gracePeriod}</strong>).
+            </p>
 
-            <h5 style="font-size: 14px; border-bottom: 1px solid #000; padding-bottom: 4px; margin-top: 20px;">BAB II - TARGET VOLUME PENJUALAN & DUKUNGAN PROMOSI</h5>
-            <p><strong>Pasal 3:</strong> PIHAK KEDUA berkewajiban mencapai target volume penjualan sesuai dengan Skema Target & Incentive yang telah disepakati bersama.</p>
-            <p><strong>Pasal 4:</strong> Segala bentuk dukungan promosi, biaya sewa, atau listing fee akan dicairkan berdasarkan verifikasi pencapaian target dan kelunasan kewajiban pembayaran.</p>
+            <h4 style="font-size: 15px; border-bottom: 1px solid #333; padding-bottom: 4px; margin-top: 25px;">BAB II - TARGET VOLUME PENJUALAN & INSENTIF</h4>
+            <p style="text-align: justify;">
+                <strong>Pasal 3:</strong> PIHAK KEDUA berkomitmen mencapai target penjualan bulanan sesuai dengan rincian Skema Target & Incentive Scheme sebagai berikut:
+            </p>
+            ${targetTableHtml || '<p class="text-muted fst-italic">Belum ada tier target bulanan yang ditambahkan.</p>'}
 
-            <h5 style="font-size: 14px; border-bottom: 1px solid #000; padding-bottom: 4px; margin-top: 20px;">BAB III - SYARAT PEMBAYARAN</h5>
-            <p><strong>Pasal 5:</strong> Pembayaran pesanan barang dilakukan dengan metode <strong>${bayar}</strong> dengan Term of Payment (TOP) selama <strong>${top} Hari</strong> terhitung sejak tanggal faktur/pengiriman.</p>
+            <h4 style="font-size: 15px; border-bottom: 1px solid #333; padding-bottom: 4px; margin-top: 25px;">BAB III - DUKUNGAN PROMOSI & DISCOUNT SCHEME</h4>
+            <p style="text-align: justify;">
+                <strong>Pasal 4:</strong> PIHAK PERTAMA memberikan dukungan promosi sebesar <strong>${pctSupportPromo}%</strong> yang dicairkan <strong>${frekuensiPencairan}</strong> dengan syarat: <em>${syaratPencairan}</em>.<br>
+                <strong>Pasal 5:</strong> Komponen biaya promosi mencakup: ${komponenBiaya}. Ketentuan khusus: ${pengecualianSupport}<br>
+                <strong>Pasal 6:</strong> Rincian skema diskon yang berlaku pada perjanjian ini adalah:
+            </p>
+            ${discountTableHtml || '<p class="text-muted fst-italic">Belum ada skema diskon yang ditambahkan.</p>'}
 
-            <div style="margin-top: 40px;">
-                <table style="width: 100%; text-align: center;">
+            <h4 style="font-size: 15px; border-bottom: 1px solid #333; padding-bottom: 4px; margin-top: 25px;">BAB IV - TIER SUPPORT TAHUNAN / BIAYA SEWA</h4>
+            <p style="text-align: justify;">
+                <strong>Pasal 7:</strong> Skema Tier Support Tahunan dan perhitungan Netto setelah pemotongan PPh ditetapkan sebagai berikut:
+            </p>
+            ${tierTableHtml || '<p class="text-muted fst-italic">Belum ada tier support tahunan yang ditambahkan.</p>'}
+
+            <h4 style="font-size: 15px; border-bottom: 1px solid #333; padding-bottom: 4px; margin-top: 25px;">BAB V - TATA CARA PEMBAYARAN & KETENTUAN DO</h4>
+            <p style="text-align: justify;">
+                <strong>Pasal 8:</strong> Pembayaran dilakukan melalui metode <strong>${bayar}</strong> dengan Term of Payment (TOP) selama <strong>${top} Hari</strong>.<br>
+                <strong>Pasal 9:</strong> Ketentuan Delivery Order (DO) berhak memperoleh diskon tambahan sebesar <strong>${discountDO}%</strong> dengan ketentuan: <em>${ketentuanDO}</em>.<br>
+                <strong>Pasal 10 (Pajak):</strong> Ketentuan pengenaan pajak yang berlaku adalah <strong>${jenisPajak}</strong>.
+            </p>
+
+            ${catatanLain ? `
+            <h4 style="font-size: 15px; border-bottom: 1px solid #333; padding-bottom: 4px; margin-top: 25px;">BAB VI - KETENTUAN TAMBAHAN / LAIN-LAIN</h4>
+            <p style="text-align: justify;">${escapeHtml(catatanLain)}</p>
+            ` : ''}
+
+            <div style="margin-top: 50px;">
+                <table style="width: 100%; text-align: center; font-size: 14px;">
                     <tr>
                         <td style="width: 50%;">
                             <strong>PIHAK PERTAMA</strong><br>
-                            PT Bestari Mulia<br><br><br><br>
+                            ${perusahaan}<br><br><br><br><br>
                             <u>Direktur Komersial</u>
                         </td>
                         <td style="width: 50%;">
                             <strong>PIHAK KEDUA</strong><br>
-                            ${toko}<br><br><br><br>
+                            ${toko}<br><br><br><br><br>
                             <u>${pemilik}</u><br>
                             Pemilik / Penanggung Jawab
                         </td>

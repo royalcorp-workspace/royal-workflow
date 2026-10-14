@@ -12,7 +12,7 @@ import nested_admin
 from django import forms
 from django.contrib import admin
 from django.contrib.auth.admin import GroupAdmin
-from django.contrib.auth.models import Group
+from django.contrib.auth.models import Group, User
 from django.db import transaction
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
@@ -46,6 +46,7 @@ from .models import (
     SubWorkflowInstance,
     UserNotificationPreference,
     UserProfile,
+    EmployeeProfile,
     WebhookDeliveryLog,
     WebhookEndpoint,
     WorkflowDefinition,
@@ -2923,11 +2924,20 @@ class LDAPManagedFilter(admin.SimpleListFilter):
 admin.site.unregister(Group)
 
 
+class UserGroupInline(admin.TabularInline):
+    model = User.groups.through
+    extra = 0
+    verbose_name = "User Member"
+    verbose_name_plural = "User Members"
+    autocomplete_fields = ["user"]
+    can_delete = True
+
+
 @admin.register(Group)
 class CustomGroupAdmin(GroupAdmin):
-    """Extended Group admin showing LDAP vs Django-only origin."""
+    """Extended Group admin showing LDAP vs Django-only origin and Users inline."""
 
-    inlines = [LDAPGroupProfileInline]
+    inlines = [LDAPGroupProfileInline, UserGroupInline]
     list_display = ("name", "ldap_badge", "user_count")
     list_filter = (LDAPManagedFilter,)
 
@@ -3224,3 +3234,36 @@ class ChangeHistoryAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return request.user.is_superuser
+
+
+@admin.register(EmployeeProfile)
+class EmployeeProfileAdmin(admin.ModelAdmin):
+    list_display = (
+        "nik",
+        "full_name",
+        "position",
+        "department",
+        "branch",
+        "supervisor_1_name",
+        "supervisor_2_name",
+        "last_synced_at",
+    )
+    list_filter = ("department", "company", "branch", "last_synced_at")
+    search_fields = (
+        "nik",
+        "full_name",
+        "user__username",
+        "work_email",
+        "supervisor_1_name",
+        "supervisor_2_name",
+    )
+    raw_id_fields = ("user", "supervisor_1", "supervisor_2")
+    readonly_fields = ("created_at", "updated_at", "raw_api_hash")
+    ordering = ("department", "full_name")
+
+
+# Pastikan UserAdmin mendukung pencarian agar autocomplete_fields pada UserGroupInline bekerja
+if admin.site._registry.get(User):
+    user_admin = admin.site._registry[User]
+    if not getattr(user_admin, "search_fields", None):
+        user_admin.search_fields = ["username", "first_name", "last_name", "email"]

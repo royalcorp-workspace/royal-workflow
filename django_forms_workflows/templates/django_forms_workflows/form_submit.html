@@ -26,8 +26,25 @@
             <h1>{{ form_def.name }}</h1>
             {% if is_draft %}
                 <span class="badge bg-warning text-dark">Draft</span>
+            {% elif is_revision %}
+                <span class="badge bg-warning text-dark"><i class="bi bi-pencil-square me-1"></i>Revisi Pengajuan #{{ revision_id }}</span>
             {% endif %}
         </div>
+        {% if is_revision %}
+        <div class="alert alert-warning border-warning shadow-sm mb-4">
+            <h5 class="alert-heading fw-bold mb-1"><i class="bi bi-pencil-square me-2"></i>Mode Revisi SPK (Pengajuan #{{ revision_id }})</h5>
+            <p class="mb-2">Anda sedang melakukan revisi atas permohonan SPK yang diminta perbaikan oleh tim peninjau. Formulir telah terisi dengan data yang Anda ajukan sebelumnya. Silakan periksa dan perbarui data atau lampiran sesuai catatan perbaikan di bawah.</p>
+            {% if last_revision_task and last_revision_task.comments %}
+            <div class="bg-white p-3 rounded border border-warning-subtle text-dark mb-2">
+                <strong><i class="bi bi-chat-left-dots-fill text-warning me-1"></i>Catatan Perbaikan dari {{ last_revision_task.completed_by.get_full_name|default:last_revision_task.completed_by.username }} ({{ last_revision_task.workflow_stage.name|default:last_revision_task.step_name }}):</strong>
+                <div class="mt-1">{{ last_revision_task.comments }}</div>
+            </div>
+            {% endif %}
+            <div class="small text-muted mt-2">
+                <i class="bi bi-info-circle"></i> Setelah Anda klik tombol <strong>Kirim Ulang Revisi</strong>, permohonan akan dialirkan kembali ke Tahap 1 (ASM) dengan nomor SPK yang tetap sama.
+            </div>
+        </div>
+        {% endif %}
         {% if form_def.instructions %}
             <div class="alert alert-info">
                 <i class="bi bi-info-circle"></i> <strong>Helpful Info</strong>

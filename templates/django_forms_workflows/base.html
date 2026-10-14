@@ -59,8 +59,8 @@
                                     Approvals
                                 {% elif 'my-submissions' in request.path %}
                                     My Submissions
-                                {% elif 'analytics' in request.path %}
-                                    Analytics
+                                {% elif 'analytics' in request.path or 'dashboard' in request.path %}
+                                    Dashboard
                                 {% elif '/submit/' in request.path %}
                                     Submit Form
                                 {% else %}

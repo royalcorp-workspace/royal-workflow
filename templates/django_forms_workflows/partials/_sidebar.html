@@ -2,7 +2,7 @@
 {% if user.is_authenticated %}
 <aside class="sidebar-wrapper">
     <div class="sidebar-header">
-        <a href="{% url 'forms_workflows:form_list' %}" class="d-flex align-items-center text-decoration-none">
+        <a href="/dashboard/" class="d-flex align-items-center text-decoration-none">
             <div class="sidebar-brand-icon">
                 <i class="bi bi-diagram-3-fill"></i>
             </div>
@@ -10,17 +10,21 @@
         </a>
     </div>
     <div class="sidebar-nav">
+        {# ── Main Menu ── #}
         <div class="nav-section-title">Main Menu</div>
-        <nav class="nav flex-column">
-            <a class="sidebar-link {% if request.path == '/forms/' or '/submit/' in request.path %}active{% endif %}" href="{% url 'forms_workflows:form_list' %}">
-                <i class="bi bi-card-checklist"></i>
-                <span>Forms</span>
+        <nav class="nav flex-column mb-3">
+            <a class="sidebar-link {% if request.path == '/dashboard/' or request.path == '/forms/analytics/' or request.path == '/analytics/' or request.path == '/' %}active{% endif %}"
+                href="/dashboard/">
+                <i class="bi bi-speedometer2"></i>
+                <span>Dashboard</span>
             </a>
-            <a class="sidebar-link {% if 'my-submissions' in request.path or 'submissions/' in request.path %}active{% endif %}" href="{% url 'forms_workflows:my_submissions' %}">
+            <!-- Menu 'My Submissions' disembunyikan sesuai arahan UI Polish
+            <a class="sidebar-link {% if 'my-submissions' in request.path %}active{% endif %}" href="{% url 'forms_workflows:my_submissions' %}">
                 <i class="bi bi-journal-text"></i>
                 <span>My Submissions</span>
             </a>
-            {% if user.is_staff or user.groups.exists or user_is_approver %}
+            -->
+            {% if user.is_staff or user_is_approver %}
             <a class="sidebar-link {% if 'approvals' in request.path %}active{% endif %}" href="/forms/approvals/">
                 <i class="bi bi-check2-square"></i>
                 <span>Approvals</span>
@@ -28,14 +32,98 @@
             {% endif %}
         </nav>
 
-        {% if user.is_staff or user.is_superuser %}
-        <div class="nav-section-title mt-4">Management</div>
-        <nav class="nav flex-column">
-            <a class="sidebar-link {% if 'analytics' in request.path %}active{% endif %}" href="{% url 'forms_workflows:analytics_dashboard' %}">
-                <i class="bi bi-graph-up"></i>
-                <span>Analytics</span>
-            </a>
-        </nav>
+        {# ── Department Categories & Collapsible Sub-menu ── #}
+        {% if sidebar_categories %}
+        {% for cat_data in sidebar_categories %}
+        <div class="sidebar-dept-group mt-3">
+            <div class="sidebar-category-header d-flex justify-content-between align-items-center px-3 py-2 text-uppercase fw-semibold"
+                data-bs-toggle="collapse" data-bs-target="#menuSalesMarketing" role="button" aria-expanded="true"
+                style="color: #cbd5e1; font-size: 0.75rem; letter-spacing: 0.05em; cursor: pointer;">
+                <span>• {{ cat_data.category_name }}</span>
+                <i class="bi bi-chevron-down toggle-arrow"
+                    style="font-size: 0.75rem; transition: transform 0.2s ease;"></i>
+            </div>
+            <div class="collapse show" id="menuSalesMarketing">
+                <ul class="nav flex-column ps-2 mt-1">
+                    {% for form_item in cat_data.forms %}
+                    <li class="nav-item">
+                        <a class="sidebar-link sidebar-nested-link {% if request.path == form_item.hub_url or form_item.slug in request.path and 'analytics' not in request.path and 'approvals' not in request.path and 'my-submissions' not in request.path %}active{% endif %}"
+                            href="{{ form_item.hub_url }}" title="{{ form_item.name }}">
+                            <i class="bi bi-file-earmark-text"></i>
+                            <span>{{ form_item.name }}</span>
+                        </a>
+                    </li>
+                    {% endfor %}
+
+                    {% if cat_data.extra_mock_forms %}
+                    {% for mock in cat_data.extra_mock_forms %}
+                    <li class="nav-item">
+                        <div class="sidebar-link sidebar-nested-link disabled-link d-flex align-items-center justify-content-between"
+                            title="{{ mock.name }}">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-file-earmark-lock"></i>
+                                <span>{{ mock.name }}</span>
+                            </div>
+                            <span class="badge-dept-mock">{{ mock.badge }}</span>
+                        </div>
+                    </li>
+                    {% endfor %}
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="sidebar-dept-group mt-3">
+            <div class="sidebar-category-header d-flex justify-content-between align-items-center px-3 py-2 text-uppercase fw-semibold"
+                data-bs-toggle="collapse" data-bs-target="#menuSalesMarketing" role="button" aria-expanded="true"
+                style="color: #cbd5e1; font-size: 0.75rem; letter-spacing: 0.05em; cursor: pointer;">
+                <span>SALES & MARKETING PT RAS</span>
+                <i class="bi bi-chevron-down toggle-arrow"
+                    style="font-size: 0.75rem; transition: transform 0.2s ease;"></i>
+            </div>
+            <div class="collapse show" id="menuSalesMarketing">
+                <ul class="nav flex-column ps-2 mt-1">
+                    <li class="nav-item">
+                        <a class="sidebar-link sidebar-nested-link {% if 'permohonan-kontrak' in request.path %}active{% endif %}"
+                            href="/forms/permohonan-kontrak/" title="Surat Permohonan Kontrak & Pencairan Kontrak">
+                            <i class="bi bi-file-earmark-text"></i>
+                            <span>Surat Permohonan Kontrak &amp; Pencairan Kontrak</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <div
+                            class="sidebar-link sidebar-nested-link disabled-link d-flex align-items-center justify-content-between">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-file-earmark-lock"></i>
+                                <span>Form B (Promo &amp; Claim)</span>
+                            </div>
+                            <span class="badge-dept-mock">Draft</span>
+                        </div>
+                    </li>
+                    <li class="nav-item">
+                        <div
+                            class="sidebar-link sidebar-nested-link disabled-link d-flex align-items-center justify-content-between">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-file-earmark-lock"></i>
+                                <span>Form C (Pengajuan Display)</span>
+                            </div>
+                            <span class="badge-dept-mock">Draft</span>
+                        </div>
+                    </li>
+                    <li class="nav-item">
+                        <div
+                            class="sidebar-link sidebar-nested-link disabled-link d-flex align-items-center justify-content-between">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-file-earmark-lock"></i>
+                                <span>Form D (Sponsorship)</span>
+                            </div>
+                            <span class="badge-dept-mock">Draft</span>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </div>
         {% endif %}
     </div>
 </aside>

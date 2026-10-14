@@ -376,6 +376,9 @@ class DynamicForm(forms.Form):
         user=None,
         initial_data=None,
         stashed_files=None,
+        is_revision=False,
+        revision_id=None,
+        submit_label=None,
         *args,
         **kwargs,
     ):
@@ -383,6 +386,9 @@ class DynamicForm(forms.Form):
         self.form_definition = form_definition
         self.user = user
         self.initial_data = initial_data or {}
+        self.is_revision = is_revision
+        self.revision_id = revision_id
+        self.submit_label = submit_label
         # File metadata saved eagerly before validation so file uploads
         # survive a validation-failure re-render (browsers don't re-send
         # files).  Also used to carry forward draft / resubmit file data.
@@ -519,17 +525,30 @@ class DynamicForm(forms.Form):
             )
 
         # Add submit buttons
-        buttons = [Submit("submit", "Submit", css_class="btn btn-primary")]
-        # Save Draft is only available for authenticated users
-        if form_definition.allow_save_draft and user is not None:
-            buttons.append(
-                Submit(
-                    "save_draft",
-                    "Save Draft",
-                    css_class="btn btn-secondary ms-2",
-                    formnovalidate="",  # bypass HTML5 required-field validation for drafts
+        if self.is_revision:
+            if self.revision_id:
+                layout_fields.append(
+                    HTML(f'<input type="hidden" name="revision_id" value="{html_escape(str(self.revision_id))}"/>')
                 )
-            )
+            buttons = [
+                Submit(
+                    "submit",
+                    self.submit_label or "Kirim Ulang Revisi",
+                    css_class="btn btn-warning btn-lg fw-bold",
+                )
+            ]
+        else:
+            buttons = [Submit("submit", self.submit_label or "Submit", css_class="btn btn-primary")]
+            # Save Draft is only available for authenticated users
+            if form_definition.allow_save_draft and user is not None:
+                buttons.append(
+                    Submit(
+                        "save_draft",
+                        "Save Draft",
+                        css_class="btn btn-secondary ms-2",
+                        formnovalidate="",  # bypass HTML5 required-field validation for drafts
+                    )
+                )
 
         layout_fields.append(Div(*buttons, css_class="mt-4"))
 

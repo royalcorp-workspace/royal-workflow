@@ -41,3 +41,6 @@ Desktop.ini
 *.log
 *.pot
 *.bak
+
+# Local Scratch Directory
+scratch/

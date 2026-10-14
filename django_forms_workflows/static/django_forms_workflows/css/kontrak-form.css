@@ -283,6 +283,40 @@ input[name="kota"][readonly]:focus {
     font-size: 13px;
 }
 
+/* Corporate Clean Clause Tables (Pasal 3, 6, 7 & PDF) */
+.spk-paper-preview table.clause-table,
+table.clause-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 16px 0;
+    border: 1px solid #cbd5e1;
+}
+
+.spk-paper-preview table.clause-table th,
+table.clause-table th {
+    background-color: #f1f5f9 !important;
+    color: #1e293b !important;
+    padding: 8px 10px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: 1px solid #cbd5e1;
+}
+
+.spk-paper-preview table.clause-table td,
+table.clause-table td {
+    padding: 7px 10px;
+    font-size: 0.85rem;
+    border: 1px solid #e2e8f0;
+    vertical-align: middle;
+}
+
+.spk-paper-preview table.clause-table td.cell-currency,
+table.clause-table td.cell-currency {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+}
+
 /* Total summary footer row */
 .grid-summary-footer {
     background-color: #f8fafc;

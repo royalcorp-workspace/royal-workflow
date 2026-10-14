@@ -629,18 +629,32 @@ def _create_stage_tasks(
         _notify_task_request(task)
         return
 
-    # --- Manager-first ordering ----------------------------------------------
+    # --- Manager-first ordering (including supervisor_1 / supervisor_2 dynamic lookup) ---
     manager_task_created = False
     if stage.requires_manager_approval:
-        try:
-            from .ldap_backend import get_user_manager
-        except Exception:
-            get_user_manager = None  # type: ignore
-        manager = (
-            get_user_manager(submission.submitter)
-            if get_user_manager and submission.submitter_id
-            else None
-        )
+        manager = None
+        submitter = submission.submitter
+        if submitter:
+            ep = getattr(submitter, "employee_profile", None)
+            if stage.order == 1:
+                # Level 1: ASM / Section Head
+                if ep and ep.supervisor_1:
+                    manager = ep.supervisor_1
+                elif hasattr(submitter, "forms_profile") and submitter.forms_profile.manager:
+                    manager = submitter.forms_profile.manager
+            elif stage.order == 2:
+                # Level 2: RSOM / NSM
+                if ep and ep.supervisor_2:
+                    manager = ep.supervisor_2
+
+            # Fallback for Stage 1 if supervisor_1 not yet in employee_profile
+            if not manager and stage.order == 1:
+                try:
+                    from .utils import get_user_manager
+                    manager = get_user_manager(submitter)
+                except Exception:
+                    pass
+
         if manager:
             task = ApprovalTask.objects.create(
                 submission=submission,
@@ -655,7 +669,7 @@ def _create_stage_tasks(
             _notify_task_request(task)
         else:
             logger.info(
-                "Manager approval required but manager not found for user %s (stage %d)",
+                "Manager approval required but supervisor not found for user %s (stage %d). Falling back to stage approval groups.",
                 submission.submitter,
                 stage_num,
             )
@@ -1194,6 +1208,122 @@ def handle_send_back(
         workflow_id=workflow.id,
         target_stage_id=target_stage.id,
     )
+
+
+@transaction.atomic
+def handle_request_revision(
+    submission: FormSubmission,
+    task: ApprovalTask,
+    reason: str,
+    reviewer=None,
+) -> None:
+    """Put a submission into needs_revision status and return to submitter for correction.
+
+    Steps:
+      1. Mark current task status as 'returned' with decision='request_revision' and notes.
+      2. Cancel parallel sibling tasks still pending at the current stage.
+      3. Set FormSubmission.status = 'needs_revision' (retaining same ID and SPK number).
+      4. Record AuditLog entry and fire notification rules / webhooks.
+    """
+    current_stage = task.workflow_stage
+
+    task.status = "returned"
+    task.decision = "request_revision"
+    task.comments = reason
+    if reviewer:
+        task.completed_by = reviewer
+    task.completed_at = timezone.now()
+    task.save()
+
+    # Cancel parallel sibling tasks still pending at the current stage
+    if current_stage:
+        submission.approval_tasks.filter(
+            workflow_stage=current_stage, status="pending"
+        ).exclude(id=task.id).update(status="skipped")
+
+    submission.status = "needs_revision"
+    submission.save(update_fields=["status"])
+
+    logger.info(
+        "Submission %s put into 'needs_revision' from stage '%s' by task %s.",
+        submission.id,
+        current_stage.name if current_stage else "None",
+        task.id,
+    )
+
+    try:
+        from .models import AuditLog
+
+        AuditLog.objects.create(
+            action="request_revision",
+            object_type="FormSubmission",
+            object_id=submission.id,
+            user=reviewer if getattr(reviewer, "is_authenticated", False) else None,
+            changes={
+                "task_id": task.id,
+                "stage": current_stage.name if current_stage else "Approval",
+                "reason": reason,
+            },
+        )
+    except Exception as e:
+        logger.warning("Could not record AuditLog for revision request: %s", e)
+
+    _dispatch_notification_rules(
+        submission, "submission_returned", task_id=task.id
+    )
+    _dispatch_workflow_webhooks(
+        submission,
+        "submission.needs_revision",
+        task_id=task.id,
+        workflow_id=current_stage.workflow_id if current_stage else None,
+    )
+
+
+@transaction.atomic
+def handle_resubmit_revision(
+    submission: FormSubmission,
+    updated_form_data: dict,
+    user=None,
+) -> None:
+    """Re-submits a revised submission back into the workflow starting at Stage 1 (ASM).
+
+    Steps:
+      1. Overwrite submission.form_data with the updated dictionary.
+      2. Set submission.status = 'pending_approval' and update submitted_at.
+      3. Cancel any lingering pending tasks.
+      4. Spawn fresh tasks for Stage 1 (ASM) via _create_stage_tasks.
+      5. Record AuditLog.
+    """
+    submission.form_data = updated_form_data
+    submission.status = "pending_approval"
+    submission.submitted_at = timezone.now()
+    submission.save(update_fields=["form_data", "status", "submitted_at"])
+
+    # Cancel any leftover pending tasks
+    submission.approval_tasks.filter(status="pending").update(status="skipped")
+
+    # Restart approval workflow from Stage 1
+    workflows = list(submission.form_definition.workflows.filter(requires_approval=True))
+    for workflow in workflows:
+        due_date = _due_date_for(workflow)
+        stages = list(workflow.stages.order_by("order", "id"))
+        if not stages:
+            continue
+        first_stage = stages[0]
+        _create_stage_tasks(submission, first_stage, due_date=due_date)
+
+    try:
+        from .models import AuditLog
+
+        AuditLog.objects.create(
+            action="resubmit_revision",
+            object_type="FormSubmission",
+            object_id=submission.id,
+            user=user if getattr(user, "is_authenticated", False) else None,
+            changes={"restarted_at_stage": 1},
+        )
+    except Exception as e:
+        logger.warning("Could not record AuditLog for resubmit_revision: %s", e)
 
 
 # --- Post-submission actions ------------------------------------------------

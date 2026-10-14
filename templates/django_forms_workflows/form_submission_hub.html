@@ -1,0 +1,478 @@
+{% extends "django_forms_workflows/base.html" %}
+{% load static %}
+
+{% block title %}{{ form_def.name }} — Riwayat &amp; Pengajuan{% endblock %}
+
+{% block topbar_title %}
+  <span class="crumb-current">{{ form_def.name }}</span>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* ── Submission Hub Layout & Visual Polish ── */
+  .hub-container {
+    max-width: 1360px;
+    margin: 0 auto;
+    padding: 1.25rem 0 2.5rem;
+  }
+
+  /* Header Section */
+  .hub-header {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.5rem 1.75rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+    margin-bottom: 1.25rem;
+  }
+  .hub-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #0f172a;
+    letter-spacing: -0.015em;
+    margin-bottom: 0.35rem;
+  }
+  .hub-subtitle {
+    font-size: 13.5px;
+    color: #64748b;
+    margin-bottom: 0;
+  }
+  .btn-create-submission {
+    background-color: #2563eb;
+    border-color: #2563eb;
+    color: #ffffff;
+    font-size: 13.5px;
+    font-weight: 600;
+    padding: 0.6rem 1.25rem;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+    transition: all 0.15s ease;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .btn-create-submission:hover {
+    background-color: #1d4ed8;
+    border-color: #1d4ed8;
+    color: #ffffff;
+    box-shadow: 0 4px 6px rgba(37, 99, 235, 0.3);
+    transform: translateY(-1px);
+  }
+
+  /* Filter Bar */
+  .hub-filter-bar {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.25rem;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  }
+  .filter-input-group {
+    position: relative;
+    flex-grow: 1;
+    min-width: 240px;
+  }
+  .filter-input-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #94a3b8;
+    font-size: 14px;
+    pointer-events: none;
+  }
+  .filter-search-input {
+    padding-left: 36px;
+    font-size: 13.5px;
+    border-radius: 8px;
+    border-color: #cbd5e1;
+    height: 40px;
+  }
+  .filter-search-input:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  }
+  .filter-status-select {
+    font-size: 13.5px;
+    border-radius: 8px;
+    border-color: #cbd5e1;
+    height: 40px;
+    min-width: 180px;
+  }
+  .filter-status-select:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  }
+  .btn-filter-apply {
+    height: 40px;
+    font-size: 13.5px;
+    font-weight: 600;
+    border-radius: 8px;
+    padding: 0 1.25rem;
+    border-color: #2563eb;
+    color: #2563eb;
+    background-color: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: all 0.15s ease;
+  }
+  .btn-filter-apply:hover {
+    background-color: #eff6ff;
+    border-color: #1d4ed8;
+    color: #1d4ed8;
+  }
+  .btn-filter-reset {
+    height: 40px;
+    font-size: 13.5px;
+    border-radius: 8px;
+    padding: 0 0.85rem;
+    color: #64748b;
+    border-color: #e2e8f0;
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+  }
+  .btn-filter-reset:hover {
+    background-color: #f1f5f9;
+    color: #0f172a;
+  }
+
+  /* Unified Single Table Card */
+  .hub-table-card {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+    overflow: hidden;
+  }
+  .hub-table {
+    margin-bottom: 0;
+    width: 100%;
+    vertical-align: middle;
+  }
+  .hub-table thead th {
+    background-color: #f8fafc;
+    color: #475569;
+    font-size: 11.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.85rem 1.25rem;
+    border-bottom: 1px solid #e2e8f0;
+    border-top: none;
+    white-space: nowrap;
+  }
+  .hub-table tbody td {
+    padding: 0.95rem 1.25rem;
+    font-size: 13.5px;
+    color: #334155;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .hub-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .hub-table tbody tr:hover {
+    background-color: #f8fafc;
+  }
+
+  /* Cell Styles */
+  .spk-number-cell {
+    font-weight: 600;
+    color: #0f172a;
+    font-size: 13.5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+  .store-name-cell {
+    font-weight: 500;
+    color: #1e293b;
+  }
+  .contract-type-pill {
+    display: inline-flex;
+    align-items: center;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 0.2rem 0.6rem;
+    border-radius: 6px;
+    background-color: #f1f5f9;
+    color: #475569;
+  }
+  .contract-type-pill.type-baru {
+    background-color: #eff6ff;
+    color: #1d4ed8;
+  }
+  .contract-type-pill.type-perpanjangan {
+    background-color: #f5f3ff;
+    color: #6d28d9;
+  }
+
+  /* Soft Status Badges */
+  .badge-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.75rem;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 9999px;
+    border: 1px solid transparent;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .badge-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .badge-status-menunggu {
+    background-color: #fef3c7;
+    color: #92400e;
+    border-color: #fde68a;
+  }
+  .badge-status-menunggu .badge-status-dot {
+    background-color: #d97706;
+  }
+  .badge-status-disetujui {
+    background-color: #dcfce7;
+    color: #166534;
+    border-color: #bbf7d0;
+  }
+  .badge-status-disetujui .badge-status-dot {
+    background-color: #16a34a;
+  }
+  .badge-status-ditolak {
+    background-color: #fee2e2;
+    color: #991b1b;
+    border-color: #fecaca;
+  }
+  .badge-status-ditolak .badge-status-dot {
+    background-color: #dc2626;
+  }
+  .badge-status-draft {
+    background-color: #f1f5f9;
+    color: #475569;
+    border-color: #e2e8f0;
+  }
+  .badge-status-draft .badge-status-dot {
+    background-color: #64748b;
+  }
+
+  /* Action Buttons */
+  .btn-action-view {
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 0.35rem 0.85rem;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    text-decoration: none;
+    transition: all 0.12s ease;
+  }
+  .btn-action-view.action-detail {
+    border: 1px solid #cbd5e1;
+    color: #334155;
+    background-color: #ffffff;
+  }
+  .btn-action-view.action-detail:hover {
+    background-color: #f8fafc;
+    border-color: #94a3b8;
+    color: #0f172a;
+  }
+  .btn-action-view.action-review {
+    border: 1px solid #2563eb;
+    color: #ffffff;
+    background-color: #2563eb;
+  }
+  .btn-action-view.action-review:hover {
+    background-color: #1d4ed8;
+    border-color: #1d4ed8;
+    color: #ffffff;
+  }
+  .btn-action-view.action-draft {
+    border: 1px solid #3b82f6;
+    color: #2563eb;
+    background-color: #eff6ff;
+  }
+  .btn-action-view.action-draft:hover {
+    background-color: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  /* Empty State */
+  .hub-empty-state {
+    padding: 4rem 1.5rem;
+    text-align: center;
+  }
+  .empty-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background-color: #f1f5f9;
+    color: #94a3b8;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    margin-bottom: 1rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hub-container">
+
+  {# ── Header Halaman ── #}
+  <div class="hub-header d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3">
+    <div>
+      <h1 class="hub-title">{{ form_def.name }}</h1>
+      <p class="hub-subtitle">Daftar riwayat dan status pengajuan kontrak kerjasama Anda.</p>
+    </div>
+    <div class="align-self-stretch align-self-md-auto">
+      <a href="{{ submit_url }}" class="btn-create-submission w-100 justify-content-center" id="btnCreateNewSubmission">
+        <span>+ Buat Pengajuan Baru</span>
+      </a>
+    </div>
+  </div>
+
+  {# ── Filter Bar ── #}
+  <div class="hub-filter-bar">
+    <form method="get" class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-2 mb-0" id="filterForm">
+      <div class="filter-input-group">
+        <i class="bi bi-search filter-input-icon"></i>
+        <input type="text"
+               name="q"
+               class="form-control filter-search-input"
+               placeholder="Cari no. SPK / toko..."
+               value="{{ search_query }}"
+               aria-label="Cari no. SPK atau toko">
+      </div>
+
+      <select name="status" class="form-select filter-status-select" aria-label="Filter status pengajuan">
+        <option value="all" {% if not status_filter or status_filter == 'all' %}selected{% endif %}>Semua Status</option>
+        <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Menunggu Review</option>
+        <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Disetujui</option>
+        <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Ditolak</option>
+        <option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>Draft</option>
+      </select>
+
+      <div class="d-flex align-items-center gap-2">
+        <button type="submit" class="btn btn-filter-apply">
+          <i class="bi bi-funnel"></i>
+          <span>Terapkan</span>
+        </button>
+
+        {% if search_query or status_filter != 'all' and status_filter %}
+        <a href="?" class="btn btn-filter-reset" title="Reset filter pencarian">
+          <i class="bi bi-x-circle me-1"></i>
+          <span>Reset</span>
+        </a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+
+  {# ── Unified Single Table (Tabel Riwayat Tunggal) ── #}
+  <div class="hub-table-card">
+    <div class="table-responsive">
+      <table class="table hub-table" id="submissionsUnifiedTable">
+        <thead>
+          <tr>
+            <th scope="col" style="width: 24%;">No. SPK</th>
+            <th scope="col" style="width: 26%;">Toko / Dealer</th>
+            <th scope="col" style="width: 14%;">Jenis</th>
+            <th scope="col" style="width: 16%;">Tanggal Diajukan</th>
+            <th scope="col" style="width: 12%;">Status</th>
+            <th scope="col" style="width: 8%; text-align: right;">Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if rows %}
+            {% for r in rows %}
+            <tr>
+              <td>
+                <span class="spk-number-cell">{{ r.spk_no }}</span>
+              </td>
+              <td>
+                <div class="store-name-cell">{{ r.toko }}</div>
+                {% if r.submission.submitter %}
+                <div class="text-muted small" style="font-size: 11.5px;">Diajukan oleh: {{ r.submission.submitter.get_full_name|default:r.submission.submitter.username }}</div>
+                {% endif %}
+              </td>
+              <td>
+                <span class="contract-type-pill {% if r.jenis == 'Baru' %}type-baru{% else %}type-perpanjangan{% endif %}">
+                  {{ r.jenis }}
+                </span>
+              </td>
+              <td>
+                <div class="text-dark">{{ r.tanggal|date:"d M Y" }}</div>
+                <div class="text-muted small" style="font-size: 11px;">{{ r.tanggal|date:"H:i" }} WIB</div>
+              </td>
+              <td>
+                <span class="badge-status {{ r.badge_class }}">
+                  <span class="badge-status-dot"></span>
+                  <span>{{ r.status_label }}</span>
+                </span>
+              </td>
+              <td style="text-align: right;">
+                <a href="{{ r.action_url }}" 
+                   class="btn-action-view {% if r.action_is_review %}action-review{% elif r.status_raw == 'draft' %}action-draft{% else %}action-detail{% endif %}"
+                   title="{{ r.action_label }}">
+                  {% if r.action_is_review %}
+                    <i class="bi bi-check2-circle"></i>
+                  {% elif r.status_raw == 'draft' %}
+                    <i class="bi bi-pencil-square"></i>
+                  {% else %}
+                    <i class="bi bi-eye"></i>
+                  {% endif %}
+                  <span>{{ r.action_label }}</span>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="6" class="p-0">
+                <div class="hub-empty-state">
+                  <div class="empty-icon">
+                    <i class="bi bi-inbox"></i>
+                  </div>
+                  <h5 class="fw-bold text-dark mb-1">Belum Ada Pengajuan Ditemukan</h5>
+                  <p class="text-muted small mb-3">
+                    {% if search_query or status_filter != 'all' and status_filter %}
+                      Tidak ada hasil yang sesuai dengan kriteria filter pencarian Anda.
+                    {% else %}
+                      Belum ada riwayat pengajuan kontrak. Klik tombol di bawah untuk membuat pengajuan baru.
+                    {% endif %}
+                  </p>
+                  {% if search_query or status_filter != 'all' and status_filter %}
+                    <a href="?" class="btn btn-sm btn-outline-secondary">
+                      <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Filter
+                    </a>
+                  {% else %}
+                    <a href="{{ submit_url }}" class="btn btn-sm btn-primary">
+                      <i class="bi bi-plus-lg me-1"></i>+ Buat Pengajuan Baru
+                    </a>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+    
+    {% if rows %}
+    <div class="p-3 bg-white border-top d-flex align-items-center justify-content-between text-muted small">
+      <span>Menampilkan <strong>{{ total_count }}</strong> data pengajuan</span>
+      <span class="text-secondary" style="font-size: 12px;">Sistem Terintegrasi Royal Workflow</span>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

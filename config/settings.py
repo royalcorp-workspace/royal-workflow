@@ -155,7 +155,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
 CRISPY_TEMPLATE_PACK = "bootstrap5"
 
-LOGIN_REDIRECT_URL = '/forms/'
+LOGIN_REDIRECT_URL = '/dashboard/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'
 LOGIN_URL = '/accounts/login/'
 
@@ -168,3 +168,9 @@ CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = False
 CELERY_BROKER_URL = 'memory://'
 CELERY_RESULT_BACKEND = 'cache+memory://'
+
+# HRIS Employee API Configuration
+HRIS_API_URL = os.getenv('HRIS_API_URL', 'https://dev-api.royalcorp.co.id/api/v1/externalapi/employeesV2')
+HRIS_API_TOKEN = os.getenv('HRIS_API_TOKEN', '')
+HRIS_API_TIMEOUT = int(os.getenv('HRIS_API_TIMEOUT', '30'))
+HRIS_DEFAULT_PASSWORD = os.getenv('HRIS_DEFAULT_PASSWORD', 'Bandung*123#')

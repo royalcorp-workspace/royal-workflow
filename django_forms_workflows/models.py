@@ -901,23 +901,19 @@ class DocumentTemplate(models.Model):
         }
         # Add all form field values
         for key, val in form_data.items():
-            if isinstance(val, list):
-                if val and isinstance(val[0], dict):
-                    headers = list(val[0].keys())
-                    table_rows = ["<table style='width:100%; border-collapse:collapse; margin:10px 0;'><thead><tr>"]
-                    for h in headers:
-                        table_rows.append(f"<th style='border:1px solid #999; padding:6px 10px; background:#f0f0f0; text-align:left; font-size:12px;'>{h.replace('_', ' ').title()}</th>")
-                    table_rows.append("</tr></thead><tbody>")
-                    for r in val:
-                        table_rows.append("<tr>")
-                        for h in headers:
-                            cell_val = r.get(h, "")
-                            table_rows.append(f"<td style='border:1px solid #999; padding:6px 10px; font-size:12px;'>{cell_val}</td>")
-                        table_rows.append("</tr>")
-                    table_rows.append("</tbody></table>")
-                    context[key] = "".join(table_rows)
+            parsed_val = val
+            if isinstance(val, str) and val.strip().startswith("[") and val.strip().endswith("]"):
+                try:
+                    import json
+                    parsed_val = json.loads(val.strip())
+                except Exception:
+                    parsed_val = val
+
+            if isinstance(parsed_val, list):
+                if parsed_val and isinstance(parsed_val[0], dict):
+                    context[key] = self._render_grid_table_html(key, parsed_val)
                 else:
-                    context[key] = ", ".join(str(v) for v in val)
+                    context[key] = ", ".join(str(v) for v in parsed_val)
             else:
                 context[key] = str(val) if val is not None else ""
 
@@ -950,6 +946,162 @@ class DocumentTemplate(models.Model):
         )
 
         return html
+
+    @staticmethod
+    def _render_grid_table_html(key, rows):
+        """Render grid data (e.g. Pasal 3, 6, 7 tables) into corporate clean HTML table for PDF/print."""
+        if not rows or not isinstance(rows, list) or not isinstance(rows[0], dict):
+            return ""
+
+        from django.utils.html import escape
+        import re
+
+        COLUMN_SPECS = {
+            # Tabel Pasal 3 (Target & Incentive Scheme)
+            "target_bulanan": {"label": "Target Bulanan", "align": "right", "type": "currency"},
+            "exclude_ppn": {"label": "Ketentuan Pajak", "align": "center", "type": "ppn_boolean", "width": "130px"},
+            "incentive_pct": {"label": "Insentif (%)", "align": "center", "type": "percentage", "width": "110px"},
+            "keterangan": {"label": "Keterangan", "align": "left", "type": "text"},
+
+            # Tabel Pasal 6 (Discount Scheme)
+            "komponen": {"label": "Komponen", "align": "left", "type": "text"},
+            "nilai": {"label": "Nilai", "align": "center", "type": "discount_value", "width": "110px"},
+            "tipe": {"label": "Tipe", "align": "center", "type": "discount_type", "width": "110px"},
+
+            # Tabel Pasal 7 (Tier Support Tahunan / Biaya Sewa)
+            "target_tahunan": {"label": "Target Tahunan", "align": "right", "type": "currency"},
+            "support_pct": {"label": "Dukungan (%)", "align": "center", "type": "percentage", "width": "110px"},
+            "pph_pct": {"label": "PPh (%)", "align": "center", "type": "percentage", "width": "100px"},
+            "netto": {"label": "Nilai Netto (Rp)", "align": "right", "type": "currency"},
+
+            # Data Asset Toko
+            "no": {"label": "No", "align": "center", "type": "number", "width": "45px"},
+            "alamat": {"label": "Alamat", "align": "left", "type": "text"},
+            "status": {"label": "Status", "align": "center", "type": "text", "width": "100px"},
+
+            # Data Market Share
+            "bulan": {"label": "Bulan", "align": "left", "type": "text", "width": "100px"},
+            "serenity": {"label": "Royal / SERENITY (Rp)", "align": "right", "type": "currency"},
+            "kompetitor_1": {"label": "Kompetitor 1 (Rp)", "align": "right", "type": "currency"},
+            "kompetitor_2": {"label": "Kompetitor 2 (Rp)", "align": "right", "type": "currency"},
+            "kompetitor_3": {"label": "Kompetitor 3 (Rp)", "align": "right", "type": "currency"},
+            "kompetitor_4": {"label": "Kompetitor 4 (Rp)", "align": "right", "type": "currency"},
+        }
+
+        def _get_col_spec(h):
+            if h in COLUMN_SPECS:
+                return COLUMN_SPECS[h]
+            h_low = h.lower()
+            lbl = h.replace("_", " ").title()
+            if any(x in h_low for x in ["rp", "rupiah", "harga", "biaya", "omset", "target", "netto"]):
+                return {"label": lbl, "align": "right", "type": "currency"}
+            elif any(x in h_low for x in ["pct", "persen", "percent"]):
+                return {"label": lbl, "align": "center", "type": "percentage"}
+            elif h_low in ("no", "nomor", "idx"):
+                return {"label": lbl, "align": "center", "type": "number", "width": "45px"}
+            return {"label": lbl, "align": "left", "type": "text"}
+
+        def _format_cell(val, spec, row_data):
+            c_type = spec.get("type", "text")
+            if val is None or val == "":
+                return "—"
+
+            if c_type == "currency":
+                try:
+                    cleaned = re.sub(r"[^\d.-]", "", str(val))
+                    num = float(cleaned) if cleaned else 0.0
+                    if num == 0:
+                        return "Rp 0"
+                    return f"Rp {int(round(num)):,}".replace(",", ".")
+                except Exception:
+                    return escape(str(val))
+
+            elif c_type == "percentage":
+                s = str(val).strip()
+                if s.endswith("%"):
+                    return escape(s)
+                try:
+                    num = float(s)
+                    if num.is_integer():
+                        return f"{int(num)}%"
+                    return f"{num:g}%"
+                except Exception:
+                    return f"{escape(s)}%"
+
+            elif c_type == "ppn_boolean":
+                if val in (True, "True", "true", 1, "1"):
+                    return "Exclude PPN"
+                elif val in (False, "False", "false", 0, "0"):
+                    return "Include PPN"
+                return escape(str(val))
+
+            elif c_type == "discount_type":
+                s_low = str(val).strip().lower()
+                if s_low in ("percentage", "persentage", "persentase"):
+                    return "Persentase"
+                elif s_low == "nominal":
+                    return "Nominal"
+                return escape(str(val))
+
+            elif c_type == "discount_value":
+                s = str(val).strip()
+                row_tipe = str(row_data.get("tipe", "")).strip().lower()
+                if row_tipe in ("percentage", "persentage", "persentase") or s.endswith("%"):
+                    if not s.endswith("%"):
+                        try:
+                            num = float(s)
+                            if num.is_integer():
+                                return f"{int(num)}%"
+                            return f"{num:g}%"
+                        except Exception:
+                            return f"{escape(s)}%"
+                    return escape(s)
+                else:
+                    try:
+                        num = float(re.sub(r"[^\d.-]", "", s))
+                        if num >= 1000:
+                            return f"Rp {int(round(num)):,}".replace(",", ".")
+                    except Exception:
+                        pass
+                    return escape(s)
+
+            return escape(str(val))
+
+        headers = list(rows[0].keys())
+
+        table_rows = [
+            '<table class="clause-table" style="width:100%; border-collapse:collapse; margin:10px 0 16px 0; border:1px solid #cbd5e1;">',
+            '<thead><tr>'
+        ]
+
+        for h in headers:
+            spec = _get_col_spec(h)
+            align = spec.get("align", "left")
+            width_part = f" width:{spec['width']};" if "width" in spec else ""
+            table_rows.append(
+                f'<th style="background-color:#f1f5f9; color:#1e293b; padding:8px 10px; font-size:0.85rem; '
+                f'border:1px solid #cbd5e1; font-weight:600; text-align:{align};{width_part}">'
+                f'{escape(spec["label"])}</th>'
+            )
+        table_rows.append('</tr></thead><tbody>')
+
+        for r in rows:
+            table_rows.append('<tr>')
+            for h in headers:
+                spec = _get_col_spec(h)
+                align = spec.get("align", "left")
+                val = r.get(h)
+                formatted_val = _format_cell(val, spec, r)
+                num_font = " font-variant-numeric: tabular-nums;" if spec.get("type") in ("currency", "percentage", "number") else ""
+                table_rows.append(
+                    f'<td style="padding:7px 10px; font-size:0.85rem; border:1px solid #e2e8f0; '
+                    f'vertical-align:middle; text-align:{align};{num_font}">'
+                    f'{formatted_val}</td>'
+                )
+            table_rows.append('</tr>')
+
+        table_rows.append('</tbody></table>')
+        return "".join(table_rows)
 
 
 class WorkflowDefinition(models.Model):
@@ -2218,6 +2370,7 @@ class FormSubmission(models.Model):
         ("pending_payment", "Pending Payment"),
         ("submitted", "Submitted"),
         ("pending_approval", "Pending Approval"),
+        ("needs_revision", "Needs Revision"),
         ("approved", "Approved"),
         ("rejected", "Rejected"),
         ("withdrawn", "Withdrawn"),
@@ -2621,6 +2774,125 @@ class UserProfile(models.Model):
     def id_number(self, value):
         """Set employee_id via id_number alias."""
         self.employee_id = value
+
+
+class EmployeeProfile(models.Model):
+    """
+    Profil karyawan yang disinkronkan dari API Employee HRIS.
+
+    Menyimpan data esensial karyawan dan hierarki atasan berjenjang
+    untuk mendukung workflow approval dinamis.
+
+    Terpisah dari UserProfile (LDAP/SSO) untuk menghindari konflik sync.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="employee_profile",
+    )
+
+    # === Identitas Karyawan ===
+    nik = models.CharField(
+        max_length=50,
+        unique=True,
+        db_index=True,
+        help_text="NIK karyawan dari HRIS (kunci unik sinkronisasi)",
+    )
+    full_name = models.CharField(
+        max_length=200,
+        help_text="Nama lengkap karyawan (field: nama)",
+    )
+    position = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Jabatan karyawan (field: position.name)",
+    )
+    department = models.CharField(
+        max_length=200,
+        blank=True,
+        db_index=True,
+        help_text="Departemen (field: department.name)",
+    )
+    company = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Nama perusahaan/PT (field: company.name)",
+    )
+    branch = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Cabang/area kerja (field: branch.name)",
+    )
+    work_email = models.EmailField(
+        blank=True,
+        help_text="Email kantor (field: employee.work_email)",
+    )
+
+    # === Hierarki Atasan Berjenjang ===
+    supervisor_1 = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="hris_subordinates_l1",
+        help_text="Atasan Level 1 (ASM / Section Head)",
+    )
+    supervisor_1_name = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Nama atasan L1 (snapshot dari API)",
+    )
+    supervisor_1_position = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Jabatan atasan L1",
+    )
+
+    supervisor_2 = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="hris_subordinates_l2",
+        help_text="Atasan Level 2 (NSM / RSOM)",
+    )
+    supervisor_2_name = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Nama atasan L2 (snapshot dari API)",
+    )
+    supervisor_2_position = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Jabatan atasan L2",
+    )
+
+    # === Metadata Sinkronisasi ===
+    raw_api_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="SHA-256 hash payload API terakhir (skip update bila identik)",
+    )
+    last_synced_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp sinkronisasi terakhir dari HRIS",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Employee Profile (HRIS)"
+        verbose_name_plural = "Employee Profiles (HRIS)"
+        indexes = [
+            models.Index(fields=["department"]),
+            models.Index(fields=["nik"]),
+        ]
+
+    def __str__(self):
+        return f"{self.full_name} ({self.nik}) - {self.position}"
+
 
 
 class LDAPGroupProfile(models.Model):
