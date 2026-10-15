@@ -54,7 +54,18 @@ def _is_empty_value(actual: Any) -> bool:
 def _evaluate_single(condition: dict, data: dict) -> bool:
     """Evaluate a single condition dict against submission data."""
     field = condition.get("field", "")
-    operator = condition.get("operator", "equals")
+    raw_operator = str(condition.get("operator", "equals")).strip()
+    operator_map = {
+        ">=": "gte",
+        "<=": "lte",
+        ">": "gt",
+        "<": "lt",
+        "==": "equals",
+        "=": "equals",
+        "!=": "not_equals",
+        "<>": "not_equals",
+    }
+    operator = operator_map.get(raw_operator, raw_operator.lower())
     expected = condition.get("value")
 
     actual = data.get(field)

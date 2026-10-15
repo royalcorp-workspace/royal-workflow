@@ -963,23 +963,27 @@ def create_workflow_tasks(submission: FormSubmission) -> None:
         if not stages:
             continue  # No stages configured for this track
 
-        first_order = stages[0].order
-        first_order_all = [s for s in stages if s.order == first_order]
-        first_order_stages = [
-            s
-            for s in first_order_all
-            if evaluate_conditions(s.trigger_conditions, form_data)
-        ]
+        # Find the first order level that has eligible stages matching trigger conditions
+        orders = sorted({s.order for s in stages})
+        first_order_stages = []
+        for order in orders:
+            order_stages = [s for s in stages if s.order == order]
+            matching = [
+                s
+                for s in order_stages
+                if evaluate_conditions(s.trigger_conditions, form_data)
+            ]
+            if matching:
+                first_order_stages = matching
+                break
 
-        # Detect stages that HAVE approval groups but whose trigger
-        # conditions didn't match — this distinguishes a genuine "no
-        # stages to run" from a misconfiguration where choices were
-        # renamed but triggers were not updated.
-        for s in first_order_all:
-            if s not in first_order_stages:
+        # Detect if all stages were skipped by trigger conditions
+        if not first_order_stages:
+            for s in stages:
                 groups = list(s.get_approval_groups())
                 if groups or s.requires_manager_approval:
                     trigger_skipped = True
+                    break
 
         for stage in first_order_stages:
             groups = list(stage.get_approval_groups())
