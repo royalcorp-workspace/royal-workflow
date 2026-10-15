@@ -1,6 +1,6 @@
 """
 Management command to seed dedicated dummy test accounts for SPK workflow testing.
-Accounts: dummy.01 s/d dummy.07 with password 'Password*123#'
+Accounts: dummy.01 s/d dummy.07 with password 'Bandung*123#'
 """
 
 from django.core.management.base import BaseCommand
@@ -15,8 +15,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--password",
             type=str,
-            default="Password*123#",
-            help="Default password for all dummy accounts (default: Password*123#)",
+            default="Bandung*123#",
+            help="Default password for all dummy accounts (default: Bandung*123#)",
         )
 
     def handle(self, *args, **options):
