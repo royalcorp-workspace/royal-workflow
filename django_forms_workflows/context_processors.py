@@ -94,16 +94,6 @@ def forms_workflows(request):
                     "hub_url": hub_url,
                 })
 
-            if not cat_map:
-                cat_map[1] = {
-                    "category": None,
-                    "category_name": "SALES & MARKETING PT RAS",
-                    "forms": [{
-                        "slug": "permohonan-kontrak",
-                        "name": "Surat Permohonan Kontrak & Pencairan Kontrak",
-                        "hub_url": "/forms/permohonan-kontrak/",
-                    }],
-                }
 
             for c_val in cat_map.values():
                 if len(c_val["forms"]) == 1 and "SALES & MARKETING" in c_val["category_name"].upper():

@@ -696,6 +696,10 @@ class DynamicForm(forms.Form):
             widget_attrs["class"] = field_def.css_class
         if field_def.readonly:
             widget_attrs["readonly"] = "readonly"
+            widget_attrs["tabindex"] = "-1"
+            existing_class = widget_attrs.get("class", "")
+            if "field-readonly" not in existing_class:
+                widget_attrs["class"] = f"{existing_class} field-readonly".strip()
             # Readonly fields should not be required since they can't be edited
             field_args["required"] = False
         if field_def.field_type in _PM_OPT_OUT_FIELD_TYPES:
@@ -805,6 +809,8 @@ class DynamicForm(forms.Form):
 
         elif field_def.field_type == "select":
             choices = [("", "-- Select --")] + self._resolve_choices(field_def)
+            if widget_attrs:
+                field_args["widget"] = forms.Select(attrs=widget_attrs)
             self.fields[field_def.field_name] = forms.ChoiceField(
                 choices=choices, **field_args
             )
@@ -1122,6 +1128,15 @@ class DynamicForm(forms.Form):
             saved_value = initial_data[field_def.field_name]
             # Non-empty saved value always wins — it represents explicit user input
             if saved_value:
+                if field_def.field_type in ["select", "radio"]:
+                    choices = self._resolve_choices(field_def)
+                    sv_lower = str(saved_value).strip().lower()
+                    sv_stripped = sv_lower.replace("cabang ", "").replace("branch ", "").strip()
+                    for val, _ in choices:
+                        val_lower = str(val).strip().lower()
+                        val_stripped = val_lower.replace("cabang ", "").replace("branch ", "").strip()
+                        if val_lower == sv_lower or (val_stripped and val_stripped == sv_stripped):
+                            return val
                 return saved_value
             # Empty saved value: only skip prefill when the field has no prefill
             # source configured.  If a prefill source IS configured we fall through

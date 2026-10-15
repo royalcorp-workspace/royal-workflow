@@ -659,7 +659,14 @@ def form_submit(request, slug):
                 revision_id=revision_submission.id,
             )
         else:
-            initial_data = draft.form_data if draft else None
+            initial_data = dict(draft.form_data) if draft and draft.form_data else {}
+            if user_or_none and not draft:
+                ep = getattr(user_or_none, "employee_profile", None)
+                if ep:
+                    if ep.branch:
+                        initial_data.setdefault("cabang", ep.branch)
+                    if ep.company:
+                        initial_data.setdefault("perusahaan", ep.company)
             form = DynamicForm(
                 form_definition=form_def, user=user_or_none, initial_data=initial_data
             )

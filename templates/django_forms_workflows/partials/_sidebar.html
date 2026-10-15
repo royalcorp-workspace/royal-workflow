@@ -73,57 +73,6 @@
             </div>
         </div>
         {% endfor %}
-        {% else %}
-        <div class="sidebar-dept-group mt-3">
-            <div class="sidebar-category-header d-flex justify-content-between align-items-center px-3 py-2 text-uppercase fw-semibold"
-                data-bs-toggle="collapse" data-bs-target="#menuSalesMarketing" role="button" aria-expanded="true"
-                style="color: #cbd5e1; font-size: 0.75rem; letter-spacing: 0.05em; cursor: pointer;">
-                <span>SALES & MARKETING PT RAS</span>
-                <i class="bi bi-chevron-down toggle-arrow"
-                    style="font-size: 0.75rem; transition: transform 0.2s ease;"></i>
-            </div>
-            <div class="collapse show" id="menuSalesMarketing">
-                <ul class="nav flex-column ps-2 mt-1">
-                    <li class="nav-item">
-                        <a class="sidebar-link sidebar-nested-link {% if 'permohonan-kontrak' in request.path %}active{% endif %}"
-                            href="/forms/permohonan-kontrak/" title="Surat Permohonan Kontrak & Pencairan Kontrak">
-                            <i class="bi bi-file-earmark-text"></i>
-                            <span>Surat Permohonan Kontrak &amp; Pencairan Kontrak</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <div
-                            class="sidebar-link sidebar-nested-link disabled-link d-flex align-items-center justify-content-between">
-                            <div class="d-flex align-items-center">
-                                <i class="bi bi-file-earmark-lock"></i>
-                                <span>Form B (Promo &amp; Claim)</span>
-                            </div>
-                            <span class="badge-dept-mock">Draft</span>
-                        </div>
-                    </li>
-                    <li class="nav-item">
-                        <div
-                            class="sidebar-link sidebar-nested-link disabled-link d-flex align-items-center justify-content-between">
-                            <div class="d-flex align-items-center">
-                                <i class="bi bi-file-earmark-lock"></i>
-                                <span>Form C (Pengajuan Display)</span>
-                            </div>
-                            <span class="badge-dept-mock">Draft</span>
-                        </div>
-                    </li>
-                    <li class="nav-item">
-                        <div
-                            class="sidebar-link sidebar-nested-link disabled-link d-flex align-items-center justify-content-between">
-                            <div class="d-flex align-items-center">
-                                <i class="bi bi-file-earmark-lock"></i>
-                                <span>Form D (Sponsorship)</span>
-                            </div>
-                            <span class="badge-dept-mock">Draft</span>
-                        </div>
-                    </li>
-                </ul>
-            </div>
-        </div>
         {% endif %}
     </div>
 </aside>

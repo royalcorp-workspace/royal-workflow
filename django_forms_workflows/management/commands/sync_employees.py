@@ -25,8 +25,8 @@ class Command(BaseCommand):
             "--from",
             dest="date_from",
             type=str,
-            default="2025-01-01",
-            help="Filter start date for employee records (format: YYYY-MM-DD, default: 2025-01-01)",
+            default="1990-01-01",
+            help="Filter start date for employee records (format: YYYY-MM-DD, default: 1990-01-01 for full sync)",
         )
         parser.add_argument(
             "--to",
@@ -43,8 +43,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--timeout",
             type=int,
-            default=getattr(settings, "HRIS_API_TIMEOUT", 30),
-            help="API request timeout in seconds (default: settings.HRIS_API_TIMEOUT or 30).",
+            default=getattr(settings, "HRIS_API_TIMEOUT", 45),
+            help="API request timeout in seconds (default: settings.HRIS_API_TIMEOUT or 45).",
         )
 
     def handle(self, *args, **options):

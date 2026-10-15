@@ -46,7 +46,11 @@ class Command(BaseCommand):
         sol_cabang = self._ensure_shared_option_list(
             slug="cabang-list",
             name="Daftar Cabang / Area",
-            items=["Bali", "Jakarta", "Bandung", "Surabaya", "Medan", "Makassar", "Semarang", "Palembang"],
+            items=[
+                "Bali", "Bandung", "Banyumas", "Cirebon", "Jakarta", "Kediri",
+                "Lampung", "Makassar", "Manado", "Medan", "Palembang", "Pekanbaru",
+                "Pusat", "R1", "R2", "Semarang", "Surabaya", "Tangerang",
+            ],
         )
         sol_brand = self._ensure_shared_option_list(
             slug="brand-list",
@@ -56,7 +60,13 @@ class Command(BaseCommand):
         sol_perusahaan = self._ensure_shared_option_list(
             slug="perusahaan-list",
             name="Daftar Perusahaan (Pihak Pertama)",
-            items=["PT Bestari Mulia", "PT Royal Abadi Sejahtera"],
+            items=[
+                "PT Anugerah Cemerlang Abadi",
+                "PT Bangun Cipta Primantara",
+                "PT Bestari Mulia",
+                "PT Cemerlang Abadi Mulia",
+                "PT Royal Abadi Sejahtera",
+            ],
         )
         sol_identitas = self._ensure_shared_option_list(
             slug="jenis-identitas-list",
@@ -133,13 +143,15 @@ class Command(BaseCommand):
         # Assign form access groups
         self._set_form_groups(
             form,
-            submit_groups=[groups["Sales Staff"], groups["Sales Area Manager"]],
+            submit_groups=[
+                groups["Sales Staff"],
+                groups["Sales And Marketing"],
+                groups["Sales Area Manager"],
+            ],
             view_groups=[
                 groups["Sales Staff"],
+                groups["Sales And Marketing"],
                 groups["Sales Area Manager"],
-                groups["General Manager Sales"],
-                groups["Finance Team"],
-                groups["Legal Team"],
             ],
             admin_groups=[],
             reviewer_groups=[groups["General Manager Sales"], groups["Legal Team"]],
@@ -304,6 +316,7 @@ class Command(BaseCommand):
             "Legal Team",
             "Sales Support",
             "Direksi",
+            "Sales And Marketing",
         ]
         groups = {}
         for name in group_names:
@@ -647,9 +660,11 @@ class Command(BaseCommand):
                 "width": "half",
                 "order": 2,
                 "step_number": 1,
-                "required": True,
+                "required": False,
+                "readonly": True,
+                "css_class": "field-readonly",
                 "shared_option_list": sol_cabang,
-                "help_text": "Pilih kantor cabang / area sales.",
+                "help_text": "Terkunci otomatis sesuai kantor cabang pemohon.",
             },
             {
                 "field_name": "brand",
@@ -659,6 +674,7 @@ class Command(BaseCommand):
                 "order": 3,
                 "step_number": 1,
                 "required": True,
+                "readonly": False,
                 "shared_option_list": sol_brand,
                 "help_text": "Pilih brand utama kontrak kerjasama.",
             },
@@ -669,9 +685,11 @@ class Command(BaseCommand):
                 "width": "half",
                 "order": 4,
                 "step_number": 1,
-                "required": True,
+                "required": False,
+                "readonly": True,
+                "css_class": "field-readonly",
                 "shared_option_list": sol_perusahaan,
-                "help_text": "Badan hukum Pihak Pertama penandatangan kontrak.",
+                "help_text": "Terkunci otomatis sesuai badan hukum pemohon.",
             },
             {
                 "field_name": "kode_customer_jde",

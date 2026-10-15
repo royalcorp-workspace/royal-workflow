@@ -105,8 +105,14 @@ def custom_form_submit(request, slug):
             post["save_draft"] = "Save Draft"
 
         if slug == "permohonan-kontrak":
+            ep = getattr(request.user, "employee_profile", None)
+            if ep:
+                if not post.get("cabang") and ep.branch:
+                    post["cabang"] = ep.branch
+                if not post.get("perusahaan") and ep.company:
+                    post["perusahaan"] = ep.company
             brand = (post.get("brand") or "LADY").upper().replace(" ", "")
-            cabang_raw = post.get("cabang") or "Tangerang"
+            cabang_raw = post.get("cabang") or (ep.branch if ep else "Tangerang")
             cabang = cabang_raw.title().replace(" ", "")
             today = datetime.date.today()
             year = today.year

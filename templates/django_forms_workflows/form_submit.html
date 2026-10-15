@@ -137,6 +137,45 @@
     .rating-stars-container input:checked ~ label { color: #ffc107; }
     /* Slider value display */
     .slider-value-display { font-weight: 600; min-width: 3rem; text-align: center; }
+
+    /* ── Tampilan Read-only Abu-abu & Hilangkan Panah Dropdown Cabang & Perusahaan ── */
+    select[name*="cabang"][readonly],
+    select[name*="cabang"]:disabled,
+    select[name*="perusahaan"][readonly],
+    select[name*="perusahaan"]:disabled,
+    .field-readonly,
+    input[readonly].form-control {
+        background-color: #f1f5f9 !important; /* Abu-abu terang */
+        color: #475569 !important;
+        cursor: default !important;
+        border-color: #cbd5e1 !important;
+    }
+    select[name*="cabang"][readonly],
+    select[name*="cabang"]:disabled,
+    select[name*="perusahaan"][readonly],
+    select[name*="perusahaan"]:disabled,
+    select.field-readonly {
+        -webkit-appearance: none !important;
+        -moz-appearance: none !important;
+        appearance: none !important;
+        background-image: none !important; /* Hapus ikon chevron SVG bawaan */
+        padding-right: 0.75rem !important;  /* Normalisasi padding kanan seperti text input */
+        pointer-events: none !important;    /* Mencegah dropdown dibuka */
+    }
+    select[name*="cabang"]::-ms-expand,
+    select[name*="perusahaan"]::-ms-expand,
+    select.field-readonly::-ms-expand {
+        display: none !important;
+    }
+
+    /* Pastikan Brand Produk tetap mempertahankan ikon panah dropdown aslinya dan interaktif */
+    select[name*="brand"] {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        cursor: pointer !important;
+        border-color: #cbd5e1 !important;
+        pointer-events: auto !important;
+    }
 </style>
 {% endblock %}
 
@@ -573,5 +612,45 @@
         document.head.appendChild(script);
     })();
     {% endif %}
+
+    // ── 8. Auto-fill & Penguncian Read-only Profil Pemohon (Cabang & Perusahaan) ──
+    (function () {
+        document.addEventListener('DOMContentLoaded', function () {
+            var userBranch = "{{ request.user.employee_profile.branch|default:''|escapejs }}";
+            var userCompany = "{{ request.user.employee_profile.company|default:''|escapejs }}";
+
+            function autoSelectAndLock(selectName, expectedVal) {
+                if (!expectedVal) return;
+                var selectEl = document.querySelector('select[name="' + selectName + '"]');
+                if (!selectEl) return;
+
+                var expectedLower = expectedVal.trim().toLowerCase();
+                var expectedStripped = expectedLower.replace(/^cabang\s+/, '').replace(/^branch\s+/, '');
+
+                for (var i = 0; i < selectEl.options.length; i++) {
+                    var opt = selectEl.options[i];
+                    var optValLower = (opt.value || '').trim().toLowerCase();
+                    var optTextLower = (opt.text || '').trim().toLowerCase();
+                    var optStripped = optValLower.replace(/^cabang\s+/, '').replace(/^branch\s+/, '');
+
+                    if (optValLower === expectedLower || optTextLower === expectedLower || (optStripped && optStripped === expectedStripped)) {
+                        selectEl.selectedIndex = i;
+                        break;
+                    }
+                }
+
+                // Apply read-only attributes and prevent mouse/keyboard alteration
+                selectEl.setAttribute('readonly', 'readonly');
+                selectEl.setAttribute('tabindex', '-1');
+                selectEl.classList.add('field-readonly');
+                selectEl.addEventListener('mousedown', function (e) { e.preventDefault(); });
+                selectEl.addEventListener('keydown', function (e) { e.preventDefault(); });
+                selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            autoSelectAndLock('cabang', userBranch);
+            autoSelectAndLock('perusahaan', userCompany);
+        });
+    })();
 </script>
 {% endblock %}
