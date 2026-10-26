@@ -61,6 +61,20 @@ urlpatterns = [
     path('api/notifications/toggle/', toggle_notification_preference, name='toggle_notification_preference'),
     path('api/lookup/jde-customer/', jde_customer_lookup, name='jde_customer_lookup'),
 
+    # Direct root path for external store partner digital signature portal
+    path('spk/sign/', include([
+        path('<uuid:token>/', fw_urls.signing_views.public_spk_signing_view, name='root_public_spk_signing'),
+        path('<uuid:token>/submit/', fw_urls.signing_views.public_spk_submit_signature, name='root_public_spk_submit_signature'),
+        path('<uuid:token>/reject/', fw_urls.signing_views.public_spk_reject_view, name='root_public_spk_reject'),
+    ])),
+
     path('forms/', include('django_forms_workflows.urls')),
     path('_nested_admin/', include('nested_admin.urls')),
 ]
+
+from django.conf import settings
+from django.conf.urls.static import static
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+

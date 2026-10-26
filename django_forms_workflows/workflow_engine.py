@@ -34,9 +34,11 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 
-from .conditions import evaluate_conditions
+from .conditions import evaluate_conditions, extract_target_value
 from .models import (
     ApprovalTask,
+    AuditLog,
+    ContractSigningToken,
     FormSubmission,
     SubWorkflowDefinition,
     SubWorkflowInstance,
@@ -221,6 +223,17 @@ def _finalize_submission(submission: FormSubmission) -> None:
     # approved (not rolled back to pending_approval by sub-workflows).
     if submission.status == "approved":
         _notify_final_approval(submission)
+
+        # Trigger automatic e-Meterai stamping for SPK contracts
+        try:
+            form_slug = getattr(submission.form_definition, "slug", "")
+            if form_slug == "permohonan-kontrak" or "spk" in form_slug:
+                from .services.ematerai import EMeteraiService
+                EMeteraiService.stamp_submission_async(submission.id)
+                logger.info("Triggered async e-Meterai stamping for submission %s", submission.id)
+        except Exception as stamp_err:
+            logger.error("Failed to trigger async e-meterai for sub %s: %s", submission.id, stamp_err)
+
 
 
 def _reject_submission(submission: FormSubmission, reason: str = "") -> None:
@@ -574,6 +587,198 @@ def _lookup_by_ldap(user_model, value, stage, submission):
     return user
 
 
+def ensure_signing_token_for_stage(
+    submission: FormSubmission,
+    stage: WorkflowStage,
+    task: ApprovalTask | None = None,
+) -> ContractSigningToken | None:
+    """Ensure an active ContractSigningToken exists when entering Stage 3 (Sales Support)."""
+    is_signing_stage = (
+        stage.order == 3
+        or "sales support" in (stage.name or "").lower()
+        or "ttd toko" in (stage.name or "").lower()
+        or (
+            stage.workflow
+            and getattr(stage.workflow, "form_definition", None)
+            and stage.workflow.form_definition.slug == "permohonan-kontrak"
+            and stage.order == 3
+        )
+    )
+    if not is_signing_stage:
+        return None
+
+    # Check for existing signed token first (already signed by partner)
+    signed_token = submission.signing_tokens.filter(status="signed").order_by("-signed_at").first()
+    if signed_token:
+        if task and not signed_token.task_id:
+            signed_token.task = task
+            signed_token.save(update_fields=["task"])
+        return signed_token
+
+    # Check for existing pending token that is not expired
+    token = submission.signing_tokens.filter(status="pending").first()
+    if token and not token.is_expired:
+        if task and not token.task_id:
+            token.task = task
+            token.save(update_fields=["task"])
+        return token
+
+    # Check for existing rejected token (revision requested by partner)
+    rejected_token = submission.signing_tokens.filter(status="rejected").order_by("-created_at").first()
+    if rejected_token:
+        if task and not rejected_token.task_id:
+            rejected_token.task = task
+            rejected_token.save(update_fields=["task"])
+        return rejected_token
+
+    if task is None:
+        task = submission.approval_tasks.filter(
+            workflow_stage=stage, status="pending"
+        ).first()
+
+    token = ContractSigningToken.objects.create(
+        submission=submission,
+        task=task,
+        status="pending",
+        token_expiry=timezone.now() + timedelta(days=7),
+    )
+    logger.info(
+        "Generated ContractSigningToken %s for submission %s (Stage 3 Sales Support)",
+        token.token,
+        submission.id,
+    )
+    return token
+
+
+@transaction.atomic
+def process_external_toko_signature(
+    token: ContractSigningToken,
+    signer_name: str,
+    signer_title: str,
+    signer_identity: str,
+    signature_image_base64: str,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+) -> bool:
+    """Process digital signature submitted via the external public signing portal.
+
+    Persists signature in the signing token and submission form_data.
+    The task remains pending at Stage 3 for Sales Support to review and approve manually.
+    """
+    submission = token.submission
+
+    # 1. Update signing token
+    token.signer_name = signer_name
+    token.signer_title = signer_title
+    token.signer_identity_number = signer_identity
+    token.signature_image = signature_image_base64
+    token.status = "signed"
+    token.signed_at = timezone.now()
+    token.ip_address = ip_address
+    token.user_agent = (user_agent or "")[:1000]
+    token.save()
+
+    # 2. Update submission.form_data with visual signature data
+    form_data = dict(submission.form_data or {})
+    form_data["ttd_toko_image"] = signature_image_base64
+    form_data["ttd_toko_signer_name"] = signer_name
+    form_data["ttd_toko_signer_title"] = signer_title
+    form_data["ttd_toko_signed_at"] = (
+        timezone.localtime(token.signed_at).strftime("%d/%m/%Y %H:%M:%S")
+        if token.signed_at
+        else ""
+    )
+    submission.form_data = form_data
+    submission.save(update_fields=["form_data"])
+
+    # 3. Locate Stage 3 task (task remains pending for Sales Support review)
+    task = token.task
+    if not task or task.status != "pending":
+        task = submission.approval_tasks.filter(
+            status="pending",
+            workflow_stage__order=3,
+        ).first()
+
+    current_stage_num = 3
+    if task and task.workflow_stage:
+        current_stage_num = task.workflow_stage.order
+
+    # 4. Record audit log indicating customer signed and ticket awaits Sales Support approval
+    AuditLog.objects.create(
+        action="update",
+        object_type="FormSubmission",
+        object_id=submission.id,
+        user=None,
+        user_ip=ip_address,
+        changes={
+            "token": str(token.token),
+            "signer_name": signer_name,
+            "signer_title": signer_title,
+            "stage": current_stage_num,
+            "action": "customer_signed_waiting_sales_support_approval",
+        },
+    )
+    return True
+
+
+@transaction.atomic
+def process_external_toko_rejection(
+    token: ContractSigningToken,
+    rejection_reason: str,
+    signer_name: str = "",
+    signer_title: str = "",
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+) -> bool:
+    """Process rejection / revision request submitted via the external public signing portal.
+
+    Updates token to rejected and records the reason. The submission remains standby at
+    Stage 3 (Sales Support) with active revision notes so Sales Support can coordinate
+    with the partner and make adjustments.
+    """
+    submission = token.submission
+
+    # 1. Update signing token
+    token.status = "rejected"
+    token.rejection_reason = rejection_reason
+    if signer_name:
+        token.signer_name = signer_name
+    if signer_title:
+        token.signer_title = signer_title
+    token.ip_address = ip_address
+    token.user_agent = (user_agent or "")[:1000]
+    token.save()
+
+    # 2. Locate Stage 3 task and record revision comments while keeping it pending
+    task = token.task
+    if not task or task.status != "pending":
+        task = submission.approval_tasks.filter(
+            status="pending",
+            workflow_stage__order=3,
+        ).first()
+
+    signer_display = f"{signer_name} ({signer_title})" if signer_name else "Pihak Mitra Toko"
+    if task:
+        task.comments = f"[Catatan Revisi dari {signer_display}]: {rejection_reason}"
+        task.save(update_fields=["comments"])
+
+    # 3. Record audit log
+    AuditLog.objects.create(
+        action="request_revision",
+        object_type="FormSubmission",
+        object_id=submission.id,
+        user=None,
+        user_ip=ip_address,
+        changes={
+            "token": str(token.token),
+            "rejection_reason": rejection_reason,
+            "stage": 3,
+            "action": "public_digital_signature_rejected",
+        },
+    )
+    return True
+
+
 def _create_stage_tasks(
     submission: FormSubmission,
     stage: WorkflowStage,
@@ -694,6 +899,7 @@ def _create_stage_tasks(
             due_date=due_date,
         )
         _notify_task_request(task)
+        ensure_signing_token_for_stage(submission, stage, task)
     else:
         # "all" or "any" → parallel tasks for every group in this stage
         first_task = None
@@ -710,6 +916,7 @@ def _create_stage_tasks(
             _notify_task_request(task)
             if first_task is None:
                 first_task = task
+        ensure_signing_token_for_stage(submission, stage, first_task)
 
 
 def _start_deferred_workflows(submission: FormSubmission) -> bool:
@@ -860,6 +1067,15 @@ def _advance_to_next_stage(
             task_id=completed_task.id if completed_task else None,
         )
 
+    # When Stage 3 (Sales Support) completes on SPK, automatically stamp e-meterai mockup
+    if current_order == 3 and getattr(submission.form_definition, "slug", "") == "permohonan-kontrak":
+        try:
+            from .services.ematerai import EMeteraiService
+            EMeteraiService.stamp_submission(submission=submission, force_retry=True)
+            logger.info("Auto-stamped mockup e-Meterai for submission #%s upon advancing past Stage 3", submission.id)
+        except Exception as stamp_err:
+            logger.error("Failed to auto-stamp mockup e-meterai on stage 3 completion: %s", stamp_err)
+
     # Find stages at the next order level within this workflow track,
     # filtering by trigger_conditions against the submission data.
     form_data = submission.form_data or {}
@@ -938,7 +1154,13 @@ def create_workflow_tasks(submission: FormSubmission) -> None:
     # Workflows with start_trigger="on_all_complete" are deferred — they only
     # start after every on_submission workflow has finished (see
     # _try_finalize_all_tracks).
-    form_data = submission.form_data or {}
+    # Normalize and extract target value into submission.form_data
+    form_data = dict(submission.form_data or {})
+    target_val = extract_target_value(form_data)
+    if target_val and form_data.get("nilai_target") != target_val:
+        form_data["nilai_target"] = target_val
+        submission.form_data = form_data
+        submission.save(update_fields=["form_data"])
     approval_workflows = [
         w
         for w in workflows
@@ -1298,6 +1520,9 @@ def handle_resubmit_revision(
       4. Spawn fresh tasks for Stage 1 (ASM) via _create_stage_tasks.
       5. Record AuditLog.
     """
+    target_val = extract_target_value(updated_form_data)
+    if target_val and updated_form_data.get("nilai_target") != target_val:
+        updated_form_data["nilai_target"] = target_val
     submission.form_data = updated_form_data
     submission.status = "pending_approval"
     submission.submitted_at = timezone.now()

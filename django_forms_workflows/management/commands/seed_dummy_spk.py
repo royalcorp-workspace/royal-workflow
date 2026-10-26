@@ -87,7 +87,7 @@ class Command(BaseCommand):
                 "company": "PT Royal Abadi Sejahtera",
                 "branch": "Pusat",
                 "groups": ["Sales Support", "Sales And Marketing"],
-                "stage_role": "Stage 4: Sales Support TTD Toko",
+                "stage_role": "Stage 3: Sales Support Penomoran & TTD Toko",
             },
             {
                 "username": "dummy.07",
@@ -98,7 +98,7 @@ class Command(BaseCommand):
                 "company": "PT Royal Abadi Sejahtera",
                 "branch": "Pusat",
                 "groups": ["Commercial Director", "Direksi", "Sales And Marketing"],
-                "stage_role": "Stage 5: Approval Final Direksi",
+                "stage_role": "Stage 4: Approval Final Direksi",
             },
         ]
 

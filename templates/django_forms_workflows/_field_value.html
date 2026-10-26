@@ -42,6 +42,8 @@
     {{ entry.value|render_grid_table }}
 {% elif entry.value|is_callout_note %}
     {{ entry.value|render_callout_note }}
+{% elif entry.key == 'nilai_target' or entry.label == 'Nilai Target' %}
+    <span class="font-monospace fw-semibold text-dark">{{ entry.value|rupiah_format }}</span>
 {% elif entry.value == '[]' or entry.value == '""' or entry.value == '[ ]' %}
     <span class="text-muted">—</span>
 {% else %}

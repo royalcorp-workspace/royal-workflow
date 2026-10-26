@@ -31,49 +31,60 @@
         const STORAGE_KEY = 'royal_kontrak_form_draft';
         let hasRestoredDraft = false;
 
-        // Try restoring draft from localStorage (client-side form persistence)
+        // Clean initial state for fresh new submissions
+        const storeFields = ['kode_customer_jde', 'nama_toko', 'nama_pemilik', 'alamat_toko', 'no_telepon', 'kota', 'nomor_identitas', 'komponen_biaya', 'nomor_spk'];
+        storeFields.forEach(name => {
+            const el = form.querySelector(`[name="${name}"]`);
+            if (el) el.value = '';
+        });
+
+        // Ensure grid fields start empty
+        ['asset_toko', 'market_share', 'target_incentive', 'discount_scheme', 'tier_support'].forEach(name => {
+            const f = form.querySelector(`[name="${name}"]`);
+            if (f) f.value = '[]';
+        });
+
+        // Ensure support toggle starts OFF (unchecked) for fresh new submissions
+        const suppToggleInit = form.querySelector('input[name="is_support_provided"]');
+        if (suppToggleInit) {
+            suppToggleInit.checked = false;
+        }
+
+        function applyDraftData(draftData) {
+            Object.keys(draftData).forEach(name => {
+                const val = draftData[name];
+                const el = form.querySelector(`[name="${name}"]`);
+                if (!el) return;
+
+                if (el.type === 'checkbox') {
+                    el.checked = Boolean(val);
+                } else if (el.type === 'radio') {
+                    const radio = form.querySelector(`[name="${name}"][value="${val}"]`);
+                    if (radio) radio.checked = true;
+                } else {
+                    if (val !== undefined && val !== null) {
+                        el.value = val;
+                    }
+                }
+            });
+            hasRestoredDraft = true;
+            showDiscardDraftButton(form, true);
+            // Refresh summary and preview tabs if currently rendered
+            renderSummaryTab(form);
+            renderSPKTab(form);
+        }
+
+        // Check if draft exists in localStorage - do NOT auto-fill; prompt user first
         try {
             const rawDraft = localStorage.getItem(STORAGE_KEY);
             if (rawDraft) {
                 const draftData = JSON.parse(rawDraft);
                 if (draftData && typeof draftData === 'object' && hasMeaningfulData(draftData)) {
-                    Object.keys(draftData).forEach(name => {
-                        const val = draftData[name];
-                        const el = form.querySelector(`[name="${name}"]`);
-                        if (!el) return;
-
-                        if (el.type === 'checkbox') {
-                            el.checked = Boolean(val);
-                        } else if (el.type === 'radio') {
-                            const radio = form.querySelector(`[name="${name}"][value="${val}"]`);
-                            if (radio) radio.checked = true;
-                        } else {
-                            if (val !== undefined && val !== null) {
-                                el.value = val;
-                            }
-                        }
-                    });
-                    hasRestoredDraft = true;
-                    console.log('[KontrakDraft] Draft successfully restored from localStorage');
+                    showDraftAvailablePrompt(form, draftData, applyDraftData);
                 }
             }
         } catch (e) {
-            console.warn('[KontrakDraft] Error parsing saved draft:', e);
-        }
-
-        if (!hasRestoredDraft) {
-            // Clean initial state for fresh new submissions
-            const storeFields = ['kode_customer_jde', 'nama_toko', 'nama_pemilik', 'alamat_toko', 'no_telepon', 'kota', 'nomor_identitas', 'komponen_biaya', 'nomor_spk'];
-            storeFields.forEach(name => {
-                const el = form.querySelector(`[name="${name}"]`);
-                if (el) el.value = '';
-            });
-
-            // Ensure grid fields start empty
-            ['asset_toko', 'market_share', 'target_incentive', 'discount_scheme', 'tier_support'].forEach(name => {
-                const f = form.querySelector(`[name="${name}"]`);
-                if (f) f.value = '[]';
-            });
+            console.warn('[KontrakDraft] Error checking saved draft:', e);
         }
 
         // 0. Lock Readonly Fields & Force Slate-200 Tone
@@ -97,6 +108,9 @@
         setupTargetIncentiveGrid(form);
         setupDiscountSchemeGrid(form);
         setupTierSupportGrid(form);
+
+        // 5b. Setup Support Facility Conditional Logic (Toggle Show/Hide)
+        setupSupportConditionalLogic(form);
 
         // 6. Setup Step 3 Preview & Tabs
         setupStep3Preview(form);
@@ -190,7 +204,7 @@
 
         const STEP2_FIELDS = new Set([
             'info_kontrak_lama', 'tanggal_mulai', 'tanggal_berakhir', 'durasi', 'grace_period',
-            'jenis_pajak', 'top', 'support_promosi',
+            'jenis_pajak', 'top', 'is_support_provided', 'support_promosi',
             'target_incentive', 'pct_support_promo', 'frekuensi_pencairan', 'syarat_pencairan',
             'komponen_biaya', 'pengecualian_ketentuan_support', 'discount_scheme',
             'tier_support', 'metode_pembayaran', 'discount_do', 'ketentuan_do',
@@ -199,7 +213,6 @@
 
         const STEP3_FIELDS = new Set([
             'preview_contract_tab',
-            'chk_lampiran_spk_lalu', 'chk_asset_toko_diisi', 'chk_market_share_diisi', 'chk_lampiran_umum',
             'chk_konfirmasi_data', 'chk_konfirmasi_preview'
         ]);
 
@@ -453,6 +466,7 @@
         const spkInput = form.querySelector('[name="nomor_spk"]');
         const brandSelect = form.querySelector('[name="brand"]');
         const cabangSelect = form.querySelector('[name="cabang"]');
+        const perusahaanSelect = form.querySelector('[name="perusahaan"]');
 
         if (!spkInput) return;
 
@@ -461,6 +475,7 @@
         function updateSPK() {
             const brandVal = (brandSelect && brandSelect.value ? brandSelect.value : '').trim();
             const cabangVal = (cabangSelect && cabangSelect.value ? cabangSelect.value : '').trim();
+            const compVal = (perusahaanSelect && perusahaanSelect.value ? perusahaanSelect.value : '').trim();
 
             // If Brand or Cabang has not been selected, keep Nomor SPK blank
             if (!brandVal || !cabangVal) {
@@ -473,24 +488,50 @@
             const month = now.getMonth() + 1;
             const year = now.getFullYear();
 
-            let brandCode = 'LADY';
             const bUpper = brandVal.toUpperCase();
-            if (bUpper.includes('LADY')) brandCode = 'LADY';
-            else if (bUpper.includes('SERENITY')) brandCode = 'SERENITY';
-            else if (bUpper.includes('ROYAL')) brandCode = 'ROYAL';
-            else if (bUpper.includes('GRAND')) brandCode = 'GRAND';
-            else brandCode = brandVal.split(' ')[0].toUpperCase().replace(/[^A-Z0-9]/g, '') || 'LADY';
-
-            let cabangCode = cabangVal ? (cabangVal.charAt(0).toUpperCase() + cabangVal.slice(1).toLowerCase()) : 'Tangerang';
-
-            // Extract existing 4-digit sequence if present, otherwise default to 0001
-            let seq = '0001';
-            const match = (spkInput.value || '').match(/No\.\s*(\d{4})/i) || (spkInput.value || '').match(/-(\d{4})$/);
-            if (match) {
-                seq = match[1];
+            const cUpper = compVal.toUpperCase();
+            
+            // Clean Brand Code (LADY, ROYAL, SERENITY, ELITE, GRAND)
+            let brandCode = 'LADY';
+            if (bUpper.includes('LADY')) {
+                brandCode = 'LADY';
+            } else if (bUpper.includes('ROYAL') || bUpper.includes('FOAM')) {
+                brandCode = 'ROYAL';
+            } else if (bUpper.includes('SERENITY')) {
+                brandCode = 'SERENITY';
+            } else if (bUpper.includes('ELITE')) {
+                brandCode = 'ELITE';
+            } else if (bUpper.includes('GRAND')) {
+                brandCode = 'GRAND';
+            } else {
+                brandCode = brandVal.split(' ')[0].toUpperCase().replace(/[^A-Z0-9]/g, '') || 'LADY';
             }
 
-            spkInput.value = `No. ${seq}/${brandCode}/${cabangCode}/${month}/${year}`;
+            // PT Code (RAS, ACA, BCP, BM, CAM)
+            let ptCode = 'RAS';
+            if (cUpper.includes('PRIMATARA') || cUpper.includes('BANGUN CIPTA') || cUpper === 'BCP') {
+                ptCode = 'BCP';
+            } else if (cUpper.includes('BESTARI') || cUpper === 'BM') {
+                ptCode = 'BM';
+            } else if (cUpper.includes('CEMERLANG ABADI MULIA') || cUpper.includes('ABADI MULIA') || cUpper === 'CAM') {
+                ptCode = 'CAM';
+            } else if (cUpper.includes('SEJAHTERA') || cUpper.includes('RAS') || cUpper.includes('ROYAL')) {
+                ptCode = 'RAS';
+            } else if (cUpper.includes('ACA') || cUpper.includes('ANUGRAH')) {
+                ptCode = 'ACA';
+            }
+
+            const monthStr = month < 10 ? `0${month}` : String(month);
+
+            // Extract existing sequence if present, otherwise default to 001
+            let seq = '001';
+            const match = (spkInput.value || '').match(/No\.\s*(\d+)/i) || (spkInput.value || '').match(/-(\d+)$/);
+            if (match) {
+                const n = parseInt(match[1], 10);
+                seq = String(n).padStart(3, '0');
+            }
+
+            spkInput.value = `No. ${seq}/${brandCode}/${ptCode}/${monthStr}/${year}`;
             spkInput.dispatchEvent(new Event('input', { bubbles: true }));
             spkInput.dispatchEvent(new Event('change', { bubbles: true }));
         }
@@ -502,6 +543,37 @@
         if (cabangSelect) {
             cabangSelect.addEventListener('change', updateSPK);
             cabangSelect.addEventListener('input', updateSPK);
+        }
+        if (perusahaanSelect) {
+            perusahaanSelect.addEventListener('change', updateSPK);
+            perusahaanSelect.addEventListener('input', updateSPK);
+        }
+        if (perusahaanSelect) {
+            perusahaanSelect.addEventListener('change', updateSPK);
+            perusahaanSelect.addEventListener('input', updateSPK);
+        }
+
+        const kotaTtdInput = form.querySelector('[name="kota_penandatanganan"]');
+        function syncKotaPenandatanganan() {
+            if (!cabangSelect || !kotaTtdInput) return;
+            const currentCab = (cabangSelect.value || '').trim();
+            if (currentCab && currentCab.toLowerCase() !== 'pusat') {
+                if (!kotaTtdInput.value || kotaTtdInput.dataset.autoFilled === 'true') {
+                    kotaTtdInput.value = currentCab;
+                    kotaTtdInput.dataset.autoFilled = 'true';
+                    kotaTtdInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    kotaTtdInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }
+        }
+        if (cabangSelect && kotaTtdInput) {
+            cabangSelect.addEventListener('change', syncKotaPenandatanganan);
+            kotaTtdInput.addEventListener('input', function () {
+                kotaTtdInput.dataset.autoFilled = 'false';
+            });
+            if (!kotaTtdInput.value && cabangSelect.value) {
+                syncKotaPenandatanganan();
+            }
         }
 
         // Run immediately to generate official SPK number
@@ -518,7 +590,7 @@
         if (!field) return;
 
         field.style.display = 'none';
-        const container = createGridContainer(field, 'Data Asset Toko', 'Daftar kepemilikan aset display & papan nama toko.');
+        const container = createGridContainer(field, 'Data Asset Toko', 'Daftar kepemilikan aset display & papan nama toko.', 'asset_toko');
 
         function getRows() {
             try {
@@ -542,7 +614,7 @@
 
             let html = `
                 <div class="table-responsive">
-                    <table class="table table-bordered kontrak-grid-table">
+                    <table class="table table-bordered kontrak-grid-table" data-grid="asset_toko">
                         <thead>
                             <tr>
                                 <th style="width: 60px;">No</th>
@@ -620,7 +692,7 @@
         if (!field) return;
 
         field.style.display = 'none';
-        const container = createGridContainer(field, 'Data Market Share', 'Estimasi omset bulanan toko vs kompetitor.');
+        const container = createGridContainer(field, 'Data Market Share', 'Estimasi omset bulanan toko vs kompetitor.', 'market_share');
 
         function getRows() {
             try {
@@ -646,7 +718,7 @@
 
             let html = `
                 <div class="table-responsive">
-                    <table class="table table-bordered kontrak-grid-table">
+                    <table class="table table-bordered kontrak-grid-table" data-grid="market_share">
                         <thead>
                             <tr>
                                 <th style="width: 120px;">Bulan</th>
@@ -728,7 +800,7 @@
         if (!field) return;
 
         field.style.display = 'none';
-        const container = createGridContainer(field, 'Target & Incentive Scheme (Pasal 3)', 'Skema tier target penjualan bulanan dan reward insentif.');
+        const container = createGridContainer(field, 'Target & Incentive Scheme (Pasal 3)', 'Skema tier target penjualan bulanan dan reward insentif.', 'target_incentive');
 
         function getRows() {
             try {
@@ -754,7 +826,7 @@
 
             let html = `
                 <div class="table-responsive">
-                    <table class="table table-bordered kontrak-grid-table">
+                    <table class="table table-bordered kontrak-grid-table" data-grid="target_incentive">
                         <thead>
                             <tr>
                                 <th>Target Bulanan (Rp)</th>
@@ -838,7 +910,7 @@
         if (!field) return;
 
         field.style.display = 'none';
-        const container = createGridContainer(field, 'Discount Scheme (Pasal 6)', 'Rincian komponen potongan harga dan diskon khusus.');
+        const container = createGridContainer(field, 'Discount Scheme (Pasal 6)', 'Rincian komponen potongan harga dan diskon khusus.', 'discount_scheme');
 
         function getRows() {
             try {
@@ -864,7 +936,7 @@
 
             let html = `
                 <div class="table-responsive">
-                    <table class="table table-bordered kontrak-grid-table">
+                    <table class="table table-bordered kontrak-grid-table" data-grid="discount_scheme">
                         <thead>
                             <tr>
                                 <th>Komponen</th>
@@ -945,7 +1017,7 @@
         if (!field) return;
 
         field.style.display = 'none';
-        const container = createGridContainer(field, 'Tier Support Tahunan / Biaya Sewa (Pasal 7)', 'Target, support %, dan PPh % diinput. Netto dihitung otomatis oleh sistem.');
+        const container = createGridContainer(field, 'Tier Support Tahunan / Biaya Sewa (Pasal 7)', 'Target, support %, dan PPh % diinput. Netto dihitung otomatis oleh sistem.', 'tier_support');
 
         function getRows() {
             try {
@@ -966,7 +1038,9 @@
 
         function render() {
             let rows = getRows();
-            if (!rows.length) {
+            const suppToggle = form.querySelector('input[name="is_support_provided"]');
+            const isSuppEnabled = Boolean(suppToggle && suppToggle.checked);
+            if (!rows.length && isSuppEnabled) {
                 rows = [
                     { target_tahunan: 0, support_pct: 0, pph_pct: 0, netto: 0, keterangan: '' }
                 ];
@@ -975,7 +1049,7 @@
 
             let html = `
                 <div class="table-responsive">
-                    <table class="table table-bordered kontrak-grid-table">
+                    <table class="table table-bordered kontrak-grid-table" data-grid="tier_support">
                         <thead>
                             <tr>
                                 <th>Target Tahunan (Rp)</th>
@@ -1081,16 +1155,20 @@
         render();
     }
 
-    function createGridContainer(field, title, hint) {
+    function createGridContainer(field, title, hint, gridKey) {
         const wrapper = field.closest('.field-wrapper') || field.parentElement;
         const container = document.createElement('div');
-        container.className = 'kontrak-grid-container';
+        const gridClass = gridKey ? `table-${gridKey.replace(/_/g, '-')}` : '';
+        container.className = `kontrak-grid-container ${gridClass}`.trim();
 
         const header = document.createElement('div');
         header.className = 'kontrak-grid-header';
         header.innerHTML = `
-            <div>
-                <h5 class="kontrak-grid-title"><i class="bi bi-table text-primary"></i> ${title}</h5>
+            <div class="w-100">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <h5 class="kontrak-grid-title"><i class="bi bi-table text-primary"></i> ${title}</h5>
+                    <span class="scroll-hint-mobile"><i class="bi bi-arrows-expand-vertical-horizontal"></i> Geser tabel untuk input</span>
+                </div>
                 <div class="kontrak-grid-hint">${hint}</div>
             </div>
         `;
@@ -1098,6 +1176,190 @@
         wrapper.appendChild(header);
         wrapper.appendChild(container);
         return container;
+    }
+
+    /* --------------------------------------------------------------------------
+     * 4b. Setup Support Facility Conditional Logic (Clean Minimalist Toggle)
+     * -------------------------------------------------------------------------- */
+    function setupSupportConditionalLogic(form) {
+        if (form.dataset.supportConditionalSetup) return;
+        form.dataset.supportConditionalSetup = 'true';
+
+        const origToggleInput = form.querySelector('[name="is_support_provided"]');
+        if (!origToggleInput) {
+            console.warn('[KontrakSupportToggle] is_support_provided not found in form.');
+            return;
+        }
+
+        const origToggleWrapper = origToggleInput.closest('.field-wrapper') || origToggleInput.closest('.mb-3') || origToggleInput.parentElement;
+        if (!origToggleWrapper) return;
+
+        // 1. Clean switch toggle: replace wrapper content with a single clean Bootstrap switch
+        origToggleWrapper.className = 'mb-4 pt-2 border-top';
+        origToggleWrapper.style.removeProperty('background-color');
+        origToggleWrapper.style.removeProperty('border-color');
+        origToggleWrapper.innerHTML = `
+            <div class="form-check form-switch d-flex align-items-center gap-2">
+                <input class="form-check-input" type="checkbox" role="switch" id="toggleSupportFacility" name="is_support_provided" style="width: 2.5em; height: 1.3em; cursor: pointer;">
+                <label class="form-check-label fw-bold text-dark mb-0" for="toggleSupportFacility" style="cursor: pointer;">
+                    Terdapat Fasilitas / Bentuk Support Tambahan?
+                </label>
+            </div>
+            <div class="form-text text-muted" style="font-size: 12px; margin-left: 3.2em;">
+                Aktifkan jika kontrak memiliki fasilitas support promosi atau biaya sewa (Pasal 4 & Pasal 7). Jika tidak, kontrak berlaku reguler.
+            </div>
+        `;
+
+        const toggleSwitch = origToggleWrapper.querySelector('#toggleSupportFacility');
+
+        // 2. Create or find #kontrak-support-facility-wrapper
+        let facilityWrapper = document.getElementById('kontrak-support-facility-wrapper');
+        if (!facilityWrapper) {
+            facilityWrapper = document.createElement('div');
+            facilityWrapper.id = 'kontrak-support-facility-wrapper';
+            origToggleWrapper.parentNode.insertBefore(facilityWrapper, origToggleWrapper.nextSibling);
+        }
+        facilityWrapper.className = 'kontrak-support-facility-wrapper mb-3';
+        facilityWrapper.style.display = 'none';
+        facilityWrapper.innerHTML = ''; // Clean out any previous gimmick headers or cards
+
+        // 3. Move and organize the 5 rows into facilityWrapper in exact sequence
+        // Row 1: Grid 3 kolom (support_promosi, pct_support_promo, frekuensi_pencairan)
+        const suppPromo = form.querySelector('[name="support_promosi"]');
+        const pctPromo = form.querySelector('[name="pct_support_promo"]');
+        const frekPencairan = form.querySelector('[name="frekuensi_pencairan"]');
+
+        let row1 = suppPromo ? suppPromo.closest('.fields-aligned-row') : null;
+        if (row1) {
+            facilityWrapper.appendChild(row1);
+        } else {
+            row1 = document.createElement('div');
+            row1.className = 'row fields-aligned-row';
+            [suppPromo, pctPromo, frekPencairan].forEach(input => {
+                if (input) {
+                    const block = input.closest('.field-wrapper') || input.closest('.mb-3') || input.closest('.col-md-4') || input.parentElement;
+                    if (block) {
+                        if (!block.classList.contains('col-md-4')) block.classList.add('col-md-4');
+                        row1.appendChild(block);
+                    }
+                }
+            });
+            facilityWrapper.appendChild(row1);
+        }
+
+        // Row 2: Input syarat_pencairan
+        const syaratEl = form.querySelector('[name="syarat_pencairan"]');
+        const syaratBlock = syaratEl ? (syaratEl.closest('.field-wrapper') || syaratEl.closest('.mb-3') || syaratEl.parentElement) : null;
+        if (syaratBlock) facilityWrapper.appendChild(syaratBlock);
+
+        // Row 3: Input komponen_biaya
+        const biayaEl = form.querySelector('[name="komponen_biaya"]');
+        const biayaBlock = biayaEl ? (biayaEl.closest('.field-wrapper') || biayaEl.closest('.mb-3') || biayaEl.parentElement) : null;
+        if (biayaBlock) facilityWrapper.appendChild(biayaBlock);
+
+        // Row 4: Textarea pengecualian_ketentuan_support
+        const pengecualianEl = form.querySelector('[name="pengecualian_ketentuan_support"]');
+        const pengecualianBlock = pengecualianEl ? (pengecualianEl.closest('.field-wrapper') || pengecualianEl.closest('.mb-3') || pengecualianEl.parentElement) : null;
+        if (pengecualianBlock) facilityWrapper.appendChild(pengecualianBlock);
+
+        // Row 5: Dynamic Table Tier Support Tahunan / Biaya Sewa (Pasal 7)
+        const tierEl = form.querySelector('[name="tier_support"]');
+        const tierBlock = tierEl ? (tierEl.closest('.field-wrapper') || tierEl.closest('.mb-3') || tierEl.parentElement) : null;
+        if (tierBlock) facilityWrapper.appendChild(tierBlock);
+
+        // Ensure all child blocks and containers inside facilityWrapper have display:none cleared
+        [row1, syaratBlock, biayaBlock, pengecualianBlock, tierBlock].forEach(block => {
+            if (block) {
+                block.style.removeProperty('display');
+                block.classList.remove('d-none');
+                block.querySelectorAll('.field-wrapper, .fields-aligned-row, .mb-3, .col-md-4, select, input, textarea').forEach(child => {
+                    if (child.name === 'tier_support' || child.type === 'hidden') {
+                        return;
+                    }
+                    child.style.removeProperty('display');
+                    child.classList.remove('d-none');
+                });
+            }
+        });
+        if (tierEl) tierEl.style.setProperty('display', 'none', 'important');
+        if (tierBlock) {
+            const lbl = tierBlock.querySelector('label[for="id_tier_support"]');
+            if (lbl) lbl.style.display = 'none';
+            const hlp = tierBlock.querySelector('#id_tier_support_helptext');
+            if (hlp) hlp.style.display = 'none';
+        }
+
+        // 4. Backward Compatibility Check
+        const suppSelect = form.querySelector('[name="support_promosi"]');
+        const pctSupp = form.querySelector('[name="pct_support_promo"]');
+        const tierField = form.querySelector('[name="tier_support"]');
+        let hasExistingSupportData = false;
+
+        if (tierField && tierField.value) {
+            try {
+                const parsed = JSON.parse(tierField.value);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    hasExistingSupportData = parsed.some(r => Number(r.target_tahunan) > 0 || Number(r.support_pct) > 0 || (r.keterangan && r.keterangan.trim()));
+                }
+            } catch (e) {}
+        }
+
+        if ((suppSelect && suppSelect.value) || (pctSupp && parseFloat(pctSupp.value) > 0) || hasExistingSupportData) {
+            toggleSwitch.checked = true;
+        }
+
+        // 5. Visibility Controller
+        function updateSupportVisibility() {
+            const isChecked = Boolean(toggleSwitch && toggleSwitch.checked);
+            console.log('[KontrakSupportToggle] Visibility updated. isChecked =', isChecked);
+
+            if (facilityWrapper) {
+                facilityWrapper.style.display = isChecked ? 'block' : 'none';
+                if (isChecked) {
+                    // Force-clear any inline display:none or d-none that may have been applied by step transitions
+                    facilityWrapper.querySelectorAll('.field-wrapper, .fields-aligned-row, .mb-3, .col-md-4, select, input, textarea').forEach(el => {
+                        if (el.name === 'tier_support' || el.type === 'hidden') {
+                            return;
+                        }
+                        el.style.removeProperty('display');
+                        el.classList.remove('d-none');
+                    });
+                    if (tierEl) tierEl.style.setProperty('display', 'none', 'important');
+                    if (tierBlock) {
+                        const lbl = tierBlock.querySelector('label[for="id_tier_support"]');
+                        if (lbl) lbl.style.display = 'none';
+                        const hlp = tierBlock.querySelector('#id_tier_support_helptext');
+                        if (hlp) hlp.style.display = 'none';
+                    }
+                }
+            }
+
+            if (isChecked) {
+                if (tierField) {
+                    try {
+                        const parsed = JSON.parse(tierField.value || '[]');
+                        if (!parsed.length) {
+                            tierField.value = JSON.stringify([{ target_tahunan: 0, support_pct: 0, pph_pct: 2, netto: 0, keterangan: '' }]);
+                            if (window.renderTierGrid) window.renderTierGrid();
+                        }
+                    } catch (e) {}
+                }
+            } else {
+                if (tierField) {
+                    tierField.value = '[]';
+                    if (window.renderTierGrid) window.renderTierGrid();
+                }
+                ['support_promosi', 'pct_support_promo', 'frekuensi_pencairan', 'syarat_pencairan', 'komponen_biaya', 'pengecualian_ketentuan_support'].forEach(fn => {
+                    const el = form.querySelector(`[name="${fn}"]`);
+                    if (el) el.value = '';
+                });
+            }
+        }
+
+        window.updateSupportVisibility = updateSupportVisibility;
+
+        toggleSwitch.addEventListener('change', updateSupportVisibility);
+        updateSupportVisibility();
     }
 
     /* --------------------------------------------------------------------------
@@ -1179,6 +1441,11 @@
             return el ? el.value : '';
         };
 
+        const isSupport = form.querySelector('[name="is_support_provided"]')?.checked;
+        const tipeKontrakBadge = isSupport
+            ? '<span class="badge bg-primary text-white py-1 px-2"><i class="bi bi-award me-1"></i>Dengan Fasilitas Support Promosi & Sewa</span>'
+            : '<span class="badge bg-secondary text-white py-1 px-2"><i class="bi bi-shield-check me-1"></i>Kontrak Reguler (Murni Target & Diskon DO)</span>';
+
         container.innerHTML = `
             <div class="col-md-6">
                 <div class="small text-muted">Nomor SPK</div>
@@ -1187,6 +1454,10 @@
             <div class="col-md-6">
                 <div class="small text-muted">Customer / Toko JDE</div>
                 <div class="fw-bold text-dark">${getV('nama_toko') || '-'} (${getV('kode_customer_jde') || '-'})</div>
+            </div>
+            <div class="col-md-12">
+                <div class="small text-muted">Tipe Pengajuan Kontrak</div>
+                <div class="mt-1">${tipeKontrakBadge}</div>
             </div>
             <div class="col-md-4">
                 <div class="small text-muted">Brand & Cabang</div>
@@ -1266,34 +1537,34 @@
         };
 
         const nomorSPK = getV('nomor_spk') || '—';
-        const toko = getV('nama_toko') || '[Nama Toko / Dealer]';
-        const pemilik = getV('nama_pemilik') || '[Nama Pemilik]';
-        const alamat = getV('alamat_toko') || '[Alamat Lengkap Toko]';
-        const identitas = getV('nomor_identitas') || '[NIK / NPWP]';
+        const toko = getV('nama_toko') || '—';
+        const pemilik = getV('nama_pemilik') || '—';
+        const alamat = getV('alamat_toko') || '—';
+        const identitas = getV('nomor_identitas') || '—';
         const jenisIdentitas = getV('jenis_identitas') || 'KTP / NPWP';
         const noTelepon = getV('no_telepon') || '—';
-        const brand = getV('brand') || '[Brand Produk]';
-        const cabang = getV('cabang') || '[Cabang]';
-        const perusahaan = getV('perusahaan') || 'PT BESTARI MULIA';
-        const rekening = getV('rekening_perusahaan') || 'BCA 123-456-7890 a/n PT Bestari Mulia';
+        const brand = getV('brand') || '—';
+        const cabang = getV('cabang') || '—';
+        const perusahaan = getV('perusahaan') || '—';
+        const rekening = getV('rekening_perusahaan') || '—';
         const jdeCode = getV('kode_customer_jde') || '—';
-        const tglMulai = getV('tanggal_mulai') || '[Tanggal Mulai]';
-        const tglAkhir = getV('tanggal_berakhir') || '[Tanggal Berakhir]';
-        const durasi = getV('durasi') || '[Durasi Kontrak]';
+        const tglMulai = getV('tanggal_mulai') || '—';
+        const tglAkhir = getV('tanggal_berakhir') || '—';
+        const durasi = getV('durasi') || '—';
         const gracePeriod = getV('grace_period') || '—';
         const pctSupportPromo = getV('pct_support_promo') || '0';
-        const frekuensiPencairan = getV('frekuensi_pencairan') || 'Setiap Bulan';
-        const syaratPencairan = getV('syarat_pencairan') || 'Setelah pembayaran lunas';
-        const komponenBiaya = getV('komponen_biaya') || 'Sewa, Listrik, Asuransi';
-        const pengecualianSupport = getV('pengecualian_ketentuan_support') || 'Sesuai kesepakatan';
-        const top = getV('top') || '0';
+        const frekuensiPencairan = getV('frekuensi_pencairan') || '—';
+        const syaratPencairan = getV('syarat_pencairan') || '—';
+        const komponenBiaya = getV('komponen_biaya') || '—';
+        const pengecualianSupport = getV('pengecualian_ketentuan_support') || '—';
+        const top = getV('top') || '—';
         const bayar = getV('metode_pembayaran') || 'Transfer / Cek / Giro';
         const discountDO = getV('discount_do') || '0';
-        const ketentuanDO = getV('ketentuan_do') || 'Pengambilan mandiri';
+        const ketentuanDO = getV('ketentuan_do') || '—';
         const jenisPajak = getV('jenis_pajak') || 'Exclude PPN';
         const catatanLain = getV('catatan_lain') || '';
-        const kota = getV('kota_penandatanganan') || getV('kota') || 'Tangerang';
-        const tglTtd = getV('tanggal_penandatanganan') || 'Tanggal Submit';
+        const kota = getV('kota_penandatanganan') || getV('cabang') || getV('kota') || '—';
+        const tglTtd = getV('tanggal_penandatanganan') || '—';
 
         const targetRows = getGridRows('target_incentive');
         const discountRows = getGridRows('discount_scheme');
@@ -1302,198 +1573,544 @@
         let targetTableHtml = '';
         if (targetRows.length > 0) {
             targetTableHtml = `
-                <table class="clause-table" style="width: 100%; border-collapse: collapse; margin: 10px 0 16px 0; border: 1px solid #cbd5e1;">
-                    <thead>
-                        <tr>
-                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: right;">Target Bulanan</th>
-                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center; width: 140px;">Ketentuan Pajak</th>
-                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center; width: 120px;">Insentif (%)</th>
-                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: left;">Keterangan</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${targetRows.map(r => `
+                <div class="table-responsive w-100 my-2">
+                    <table class="clause-table" style="width: 100%; border-collapse: collapse; margin: 10px 0 16px 0; border: 1px solid #cbd5e1;">
+                        <thead>
                             <tr>
-                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: right; font-variant-numeric: tabular-nums; font-weight: 500;">${formatRupiahAccounting(r.target_bulanan)}</td>
-                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${formatPPN(r.exclude_ppn)}</td>
-                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${formatPercent(r.incentive_pct)}</td>
-                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: left;">${escapeHtml(r.keterangan || '—')}</td>
+                                <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center;">Target Bulanan</th>
+                                <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center; width: 140px;">Ketentuan Pajak</th>
+                                <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center; width: 120px;">Insentif (%)</th>
+                                <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center;">Keterangan</th>
                             </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            ${targetRows.map(r => `
+                                <tr>
+                                    <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center; font-variant-numeric: tabular-nums; font-weight: 500;">${formatRupiahAccounting(r.target_bulanan)}</td>
+                                    <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${formatPPN(r.exclude_ppn)}</td>
+                                    <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${formatPercent(r.incentive_pct)}</td>
+                                    <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${escapeHtml(r.keterangan || '—')}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
             `;
         }
 
         let discountTableHtml = '';
         if (discountRows.length > 0) {
             discountTableHtml = `
-                <table class="clause-table" style="width: 100%; border-collapse: collapse; margin: 10px 0 16px 0; border: 1px solid #cbd5e1;">
-                    <thead>
-                        <tr>
-                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: left;">Komponen</th>
-                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: right; width: 120px;">Nilai</th>
-                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center; width: 120px;">Tipe</th>
-                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: left;">Keterangan</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${discountRows.map(r => {
-                            const isPct = String(r.tipe || '').toLowerCase().includes('persen') || String(r.nilai || '').includes('%');
-                            const valFormatted = isPct ? formatPercent(r.nilai) : formatRupiahAccounting(r.nilai);
-                            return `
-                                <tr>
-                                    <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: left;">${escapeHtml(r.komponen || '—')}</td>
-                                    <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: right; font-variant-numeric: tabular-nums;">${valFormatted}</td>
-                                    <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${formatDiscountType(r.tipe)}</td>
-                                    <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: left;">${escapeHtml(r.keterangan || '—')}</td>
-                                </tr>
-                            `;
-                        }).join('')}
-                    </tbody>
-                </table>
+                <div class="table-responsive w-100 my-2">
+                    <table class="clause-table" style="width: 100%; border-collapse: collapse; margin: 10px 0 16px 0; border: 1px solid #cbd5e1;">
+                        <thead>
+                            <tr>
+                                <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center;">Komponen</th>
+                                <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center; width: 120px;">Nilai</th>
+                                <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center; width: 120px;">Tipe</th>
+                                <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center;">Keterangan</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${discountRows.map(r => {
+                                const isPct = String(r.tipe || '').toLowerCase().includes('persen') || String(r.nilai || '').includes('%');
+                                const valFormatted = isPct ? formatPercent(r.nilai) : formatRupiahAccounting(r.nilai);
+                                return `
+                                    <tr>
+                                        <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: left;">${escapeHtml(r.komponen || '—')}</td>
+                                        <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center; font-variant-numeric: tabular-nums;">${valFormatted}</td>
+                                        <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${formatDiscountType(r.tipe)}</td>
+                                        <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${escapeHtml(r.keterangan || '—')}</td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
             `;
         }
 
         let tierTableHtml = '';
         if (tierRows.length > 0) {
             tierTableHtml = `
-                <table class="clause-table" style="width: 100%; border-collapse: collapse; margin: 10px 0 16px 0; border: 1px solid #cbd5e1;">
-                    <thead>
-                        <tr>
-                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: right;">Target Tahunan</th>
-                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center; width: 120px;">Dukungan (%)</th>
-                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center; width: 100px;">PPh (%)</th>
-                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: right;">Nilai Netto (Rp)</th>
-                            <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: left;">Keterangan</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${tierRows.map(r => `
+                <div class="table-responsive w-100 my-2">
+                    <table class="clause-table" style="width: 100%; border-collapse: collapse; margin: 10px 0 16px 0; border: 1px solid #cbd5e1;">
+                        <thead>
                             <tr>
-                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: right; font-variant-numeric: tabular-nums; font-weight: 500;">${formatRupiahAccounting(r.target_tahunan)}</td>
-                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${formatPercent(r.support_pct)}</td>
-                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${formatPercent(r.pph_pct)}</td>
-                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: right; font-variant-numeric: tabular-nums; font-weight: 500;">${formatRupiahAccounting(r.netto)}</td>
-                                <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: left;">${escapeHtml(r.keterangan || '—')}</td>
+                                <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center;">Target Tahunan</th>
+                                <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center; width: 120px;">Dukungan (%)</th>
+                                <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center; width: 100px;">PPh (%)</th>
+                                <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center;">Nilai Netto (Rp)</th>
+                                <th style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; border: 1px solid #cbd5e1; font-weight: 600; text-align: center;">Keterangan</th>
                             </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            ${tierRows.map(r => `
+                                <tr>
+                                    <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center; font-variant-numeric: tabular-nums; font-weight: 500;">${formatRupiahAccounting(r.target_tahunan)}</td>
+                                    <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${formatPercent(r.support_pct)}</td>
+                                    <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${formatPercent(r.pph_pct)}</td>
+                                    <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center; font-variant-numeric: tabular-nums; font-weight: 500;">${formatRupiahAccounting(r.netto)}</td>
+                                    <td style="padding: 7px 10px; font-size: 0.85rem; border: 1px solid #e2e8f0; vertical-align: middle; text-align: center;">${escapeHtml(r.keterangan || '—')}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
             `;
         }
 
+        const chkSupport = form.querySelector('[name="is_support_provided"]');
+        const isSupport = chkSupport ? chkSupport.checked : false;
+
+        const compVal = getV('perusahaan') || '';
+        const brandVal = getV('brand') || '';
+        const compUpper = compVal.toUpperCase();
+        const brandUpper = brandVal.toUpperCase();
+
+        let prof = {
+            shortCode: '',
+            name: '—',
+            director: '—',
+            jabatan: '—',
+            alamat: '—',
+            bankName: '—',
+            rekNo: '—',
+            rekAn: '—',
+            pn: 'Kantor Panitera Pengadilan Negeri —',
+            logoUrl: ''
+        };
+
+        if (compUpper.includes('PRIMATARA') || compUpper.includes('BANGUN CIPTA') || compUpper === 'BCP') {
+            prof = {
+                shortCode: 'BCP',
+                name: 'PT. BANGUN CIPTA PRIMATARA',
+                director: 'Alvin Steven',
+                jabatan: 'Direktur PT. BANGUN CIPTA PRIMATARA',
+                alamat: 'Kawasan Industri Gandasari, Jl. Raya Industri No. 12, Tangerang',
+                bankName: 'BCA KCU CIMAHI',
+                rekNo: '139.9888.777 (IDR)',
+                rekAn: 'PT. BANGUN CIPTA PRIMATARA',
+                pn: 'Kantor Panitera Pengadilan Negeri Tangerang',
+                logoUrl: '/static/images/logos/bcp.png'
+            };
+        } else if (compUpper.includes('BESTARI') || compUpper === 'BM') {
+            prof = {
+                shortCode: 'BM',
+                name: 'PT. BESTARI MULIA',
+                director: 'Alvin Steven',
+                jabatan: 'Direktur PT. BESTARI MULIA',
+                alamat: 'Kawasan Industri Gandasari, Jl. Raya Industri No. 12, Tangerang',
+                bankName: 'BCA KCU CIMAHI',
+                rekNo: '139.9888.777 (IDR)',
+                rekAn: 'PT. BESTARI MULIA',
+                pn: 'Kantor Panitera Pengadilan Negeri Tangerang',
+                logoUrl: '/static/images/logos/bm.png'
+            };
+        } else if (compUpper.includes('CEMERLANG ABADI MULIA') || compUpper.includes('ABADI MULIA') || compUpper === 'CAM') {
+            prof = {
+                shortCode: 'CAM',
+                name: 'PT. CEMERLANG ABADI MULIA',
+                director: 'Alvin Steven',
+                jabatan: 'Direktur PT. CEMERLANG ABADI MULIA',
+                alamat: 'Jl. Industri Raya No.8 RT.003 RW.004 Budi Mulya Cikupa Kab.Tangerang, Banten',
+                bankName: 'BCA CIMAHI – BANDUNG',
+                rekNo: '139.9183.888 (IDR)',
+                rekAn: 'PT. CEMERLANG ABADI MULIA',
+                pn: 'Kantor Panitera Pengadilan Negeri Bale Bandung',
+                logoUrl: '/static/images/logos/cam.png'
+            };
+        } else if (compUpper.includes('ANUGRAH') || compUpper.includes('ACA')) {
+            prof = {
+                shortCode: 'ACA',
+                name: 'PT. ANUGRAH CEMERLANG ABADI',
+                director: 'Alvin Steven',
+                jabatan: 'Direktur PT. ANUGRAH CEMERLANG ABADI',
+                alamat: 'Jl. Industri Raya No.8 RT.003 RW.004 Budi Mulya Cikupa Kab.Tangerang, Banten',
+                bankName: 'BCA CIMAHI – BANDUNG',
+                rekNo: '139.9183.888 (IDR)',
+                rekAn: 'PT. ANUGRAH CEMERLANG ABADI',
+                pn: 'Kantor Panitera Pengadilan Negeri Bale Bandung',
+                logoUrl: '/static/images/logos/aca.png'
+            };
+        } else if (compUpper.includes('SEJAHTERA') || compUpper.includes('RAS') || compUpper.includes('ROYAL') || brandUpper.includes('ROYAL') || brandUpper.includes('FOAM')) {
+            prof = {
+                shortCode: 'RAS',
+                name: 'PT. ROYAL ABADI SEJAHTERA',
+                director: 'Alvin Steven',
+                jabatan: 'Direktur PT. ROYAL ABADI SEJAHTERA',
+                alamat: 'Kawasan Industri Gandasari, Jl. Raya Industri No. 12, Tangerang',
+                bankName: 'BCA KCU CIMAHI',
+                rekNo: '139.9888.777 (IDR)',
+                rekAn: 'PT. ROYAL ABADI SEJAHTERA',
+                pn: 'Kantor Panitera Pengadilan Negeri Tangerang',
+                logoUrl: '/static/images/logos/ras.png'
+            };
+        }
+
+        // Calculate Target per 3 Bulan and Incentives
+        let targetNum = 0;
+        if (targetRows.length > 0 && targetRows[0].target_bulanan) {
+            targetNum = parseFloat(String(targetRows[0].target_bulanan).replace(/[^0-9.-]/g, '')) || 0;
+        }
+        if (!targetNum && getV('nilai_target')) {
+            targetNum = parseFloat(String(getV('nilai_target')).replace(/[^0-9.-]/g, '')) || 0;
+        }
+        const targetPer3Bulan = targetNum ? targetNum * 3 : 0;
+        const targetVolText = targetNum ? formatRupiahAccounting(targetNum) : 'Rp —';
+
+        let rewardRateStr = '2.5%';
+        let rewardPct = 0.025;
+        let pph23Pct = 0.15;
+        let pph23Label = '15%';
+
+        if (isSupport) {
+            const p = parseFloat(pctSupportPromo) || 5;
+            rewardPct = p / 100;
+            rewardRateStr = `${p}%`;
+            pph23Pct = 0.02;
+            pph23Label = '2%';
+        } else if (targetRows.length > 0 && targetRows[0].incentive_pct) {
+            const p = parseFloat(String(targetRows[0].incentive_pct).replace(/[^0-9.-]/g, '')) || 2.5;
+            rewardPct = p / 100;
+            rewardRateStr = `${p}%`;
+        }
+
+        const insentiveNominal = targetPer3Bulan * rewardPct;
+        const pph23Nominal = insentiveNominal * pph23Pct;
+        const nettoNominal = insentiveNominal - pph23Nominal;
+
+        let targetPer3BulanText = 'Rp —';
+        let insentiveNominalText = 'Rp —';
+        let pph23NominalText = 'Rp —';
+        let nettoNominalText = 'Rp —';
+
+        if (targetPer3Bulan > 0) {
+            targetPer3BulanText = formatRupiahAccounting(targetPer3Bulan);
+            insentiveNominalText = formatRupiahAccounting(insentiveNominal);
+            pph23NominalText = formatRupiahAccounting(pph23Nominal);
+            nettoNominalText = formatRupiahAccounting(nettoNominal);
+        } else {
+            rewardRateStr = '—';
+        }
+
+        let displayNomorSPK = getV('nomor_spk') || '';
+        if (!displayNomorSPK || displayNomorSPK === '—' || displayNomorSPK.includes('OTOMATIS') || displayNomorSPK.startsWith('SPK-') || !displayNomorSPK.includes('/')) {
+            if (brand && brand !== '—' && cabang && cabang !== '—') {
+                const now = new Date();
+                const mStr = String(now.getMonth() + 1).padStart(2, '0');
+                const yStr = String(now.getFullYear());
+                const cleanBrand = (brandUpper.includes('LADY') ? 'LADY' : (brandUpper.includes('ROYAL') || brandUpper.includes('FOAM') ? 'ROYAL' : (brandUpper.includes('SERENITY') ? 'SERENITY' : (brandUpper.includes('ELITE') ? 'ELITE' : (brandUpper.split(' ')[0] || 'BRAND')))));
+                const cleanCabang = cabang.toUpperCase();
+                displayNomorSPK = `No. [Otomatis]/${cleanBrand}/${prof.shortCode || 'RAS'}/${mStr}/${yStr}`;
+            } else {
+                displayNomorSPK = 'No. — / — / — / — / —';
+            }
+        }
+
         container.innerHTML = `
-            <div style="text-align: center; margin-bottom: 25px;">
-                <h2 style="font-size: 20px; text-decoration: underline; margin-bottom: 4px;">SURAT PERJANJIAN KERJASAMA (SPK)</h2>
-                <p style="font-size: 14px; margin: 0; font-weight: bold;">Nomor: ${nomorSPK}</p>
+        <div class="spk-paper-preview contract-paper-pages" style="font-family: 'Times New Roman', Times, serif; font-size: 13.5px; line-height: 1.5; color: #111827; max-width: 820px; margin: 0 auto;">
+            <!-- ==================== HALAMAN 1 ==================== -->
+            <div class="spk-page-sheet">
+                <div class="spk-page-content">
+                    <!-- KOP SURAT RESMI -->
+                    <div style="text-align: center; margin-bottom: 25px;">
+                        <div style="margin-bottom: 8px;">
+                            <img src="${prof.logoUrl}" alt="${prof.name}" style="max-height: 48px; width: auto; object-fit: contain; display: inline-block; margin: 0 auto 6px auto;" onerror="this.style.display='none'" />
+                        </div>
+                        <h2 style="font-size: 16px; font-weight: bold; margin: 0; text-transform: uppercase; letter-spacing: 0.5px;">SURAT PERJANJIAN KERJASAMA</h2>
+                        <div style="font-size: 14px; font-weight: bold; margin-top: 4px;">${displayNomorSPK}</div>
+                    </div>
+
+                    <!-- IDENTITAS PARA PIHAK -->
+                    <p style="margin-bottom: 8px;">Yang bertanda tangan di bawah ini :</p>
+                    
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px; margin-left: 20px;">
+                        <tr><td style="width: 130px; vertical-align: top;">Nama</td><td style="width: 15px; vertical-align: top;">:</td><td style="font-weight: bold;">${prof.director}</td></tr>
+                        <tr><td style="vertical-align: top;">Jabatan</td><td style="vertical-align: top;">:</td><td style="font-weight: bold;">${prof.jabatan}</td></tr>
+                        <tr><td style="vertical-align: top;">Alamat</td><td style="vertical-align: top;">:</td><td>${prof.alamat}</td></tr>
+                    </table>
+                    
+                    <p style="margin-bottom: 12px;">Selanjutnya disebut sebagai <strong>PIHAK PERTAMA</strong> selaku Produsen produk Springbed merk <strong>“${brand}”</strong></p>
+
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px; margin-left: 20px;">
+                        <tr><td style="width: 130px; vertical-align: top;">Nama</td><td style="width: 15px; vertical-align: top;">:</td><td style="font-weight: bold;">${pemilik}</td></tr>
+                        <tr><td style="vertical-align: top;">Pemilik Tk.</td><td style="vertical-align: top;">:</td><td style="font-weight: bold;">${toko}</td></tr>
+                        <tr><td style="vertical-align: top;">Alamat</td><td style="vertical-align: top;">:</td><td>${alamat}</td></tr>
+                        <tr><td style="vertical-align: top;">NIK / NPWP</td><td style="vertical-align: top;">:</td><td>${identitas}</td></tr>
+                    </table>
+
+                    <p style="margin-bottom: 12px;">Selanjutnya disebut sebagai <strong>PIHAK KEDUA</strong> Dealer produk Springbed merk <strong>“${brand}”</strong></p>
+
+                    <p style="text-align: justify; margin-bottom: 16px;">
+                        Dalam upaya meningkatkan kerjasama dalam penjualan produk ${brand}, kedua belah pihak di atas sepakat untuk menandatangani kontrak perjanjian kerja sama dengan mengikuti syarat – syarat dan ketentuan – ketentuan sebagai berikut :
+                    </p>
+
+                    <!-- BAB I -->
+                    <div style="text-align: center; font-weight: bold; margin-top: 18px; margin-bottom: 8px;">
+                        BAB I<br>OBJEK PERJANJIAN
+                    </div>
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 1</div>
+                    <p style="text-align: justify; margin-bottom: 12px;">
+                        Pihak Pertama menitipkan/menjual kepada Pihak Kedua Produk Springbed dengan merk “ ${brand} “ untuk dijual oleh Pihak Kedua pada tempat yang telah diberitahukan dan disetujui oleh Pihak Pertama dengan mengacu pada ketentuan Volume dan Harga Penjualan yang telah di sepakati.
+                    </p>
+
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 2</div>
+                    <p style="text-align: justify; margin-bottom: 16px;">
+                        Omzet penjualan ${brand} PIHAK KEDUA dihitung berdasarkan harga setelah dikurangi potongan retur, discount dan potongan – potongan lainnya (harga netto), berdasarkan price list yang berlaku mulai tanggal 1 Februari 2023 dan mengikuti perubahannya. (Harga tidak mengikat)
+                    </p>
+
+                    <!-- BAB II -->
+                    <div style="text-align: center; font-weight: bold; margin-top: 18px; margin-bottom: 8px;">
+                        BAB II<br>VOLUME PENJUALAN dan PENGHARGAAN – PERIODE KONTRAK - SKEMA DISCOUNT
+                    </div>
+                    
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 3</div>
+                    <ol style="margin-top: 0; margin-bottom: 12px; padding-left: 20px;">
+                        <li style="text-align: justify; margin-bottom: 4px;">Para Pihak sepakat bahwa Target Volume Penjualan produk selama jangka waktu perjanjian ini <strong>${targetVolText}</strong> per bulan Exclude Ppn.</li>
+                        <li style="text-align: justify;">Pihak Kedua wajib memenuhi Volume Penjualan yang telah ditentukan dalam perjanjian ini.</li>
+                    </ol>
+                    ${targetTableHtml || '<p class="text-muted fst-italic">Belum ada tier target bulanan yang ditambahkan.</p>'}
+
+                    ${isSupport ? `
+                    <!-- PASAL 4 KHUSUS SUPPORT PROMOSI -->
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 4</div>
+                    <ol style="margin-top: 0; margin-bottom: 12px; padding-left: 20px;">
+                        <li style="text-align: justify; margin-bottom: 4px;">Pihak Pertama memberikan support promosi yang meliputi biaya (sewa, instore, pameran, listrik, dan asuransi) kepada Pihak Kedua sebesar <strong>${pctSupportPromo}%</strong>. Support promosi tersebut <strong>TIDAK</strong> meliputi biaya Billboard, Pajak Billboard, dan Backdrop apabila Pihak Kedua membuka cabang baru atau toko baru.</li>
+                        <li style="text-align: justify; margin-bottom: 4px;">Support promosi ini dapat dicairkan setelah pembayaran <strong>LUNAS</strong>.</li>
+                        <li style="text-align: justify;">Grace period selama 1 (satu) bulan dari masa kontrak berakhir, apabila Pihak Kedua belum mencapai target.</li>
+                    </ol>
+
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 5</div>
+                    <p style="text-align: justify; margin-bottom: 12px;">
+                        Perjanjian berlaku untuk Jangka Waktu <strong>${durasi}</strong> terhitung dari sejak tanggal <strong>${tglMulai}</strong> dan akan berakhir pada tanggal <strong>${tglAkhir}</strong>.
+                    </p>
+
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 6</div>
+                    <p style="text-align: justify; margin-bottom: 6px;">
+                        Skema discount untuk penjualan Produk yang berlaku untuk Pihak Kedua dalam Perjanjian ini adalah sebagai berikut :
+                    </p>
+                    ${discountTableHtml || '<p class="text-muted fst-italic">Belum ada skema diskon yang ditambahkan.</p>'}
+                    ` : `
+                    <!-- STANDARD REGULER -->
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 4</div>
+                    <p style="text-align: justify; margin-bottom: 12px;">
+                        Perjanjian berlaku untuk Jangka Waktu <strong>${durasi}</strong> terhitung dari sejak tanggal <strong>${tglMulai}</strong> dan akan berakhir pada tanggal <strong>${tglAkhir}</strong>.
+                    </p>
+
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 5</div>
+                    <p style="text-align: justify; margin-bottom: 6px;">
+                        Skema discount untuk penjualan Produk yang berlaku untuk Pihak Kedua dalam Perjanjian ini adalah sebagai berikut :
+                    </p>
+                    ${discountTableHtml || '<p class="text-muted fst-italic">Belum ada skema diskon yang ditambahkan.</p>'}
+                    `}
+                </div>
+                <div class="spk-page-footer">Halaman 1 dari 2</div>
             </div>
 
-            <p style="text-align: justify;">
-                Pada hari ini, tanggal <strong>${tglTtd}</strong>, bertempat di <strong>${kota}</strong>, dibuat dan ditandatangani perjanjian kerjasama penjualan dan pemasaran oleh dan antara:
-            </p>
+            <!-- ==================== HALAMAN 2 ==================== -->
+            <div class="spk-page-sheet">
+                <div class="spk-page-content">
+                    <div style="text-align: center; margin-bottom: 15px;">
+                        <img src="${prof.logoUrl}" alt="${prof.name}" style="max-height: 44px; width: auto; object-fit: contain; display: inline-block; margin: 0 auto 6px auto;" onerror="this.style.display='none'" />
+                    </div>
 
-            <table style="width: 100%; margin-bottom: 15px; font-size: 14px;">
-                <tr>
-                    <td style="width: 160px; font-weight: bold; vertical-align: top;">I. PIHAK PERTAMA</td>
-                    <td style="width: 10px; vertical-align: top;">:</td>
-                    <td><strong>${perusahaan}</strong></td>
-                </tr>
-                <tr>
-                    <td style="vertical-align: top;">Alamat Domisili</td>
-                    <td style="vertical-align: top;">:</td>
-                    <td>Jl. Industri Raya Blok A No. 10, Tangerang, Banten</td>
-                </tr>
-                <tr>
-                    <td style="vertical-align: top;">Rekening Pembayaran</td>
-                    <td style="vertical-align: top;">:</td>
-                    <td>${rekening}</td>
-                </tr>
-            </table>
+                    ${!isSupport ? `
+                    <!-- STANDARD: 11 PASAL (HALAMAN 2: PASAL 6 S/D 11) -->
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 6</div>
+                    <p style="text-align: justify; margin-bottom: 6px;">
+                        Pihak Pertama memberikan kompensasi Insentive Reward kepada Pihak Kedua saat perjanjian ini berakhir dan seluruh kewajiban Pihak Kedua kepada Pihak Pertama telah selesai atau LUNAS<br>
+                        Adapun perhitungan insentif adalah sebagai berikut :
+                    </p>
+                    <div style="margin-left: 15px; margin-bottom: 16px;">
+                        <p style="margin: 3px 0;">• Target ${targetPer3BulanText} per 3 Bulan mendapatkan insentif reward ${rewardRateStr}</p>
+                        <table style="width: 100%; border-collapse: collapse; margin-top: 4px;">
+                            <tr><td style="width: 250px;">Insentive Reward</td><td style="width: 15px;">=</td><td>${insentiveNominalText} &nbsp; &nbsp; ( ${rewardRateStr} x Pencapaian Omzet )</td></tr>
+                            <tr><td>Pph 23 Untuk Insentive Kontrak</td><td>=</td><td>${pph23NominalText} &nbsp; &nbsp; ( Insentive x 15% )</td></tr>
+                            <tr><td>Netto Reward</td><td>=</td><td>${nettoNominalText} &nbsp; &nbsp; (Total Insentive – Pph 23)</td></tr>
+                        </table>
+                        <p style="margin-top: 6px; font-weight: bold;">Maka insentive yang dibayarkan adalah sebesar ${nettoNominalText}.</p>
+                    </div>
 
-            <table style="width: 100%; margin-bottom: 20px; font-size: 14px;">
-                <tr>
-                    <td style="width: 160px; font-weight: bold; vertical-align: top;">II. PIHAK KEDUA</td>
-                    <td style="width: 10px; vertical-align: top;">:</td>
-                    <td><strong>${pemilik}</strong> (Pemilik / Penanggung Jawab)</td>
-                </tr>
-                <tr>
-                    <td style="vertical-align: top;">Nama Toko / Usaha</td>
-                    <td style="vertical-align: top;">:</td>
-                    <td><strong>${toko}</strong> (Kode JDE: ${jdeCode})</td>
-                </tr>
-                <tr>
-                    <td style="vertical-align: top;">Alamat Toko</td>
-                    <td style="vertical-align: top;">:</td>
-                    <td>${alamat}, ${kota}</td>
-                </tr>
-                <tr>
-                    <td style="vertical-align: top;">No. Identitas (${jenisIdentitas})</td>
-                    <td style="vertical-align: top;">:</td>
-                    <td>${identitas}</td>
-                </tr>
-                <tr>
-                    <td style="vertical-align: top;">No. Telepon / HP</td>
-                    <td style="vertical-align: top;">:</td>
-                    <td>${noTelepon}</td>
-                </tr>
-            </table>
+                    <!-- BAB III (STANDARD: PASAL 7, 8, 9) -->
+                    <div style="text-align: center; font-weight: bold; margin-top: 18px; margin-bottom: 8px;">
+                        BAB III<br>TATA CARA PEMBAYARAN
+                    </div>
+                    
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 7</div>
+                    <p style="text-align: justify; margin-bottom: 12px;">
+                        Wajib melaksanakan Pembayaran kepada Pihak Pertama paling lambat <strong>${top}</strong> hari setelah tanggal pengiriman ( selanjutnya disebut “ Jangka Waktu Pembayaran” ).
+                    </p>
 
-            <h4 style="font-size: 15px; border-bottom: 1px solid #333; padding-bottom: 4px; margin-top: 25px;">BAB I - PENUNJUKAN & PERIODE KERJASAMA</h4>
-            <p style="text-align: justify;">
-                <strong>Pasal 1:</strong> PIHAK PERTAMA menunjuk PIHAK KEDUA sebagai dealer/mitra resmi penjualan produk dengan brand <strong>${brand}</strong> untuk wilayah <strong>${cabang}</strong>.<br>
-                <strong>Pasal 2:</strong> Perjanjian kerjasama ini berlaku efektif terhitung sejak <strong>${tglMulai}</strong> sampai dengan <strong>${tglAkhir}</strong> (Durasi: <strong>${durasi}</strong>, Grace Period: <strong>${gracePeriod}</strong>).
-            </p>
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 8</div>
+                    <p style="text-align: justify; margin-bottom: 12px;">
+                        Sistem pembayaran melalui Transfer atau buka Cek/Giro yang telah di tulis nama <strong>${prof.name}</strong> dengan Nomer Rekening sesuai yang ada pada Faktur dan kontrabon. Serta <strong>TIDAK DIPERKENANKAN</strong> membayar secara TUNAI kepada Salesman/Collector/Kepala Depo/ASM/BM atau menitip pembayaran kepada Supir maupun Karyawan lainnya.
+                    </p>
 
-            <h4 style="font-size: 15px; border-bottom: 1px solid #333; padding-bottom: 4px; margin-top: 25px;">BAB II - TARGET VOLUME PENJUALAN & INSENTIF</h4>
-            <p style="text-align: justify;">
-                <strong>Pasal 3:</strong> PIHAK KEDUA berkomitmen mencapai target penjualan bulanan sesuai dengan rincian Skema Target & Incentive Scheme sebagai berikut:
-            </p>
-            ${targetTableHtml || '<p class="text-muted fst-italic">Belum ada tier target bulanan yang ditambahkan.</p>'}
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 9</div>
+                    <p style="text-align: justify; margin-bottom: 6px;">
+                        Pembayaran dianggap sah apabila dana telah masuk ke rekening ${prof.name}, dengan nomer rekening sbb :
+                    </p>
+                    <div style="text-align: center; margin: 8px 0;">
+                        <table style="margin: 0 auto; border-collapse: collapse; border: none; font-size: 13.5px; font-weight: bold;">
+                            <tr>
+                                <td style="padding: 1px 4px; text-align: left; width: 75px; border: none;">AN</td>
+                                <td style="padding: 1px 4px; text-align: center; width: 15px; border: none;">:</td>
+                                <td style="padding: 1px 4px; text-align: left; border: none;">${prof.rekAn}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1px 4px; text-align: left; border: none;">BANK</td>
+                                <td style="padding: 1px 4px; text-align: center; border: none;">:</td>
+                                <td style="padding: 1px 4px; text-align: left; border: none;">${prof.bankName}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1px 4px; text-align: left; border: none;">NO REK</td>
+                                <td style="padding: 1px 4px; text-align: center; border: none;">:</td>
+                                <td style="padding: 1px 4px; text-align: left; border: none;">${prof.rekNo}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <p style="text-align: justify; margin-bottom: 16px;">
+                        Walaupun nota asli sudah di serahkan / dititipkan oleh salesman maka belum dianggap sebagai pembayaran.
+                    </p>
 
-            <h4 style="font-size: 15px; border-bottom: 1px solid #333; padding-bottom: 4px; margin-top: 25px;">BAB III - DUKUNGAN PROMOSI & DISCOUNT SCHEME</h4>
-            <p style="text-align: justify;">
-                <strong>Pasal 4:</strong> PIHAK PERTAMA memberikan dukungan promosi sebesar <strong>${pctSupportPromo}%</strong> yang dicairkan <strong>${frekuensiPencairan}</strong> dengan syarat: <em>${syaratPencairan}</em>.<br>
-                <strong>Pasal 5:</strong> Komponen biaya promosi mencakup: ${komponenBiaya}. Ketentuan khusus: ${pengecualianSupport}<br>
-                <strong>Pasal 6:</strong> Rincian skema diskon yang berlaku pada perjanjian ini adalah:
-            </p>
-            ${discountTableHtml || '<p class="text-muted fst-italic">Belum ada skema diskon yang ditambahkan.</p>'}
+                    <!-- BAB IV (STANDARD: PASAL 10, 11) -->
+                    <div style="text-align: center; font-weight: bold; margin-top: 18px; margin-bottom: 8px;">
+                        BAB IV<br>ITIKAD BAIK DAN PERSELISIHAN
+                    </div>
+                    
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 10</div>
+                    <p style="text-align: justify; margin-bottom: 12px;">
+                        Para pihak dengan itikad baik dan penuh tanggung jawab menjalankan tugas, hak dan kewajibannya dengan mengindahkan peraturan perundangan yang berlaku.
+                    </p>
 
-            <h4 style="font-size: 15px; border-bottom: 1px solid #333; padding-bottom: 4px; margin-top: 25px;">BAB IV - TIER SUPPORT TAHUNAN / BIAYA SEWA</h4>
-            <p style="text-align: justify;">
-                <strong>Pasal 7:</strong> Skema Tier Support Tahunan dan perhitungan Netto setelah pemotongan PPh ditetapkan sebagai berikut:
-            </p>
-            ${tierTableHtml || '<p class="text-muted fst-italic">Belum ada tier support tahunan yang ditambahkan.</p>'}
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 11</div>
+                    <p style="text-align: justify; margin-bottom: 14px;">
+                        Apabila terjadi perselisihan/sengketa diantara Para Pihak terkait dengan isi dan/atau Pelaksanaan Perjanjian ini maka perselisihan tersebut akan di selesaikan terlebih dahulu melalui musyawarah mufakat diantara Para Pihak. Apabila dengan cara musyawarah mufakat tidak dapat dilakukan atau tidak tercapai sesuatu penyelesaian yang baik bagi Para Pihak maka Para Pihak sepakat untuk memilih <strong>${prof.pn}</strong> sebagai satu satunya domisili hukum yang tetap bagi Para Pihak.
+                    </p>
+                    ` : `
+                    <!-- SUPPORT PROMOSI: 12 PASAL (HALAMAN 2: PASAL 7 S/D 12) -->
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 7</div>
+                    <p style="text-align: justify; margin-bottom: 6px;">
+                        Pihak Pertama memberikan kompensasi Insentive Reward kepada Pihak Kedua saat perjanjian ini berakhir dan seluruh kewajiban Pihak Kedua kepada Pihak Pertama telah selesai atau LUNAS<br>
+                        Adapun perhitungan insentif adalah sebagai berikut :
+                    </p>
+                    <div style="margin-left: 15px; margin-bottom: 16px;">
+                        <p style="margin: 3px 0;">• Target ${targetPer3BulanText} per 3 Bulan mendapatkan reward (support promosi) ${pctSupportPromo}%</p>
+                        <table style="width: 100%; border-collapse: collapse; margin-top: 4px;">
+                            <tr><td style="width: 250px;">Insentive Reward</td><td style="width: 15px;">=</td><td>${insentiveNominalText} &nbsp; &nbsp; ( ${pctSupportPromo}% x Pencapaian Omzet )</td></tr>
+                            <tr><td>Pph 23 Untuk Insentive Kontrak</td><td>=</td><td>${pph23NominalText} &nbsp; &nbsp; ( Reward x 2% )</td></tr>
+                            <tr><td>Netto Reward</td><td>=</td><td>${nettoNominalText} &nbsp; &nbsp; (Total Insentive – Pph 23)</td></tr>
+                        </table>
+                        <p style="margin-top: 6px; font-weight: bold;">Maka insentive yang dibayarkan adalah sebesar ${nettoNominalText}.</p>
+                    </div>
+                    ${tierTableHtml || ''}
 
-            <h4 style="font-size: 15px; border-bottom: 1px solid #333; padding-bottom: 4px; margin-top: 25px;">BAB V - TATA CARA PEMBAYARAN & KETENTUAN DO</h4>
-            <p style="text-align: justify;">
-                <strong>Pasal 8:</strong> Pembayaran dilakukan melalui metode <strong>${bayar}</strong> dengan Term of Payment (TOP) selama <strong>${top} Hari</strong>.<br>
-                <strong>Pasal 9:</strong> Ketentuan Delivery Order (DO) berhak memperoleh diskon tambahan sebesar <strong>${discountDO}%</strong> dengan ketentuan: <em>${ketentuanDO}</em>.<br>
-                <strong>Pasal 10 (Pajak):</strong> Ketentuan pengenaan pajak yang berlaku adalah <strong>${jenisPajak}</strong>.
-            </p>
+                    <!-- BAB III (SUPPORT PROMOSI: PASAL 8, 9, 10) -->
+                    <div style="text-align: center; font-weight: bold; margin-top: 18px; margin-bottom: 8px;">
+                        BAB III<br>TATA CARA PEMBAYARAN
+                    </div>
+                    
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 8</div>
+                    <p style="text-align: justify; margin-bottom: 12px;">
+                        Wajib melaksanakan Pembayaran kepada Pihak Pertama paling lambat <strong>${top}</strong> hari setelah tanggal pengiriman ( selanjutnya disebut “ Jangka Waktu Pembayaran” ).
+                    </p>
 
-            ${catatanLain ? `
-            <h4 style="font-size: 15px; border-bottom: 1px solid #333; padding-bottom: 4px; margin-top: 25px;">BAB VI - KETENTUAN TAMBAHAN / LAIN-LAIN</h4>
-            <p style="text-align: justify;">${escapeHtml(catatanLain)}</p>
-            ` : ''}
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 9</div>
+                    <p style="text-align: justify; margin-bottom: 12px;">
+                        Sistem pembayaran melalui Transfer atau buka Cek/Giro yang telah di tulis nama <strong>${prof.name}</strong> dengan Nomer Rekening sesuai yang ada pada Faktur dan kontrabon. Serta <strong>TIDAK DIPERKENANKAN</strong> membayar secara TUNAI kepada Salesman/Collector/Kepala Depo/ASM/BM atau menitip pembayaran kepada Supir maupun Karyawan lainnya.
+                    </p>
 
-            <div style="margin-top: 50px;">
-                <table style="width: 100%; text-align: center; font-size: 14px;">
-                    <tr>
-                        <td style="width: 50%;">
-                            <strong>PIHAK PERTAMA</strong><br>
-                            ${perusahaan}<br><br><br><br><br>
-                            <u>Direktur Komersial</u>
-                        </td>
-                        <td style="width: 50%;">
-                            <strong>PIHAK KEDUA</strong><br>
-                            ${toko}<br><br><br><br><br>
-                            <u>${pemilik}</u><br>
-                            Pemilik / Penanggung Jawab
-                        </td>
-                    </tr>
-                </table>
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 10</div>
+                    <p style="text-align: justify; margin-bottom: 6px;">
+                        Pembayaran dianggap sah apabila dana telah masuk ke rekening ${prof.name}, dengan nomer rekening sbb :
+                    </p>
+                    <div style="text-align: center; margin: 8px 0;">
+                        <table style="margin: 0 auto; border-collapse: collapse; border: none; font-size: 13.5px; font-weight: bold;">
+                            <tr>
+                                <td style="padding: 1px 4px; text-align: left; width: 75px; border: none;">AN</td>
+                                <td style="padding: 1px 4px; text-align: center; width: 15px; border: none;">:</td>
+                                <td style="padding: 1px 4px; text-align: left; border: none;">${prof.rekAn}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1px 4px; text-align: left; border: none;">BANK</td>
+                                <td style="padding: 1px 4px; text-align: center; border: none;">:</td>
+                                <td style="padding: 1px 4px; text-align: left; border: none;">${prof.bankName}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 1px 4px; text-align: left; border: none;">NO REK</td>
+                                <td style="padding: 1px 4px; text-align: center; border: none;">:</td>
+                                <td style="padding: 1px 4px; text-align: left; border: none;">${prof.rekNo}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <p style="text-align: justify; margin-bottom: 16px;">
+                        Walaupun nota asli sudah di serahkan / dititipkan oleh salesman maka belum dianggap sebagai pembayaran.
+                    </p>
+
+                    <!-- BAB IV (SUPPORT PROMOSI: PASAL 11, 12) -->
+                    <div style="text-align: center; font-weight: bold; margin-top: 18px; margin-bottom: 8px;">
+                        BAB IV<br>ITIKAD BAIK DAN PERSELISIHAN
+                    </div>
+                    
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 11</div>
+                    <p style="text-align: justify; margin-bottom: 12px;">
+                        Para pihak dengan itikad baik dan penuh tanggung jawab menjalankan tugas, hak dan kewajibannya dengan mengindahkan peraturan perundangan yang berlaku.
+                    </p>
+
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 12</div>
+                    <p style="text-align: justify; margin-bottom: 14px;">
+                        Apabila terjadi perselisihan/sengketa diantara Para Pihak terkait dengan isi dan/atau Pelaksanaan Perjanjian ini maka perselisihan tersebut akan di selesaikan terlebih dahulu melalui musyawarah mufakat diantara Para Pihak. Apabila dengan cara musyawarah mufakat tidak dapat dilakukan atau tidak tercapai sesuatu penyelesaian yang baik bagi Para Pihak maka Para Pihak sepakat untuk memilih <strong>${prof.pn}</strong> sebagai satu satunya domisili hukum yang tetap bagi Para Pihak.
+                    </p>
+                    `}
+
+                    <p style="text-align: justify; margin-bottom: 24px;">
+                        DENGAN DEMIKIAN,Para Pihak telah menandatangani Perjanjian ini dalam 2 (dua) rangkap yang masing-masing berlaku sebagai asli, bermaterai cukup dan berkekuatan hukum yang sama yang dapat dipergunakan secara sah sebagai bukti adanya kesepakatan diantara Para Pihak.
+                    </p>
+
+                    <div style="margin-top: 25px;">
+                        <div style="text-align: left; margin-bottom: 15px; font-weight: bold;">
+                            ${kota}, ${tglTtd}
+                        </div>
+                        <table class="spk-signatures-table" style="width: 100%; border-collapse: collapse; text-align: center; font-size: 14px;">
+                            <tr>
+                                <td style="width: 50%; font-weight: bold; vertical-align: top;">
+                                    PIHAK PERTAMA<br>
+                                    ${prof.name}
+                                </td>
+                                <td style="width: 50%; font-weight: bold; vertical-align: top;">
+                                    PIHAK KEDUA<br>
+                                    ${toko}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="height: 65px; vertical-align: middle;">
+                                    <div style="color: #94a3b8; font-size: 11px; font-style: italic;">
+                                        (Tanda Tangan &amp; Pengesahan)
+                                    </div>
+                                </td>
+                                <td style="height: 65px; vertical-align: middle;">
+                                    <div style="color: #94a3b8; font-size: 11px; font-style: italic;">
+                                        (Tanda Tangan Mitra Toko)
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="vertical-align: top;">
+                                    <div style="border-bottom: 1px solid #111; display: inline-block; min-width: 180px; font-weight: bold;">${prof.director}</div><br>
+                                    ${prof.director !== '—' ? (prof.jabatan || 'Direktur') : '—'}
+                                </td>
+                                <td style="vertical-align: top;">
+                                    <div style="border-bottom: 1px solid #111; display: inline-block; min-width: 180px; font-weight: bold;">${pemilik}</div><br>
+                                    ${pemilik !== '—' ? 'Pemilik Toko' : '—'}
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+                <div class="spk-page-footer">Halaman 2 dari 2</div>
             </div>
+        </div>
         `;
     }
 
@@ -1610,12 +2227,20 @@
                     pane.style.removeProperty('display');
                     pane.style.display = 'block';
 
-                    // Ensure all field elements inside active pane are visible
+                    // Ensure all field elements inside active pane are visible (except support facility if unchecked)
                     pane.querySelectorAll('.field-wrapper, .fields-aligned-row, .mb-3').forEach(el => {
                         if (el.tagName !== 'INPUT') {
+                            if (el.id === 'kontrak-support-facility-wrapper' || el.closest('#kontrak-support-facility-wrapper')) {
+                                return; // Do not touch support facility elements in this loop
+                            }
                             el.style.removeProperty('display');
                         }
                     });
+
+                    // Ensure support facility visibility is synchronized if on Step 2
+                    if (idx === 1 && typeof window.updateSupportVisibility === 'function') {
+                        window.updateSupportVisibility(true);
+                    }
 
                     // Reset errors on the newly activated pane so it opens clean and neutral
                     pane.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
@@ -1686,6 +2311,7 @@
                 window.scrollTo({ top: Math.max(0, topY), behavior: 'smooth' });
             }
 
+            window.switchWizardStep = switchWizardStep;
             return true;
         }
 
@@ -1838,6 +2464,46 @@
         } else {
             indicator.className = 'auto-save-indicator';
             indicator.innerHTML = '<i class="bi bi-cloud text-muted me-1"></i> Draf otomatis aktif';
+        }
+    }
+
+    function showDraftAvailablePrompt(form, draftData, onConfirm) {
+        if (document.getElementById('draftAvailableAlert')) return;
+        const alertBox = document.createElement('div');
+        alertBox.id = 'draftAvailableAlert';
+        alertBox.className = 'alert alert-light border border-primary-subtle d-flex justify-content-between align-items-center py-2 px-3 mb-3';
+        alertBox.innerHTML = `
+            <div class="d-flex align-items-center gap-2 text-primary-emphasis small">
+                <i class="bi bi-clock-history text-primary fs-6"></i>
+                <span><strong>Draf Tersimpan Ditemukan</strong>: Ada isian formulir yang belum disubmit dari sesi sebelumnya. Ingin pulihkan?</span>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-primary btn-sm py-0.5 px-2.5" id="btnRestoreDraftConfirm" style="font-size: 0.8rem; font-weight: 500;">
+                    <i class="bi bi-arrow-repeat me-1"></i> Pulihkan Draf
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm py-0.5 px-2" id="btnDiscardDraftPrompt" style="font-size: 0.8rem;">
+                    Abaikan
+                </button>
+            </div>
+        `;
+        const wrapper = form.querySelector('.form-fields-wrapper') || form;
+        form.insertBefore(alertBox, wrapper);
+
+        const btnRestore = alertBox.querySelector('#btnRestoreDraftConfirm');
+        if (btnRestore) {
+            btnRestore.addEventListener('click', function() {
+                onConfirm(draftData);
+                alertBox.remove();
+            });
+        }
+        const btnDiscard = alertBox.querySelector('#btnDiscardDraftPrompt');
+        if (btnDiscard) {
+            btnDiscard.addEventListener('click', function() {
+                try {
+                    localStorage.removeItem('royal_kontrak_form_draft');
+                } catch (e) {}
+                alertBox.remove();
+            });
         }
     }
 

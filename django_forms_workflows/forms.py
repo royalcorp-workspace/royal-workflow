@@ -836,11 +836,16 @@ class DynamicForm(forms.Form):
             )
 
         elif field_def.field_type == "checkbox":
+            init_bool = False
+            if isinstance(initial, bool):
+                init_bool = initial
+            elif isinstance(initial, str):
+                init_bool = initial.strip().lower() in ("true", "1", "yes", "on")
             self.fields[field_def.field_name] = forms.BooleanField(
                 required=field_def.required,
                 label=field_def.field_label,
                 help_text=field_def.help_text,
-                initial=initial,
+                initial=init_bool,
             )
 
         elif field_def.field_type == "checkboxes":
@@ -1374,6 +1379,41 @@ class DynamicForm(forms.Form):
                             code="required",
                         ),
                     )
+
+        # Permohonan Kontrak: Conditional Support Logic & Payload Sanitization
+        if self.form_definition and self.form_definition.slug == "permohonan-kontrak":
+            is_support = bool(cleaned_data.get("is_support_provided"))
+            cleaned_data["is_support_provided"] = is_support
+            cleaned_data["has_support"] = is_support
+
+            support_field_names = [
+                "support_promosi",
+                "pct_support_promo",
+                "frekuensi_pencairan",
+                "syarat_pencairan",
+                "komponen_biaya",
+                "pengecualian_ketentuan_support",
+                "tier_support",
+            ]
+
+            if not is_support:
+                # Remove validation errors on support fields if any
+                for fn in support_field_names:
+                    if fn in self._errors:
+                        del self._errors[fn]
+
+                # Clean/sanitize payload so no phantom or dirty data is persisted
+                cleaned_data["tier_support"] = "[]"
+                cleaned_data["support_promosi"] = ""
+                cleaned_data["pct_support_promo"] = None
+                cleaned_data["frekuensi_pencairan"] = ""
+                cleaned_data["syarat_pencairan"] = ""
+                cleaned_data["komponen_biaya"] = ""
+                cleaned_data["pengecualian_ketentuan_support"] = ""
+            else:
+                tier_val = cleaned_data.get("tier_support")
+                if not tier_val or str(tier_val).strip() in ("", "[]"):
+                    cleaned_data["tier_support"] = "[]"
 
         return cleaned_data
 

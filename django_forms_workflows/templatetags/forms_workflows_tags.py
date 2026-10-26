@@ -453,3 +453,33 @@ def render_form_categories(
         # Forward request so the inclusion template can call {% url %} correctly
         "request": context.get("request"),
     }
+
+
+@register.filter(name="rupiah_format")
+def rupiah_format(value):
+    """
+    Format scalar integer, float, or numeric string to Indonesian Rupiah accounting standard.
+    Example: 80000000 -> 'Rp 80.000.000', '80000000.00' -> 'Rp 80.000.000'
+    """
+    import re
+    if value is None or str(value).strip() in ("", "None", "—", "-"):
+        return mark_safe('<span class="text-muted">—</span>')
+    s = str(value).strip()
+    if s.startswith("Rp ") and "." in s:
+        return s
+    try:
+        cleaned = re.sub(r"[^\d.-]", "", s)
+        if not cleaned:
+            return escape(s)
+        num = float(cleaned)
+        if num == 0:
+            return "Rp 0"
+        return f"Rp {int(round(num)):,}".replace(",", ".")
+    except (ValueError, TypeError):
+        return escape(s)
+
+
+@register.filter(name="format_rupiah")
+def format_rupiah(value):
+    """Alias for rupiah_format."""
+    return rupiah_format(value)

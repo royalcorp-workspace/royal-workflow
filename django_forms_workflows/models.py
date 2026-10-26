@@ -14,6 +14,7 @@ from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelatio
 from django.contrib.contenttypes.models import ContentType
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -888,7 +889,7 @@ class DocumentTemplate(models.Model):
             "form_name": submission.form_definition.name,
             "submission_id": str(submission.id),
             "submitted_at": (
-                submission.submitted_at.strftime("%B %d, %Y at %I:%M %p")
+                timezone.localtime(submission.submitted_at).strftime("%B %d, %Y at %I:%M %p")
                 if submission.submitted_at
                 else ""
             ),
@@ -916,6 +917,231 @@ class DocumentTemplate(models.Model):
                     context[key] = ", ".join(str(v) for v in parsed_val)
             else:
                 context[key] = str(val) if val is not None else ""
+
+        # Resolve dynamic kota_penandatanganan fallback if not set or stale 'Tangerang'
+        cabang_val = context.get("cabang", "")
+        kota_val = context.get("kota_penandatanganan", "")
+        if (not kota_val or kota_val.strip().lower() == "tangerang") and cabang_val and cabang_val.strip().lower() != "tangerang":
+            context["kota_penandatanganan"] = cabang_val
+        elif not kota_val:
+            context["kota_penandatanganan"] = cabang_val or "Bandung"
+
+        # Resolve tanggal_penandatanganan fallback if empty
+        if not context.get("tanggal_penandatanganan"):
+            now = timezone.now()
+            MONTHS_ID = [
+                "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+                "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+            ]
+            context["tanggal_penandatanganan"] = f"{now.day} {MONTHS_ID[now.month]} {now.year}"
+
+        # Resolve Toko digital signature image if present
+        ttd_img_val = form_data.get("ttd_toko_image") or form_data.get("signature_toko")
+        if not ttd_img_val:
+            signed_tokens = getattr(submission, "signing_tokens", None)
+            if signed_tokens:
+                st = signed_tokens.filter(status="signed").order_by("-signed_at").first()
+                if st and st.signature_image:
+                    ttd_img_val = st.signature_image
+
+        if ttd_img_val:
+            context["ttd_toko_image"] = (
+                f'<img src="{ttd_img_val}" alt="Tanda Tangan Mitra Toko" '
+                f'style="max-height: 75px; max-width: 200px; object-fit: contain; display: block; margin: 0 auto;" />'
+            )
+        else:
+            context["ttd_toko_image"] = (
+                '<div style="height: 75px;"></div>'
+            )
+
+        # Resolve Direksi digital signature image / seal
+        ttd_direksi_val = form_data.get("ttd_direksi_image") or form_data.get("signature_direksi")
+        if ttd_direksi_val:
+            direksi_box = (
+                f'<img src="{ttd_direksi_val}" alt="Tanda Tangan Direksi" '
+                f'style="max-height: 64px; max-width: 125px; object-fit: contain; display: block; margin: 0 auto;" />'
+            )
+        else:
+            st_direksi_approved = None
+            if hasattr(submission, "approval_tasks"):
+                st_direksi_approved = (
+                    submission.approval_tasks.filter(
+                        workflow_stage__name__icontains="direksi",
+                        status="approved",
+                    ).first()
+                    or submission.approval_tasks.filter(
+                        workflow_stage__name__icontains="final",
+                        status="approved",
+                    ).first()
+                    or submission.approval_tasks.filter(
+                        workflow_stage__order__in=[4, 5],
+                        status="approved",
+                    ).first()
+                )
+            if st_direksi_approved or submission.status == "approved":
+                approved_time = (
+                    timezone.localtime(st_direksi_approved.completed_at).strftime("%d/%m/%Y")
+                    if st_direksi_approved and st_direksi_approved.completed_at
+                    else timezone.localtime(submission.updated_at).strftime("%d/%m/%Y")
+                )
+                direksi_box = (
+                    f'<div style="border: 1.5px solid #16a34a; border-radius: 6px; padding: 4px 6px; background: #f0fdf4; color: #166534; font-size: 10px; text-align: center; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; width: 100%; box-sizing: border-box;">'
+                    f'<strong style="letter-spacing: 0.05em; display: block; font-size: 9.5px;">DISETUJUI DIGITAL</strong>'
+                    f'<span style="font-size: 8.5px; color: #15803d; display: block;">Direksi PT Royal Corp</span>'
+                    f'<span style="font-size: 8px; color: #166534;">{approved_time}</span></div>'
+                )
+            else:
+                direksi_box = (
+                    '<div style="height: 64px; width: 100%;"></div>'
+                )
+
+        # Check if e-Meterai should be displayed (after Stage 3 approval or when officially stamped)
+        has_ematerai = False
+        if hasattr(submission, "stamped_document") and getattr(submission.stamped_document, "status", "") == "stamped":
+            has_ematerai = True
+        elif hasattr(submission, "approval_tasks"):
+            has_ematerai = submission.approval_tasks.filter(
+                workflow_stage__order=3,
+                status="approved",
+            ).exists()
+
+        if has_ematerai:
+            context["ttd_direksi_image"] = (
+                f'<div style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 200px; height: 80px; margin: 0 auto; vertical-align: middle; text-align: left;">'
+                f'  <div style="flex: 0 0 62px; text-align: center;" title="e-Meterai Rp 10.000 (Mockup Terbubuh Digital)">'
+                f'    <img src="/static/images/ematerai_mockup.png" alt="e-Meterai 10000" style="width: 60px; height: 60px; object-fit: contain; border-radius: 4px; border: 1px solid #7dd3fc; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: inline-block; margin: 0 auto;" />'
+                f'  </div>'
+                f'  <div style="flex: 0 0 130px; height: 64px; display: flex; align-items: center; justify-content: center;">'
+                f'    {direksi_box}'
+                f'  </div>'
+                f'</div>'
+            )
+        else:
+            context["ttd_direksi_image"] = (
+                f'<div style="display: inline-block; width: 180px; height: 75px; vertical-align: middle;">{direksi_box}</div>'
+            )
+
+        # Resolve formatted rupiah for nilai_target if present
+        raw_target = form_data.get("nilai_target")
+        if raw_target is not None:
+            try:
+                cleaned_target = re.sub(r"[^\d.-]", "", str(raw_target))
+                if cleaned_target:
+                    num_target = float(cleaned_target)
+                    context["nilai_target_rupiah"] = f"Rp {int(round(num_target)):,}".replace(",", ".")
+                    context["nilai_target"] = context["nilai_target_rupiah"]
+            except Exception:
+                pass
+
+        # Resolve corporate profile & official logos
+        from .company_profiles import (
+            resolve_company_profile,
+            get_company_logo_html,
+            get_company_logo_data_uri,
+            format_official_spk_number,
+        )
+        comp_prof = resolve_company_profile(form_data=form_data, submission=submission, user=submission.submitter)
+        context["company_header_logo"] = get_company_logo_html(submission=submission, user=submission.submitter, max_height=48)
+        context["company_logo_data_uri"] = get_company_logo_data_uri(submission=submission, user=submission.submitter)
+        context["pihak_pertama_nama"] = comp_prof["director_name"]
+        context["pihak_pertama_jabatan"] = f"{comp_prof['director_title']} {comp_prof['display_name']}"
+        context["pihak_pertama_alamat"] = comp_prof["factory_address"]
+        context["perusahaan"] = comp_prof["display_name"]
+        context["bank_name"] = comp_prof["bank_name"]
+        context["bank_account_no"] = comp_prof["bank_account_no"]
+        context["bank_account_name"] = comp_prof["bank_account_name"]
+        context["pengadilan_negeri"] = comp_prof["court_jurisdiction"]
+
+        # Ensure official SPK number format
+        spk_val = form_data.get("nomor_spk") or ""
+        if not spk_val or "OTOMATIS" in spk_val.upper() or spk_val.startswith("SPK-") or "{" in spk_val or not any(r in spk_val for r in ["/I/", "/II/", "/III/", "/IV/", "/V/", "/VI/", "/VII/", "/VIII/", "/IX/", "/X/", "/XI/", "/XII/"]):
+            context["nomor_spk"] = format_official_spk_number(
+                submission.id,
+                form_data.get("brand", "LADY"),
+                form_data.get("cabang", "TANGERANG"),
+                submission.submitted_at or timezone.now(),
+                company_profile=comp_prof,
+            )
+        else:
+            context["nomor_spk"] = spk_val
+
+        # Target Volume Text & Grid Tables
+        context["target_incentive_table"] = context.get("target_incentive", "")
+        context["discount_scheme_table"] = context.get("discount_scheme", "")
+        context["tier_support_table"] = context.get("tier_support", "")
+
+        # Target Volume Text
+        target_val = 0.0
+        parsed_target = form_data.get("target_incentive")
+        if isinstance(parsed_target, str) and parsed_target.strip().startswith("["):
+            try:
+                import json
+                parsed_target = json.loads(parsed_target.strip())
+            except Exception:
+                parsed_target = []
+        if isinstance(parsed_target, list) and parsed_target and isinstance(parsed_target[0], dict):
+            raw_t = parsed_target[0].get("target_bulanan")
+            if raw_t:
+                try:
+                    target_val = float(re.sub(r"[^\d.-]", "", str(raw_t)))
+                except Exception:
+                    pass
+        if not target_val and form_data.get("nilai_target"):
+            try:
+                target_val = float(re.sub(r"[^\d.-]", "", str(form_data.get("nilai_target"))))
+            except Exception:
+                pass
+        
+        if target_val:
+            context["target_volume_text"] = f"Rp {int(round(target_val)):,}".replace(",", ".")
+        else:
+            context["target_volume_text"] = "Rp —"
+
+        # Incentive calculation variables
+        is_support_tpl = "Support" in self.name or form_data.get("is_support_provided") in (True, "True", "true", "1", 1, "on")
+        durasi_val = form_data.get("durasi") or "12 Bulan"
+        durasi_num = 12
+        m_dur = re.search(r"(\d+)", str(durasi_val))
+        if m_dur:
+            durasi_num = int(m_dur.group(1))
+
+        freq_bulan = 3 if durasi_num >= 3 else 1
+        context["frekuensi_bulan"] = str(freq_bulan)
+        target_periode = target_val * freq_bulan if target_val else 100000000.0
+        context["target_per_periode"] = f"{int(round(target_periode)):,}".replace(",", ".")
+
+        if is_support_tpl:
+            # Support Promosi (Pasal 7): PPh 23 = 2%
+            pct_raw = form_data.get("pct_support_promo") or "5"
+            try:
+                pct_num = float(re.sub(r"[^\d.-]", "", str(pct_raw)))
+            except Exception:
+                pct_num = 5.0
+            context["pct_support_promo"] = f"{pct_num:g}"
+            context["reward_rate"] = f"{pct_num:g}%"
+            insentive_nominal = target_periode * (pct_num / 100.0)
+            pph23_nominal = insentive_nominal * 0.02
+            netto_nominal = insentive_nominal - pph23_nominal
+            context["insentive_reward_nominal"] = f"{int(round(insentive_nominal)):,}".replace(",", ".")
+            context["pph23_nominal"] = f"{int(round(pph23_nominal)):,}".replace(",", ".")
+            context["netto_reward_nominal"] = f"{int(round(netto_nominal)):,}".replace(",", ".")
+            context["pph23_rate"] = "2%"
+        else:
+            # Standard (Pasal 6): PPh 23 = 15%
+            pct_num = 2.5
+            if parsed_target and isinstance(parsed_target, list) and isinstance(parsed_target[0], dict) and parsed_target[0].get("incentive_pct"):
+                try:
+                    pct_num = float(re.sub(r"[^\d.-]", "", str(parsed_target[0].get("incentive_pct"))))
+                except Exception:
+                    pass
+            context["reward_rate"] = f"{pct_num:g}%"
+            insentive_nominal = target_periode * (pct_num / 100.0)
+            pph23_nominal = insentive_nominal * 0.15
+            netto_nominal = insentive_nominal - pph23_nominal
+            context["insentive_reward_nominal"] = f"{int(round(insentive_nominal)):,}".replace(",", ".")
+            context["pph23_nominal"] = f"{int(round(pph23_nominal)):,}".replace(",", ".")
+            context["netto_reward_nominal"] = f"{int(round(netto_nominal)):,}".replace(",", ".")
+            context["pph23_rate"] = "15%"
 
         html = self.html_content
 
@@ -958,10 +1184,10 @@ class DocumentTemplate(models.Model):
 
         COLUMN_SPECS = {
             # Tabel Pasal 3 (Target & Incentive Scheme)
-            "target_bulanan": {"label": "Target Bulanan", "align": "right", "type": "currency"},
-            "exclude_ppn": {"label": "Ketentuan Pajak", "align": "center", "type": "ppn_boolean", "width": "130px"},
+            "target_bulanan": {"label": "Target Bulanan", "align": "center", "type": "currency"},
+            "exclude_ppn": {"label": "Ketentuan Pajak", "align": "center", "type": "ppn_boolean", "width": "140px"},
             "incentive_pct": {"label": "Insentif (%)", "align": "center", "type": "percentage", "width": "110px"},
-            "keterangan": {"label": "Keterangan", "align": "left", "type": "text"},
+            "keterangan": {"label": "Keterangan", "align": "center", "type": "text"},
 
             # Tabel Pasal 6 (Discount Scheme)
             "komponen": {"label": "Komponen", "align": "left", "type": "text"},
@@ -969,10 +1195,10 @@ class DocumentTemplate(models.Model):
             "tipe": {"label": "Tipe", "align": "center", "type": "discount_type", "width": "110px"},
 
             # Tabel Pasal 7 (Tier Support Tahunan / Biaya Sewa)
-            "target_tahunan": {"label": "Target Tahunan", "align": "right", "type": "currency"},
+            "target_tahunan": {"label": "Target Tahunan", "align": "center", "type": "currency"},
             "support_pct": {"label": "Dukungan (%)", "align": "center", "type": "percentage", "width": "110px"},
             "pph_pct": {"label": "PPh (%)", "align": "center", "type": "percentage", "width": "100px"},
-            "netto": {"label": "Nilai Netto (Rp)", "align": "right", "type": "currency"},
+            "netto": {"label": "Nilai Netto (Rp)", "align": "center", "type": "currency"},
 
             # Data Asset Toko
             "no": {"label": "No", "align": "center", "type": "number", "width": "45px"},
@@ -1076,11 +1302,10 @@ class DocumentTemplate(models.Model):
 
         for h in headers:
             spec = _get_col_spec(h)
-            align = spec.get("align", "left")
             width_part = f" width:{spec['width']};" if "width" in spec else ""
             table_rows.append(
                 f'<th style="background-color:#f1f5f9; color:#1e293b; padding:8px 10px; font-size:0.85rem; '
-                f'border:1px solid #cbd5e1; font-weight:600; text-align:{align};{width_part}">'
+                f'border:1px solid #cbd5e1; font-weight:600; text-align:center;{width_part}">'
                 f'{escape(spec["label"])}</th>'
             )
         table_rows.append('</tr></thead><tbody>')
@@ -4053,3 +4278,202 @@ class ChangeHistory(models.Model):
             user=user,
             summary=f"Deleted {ct.model} #{instance.pk}",
         )
+
+
+class ContractSigningToken(models.Model):
+    """
+    Public secure signing token for external party contract verification and signature.
+
+    Allows external stakeholders (e.g., store owners/partners) without Django user accounts
+    to review and digitally sign SPK drafts via a time-limited, one-time execution token URL.
+    """
+
+    TOKEN_STATUS = [
+        ("pending", "Pending Signature"),
+        ("signed", "Signed"),
+        ("rejected", "Rejected / Revision Requested"),
+        ("expired", "Expired"),
+        ("revoked", "Revoked"),
+    ]
+
+    token = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+        db_index=True,
+        help_text="Unique public secure URL token",
+    )
+    submission = models.ForeignKey(
+        FormSubmission,
+        on_delete=models.CASCADE,
+        related_name="signing_tokens",
+        help_text="Form submission associated with this signing token",
+    )
+    task = models.ForeignKey(
+        ApprovalTask,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="signing_tokens",
+        help_text="Workflow Stage 4 approval task tied to this signing request",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=TOKEN_STATUS,
+        default="pending",
+        db_index=True,
+    )
+    token_expiry = models.DateTimeField(
+        help_text="Timestamp after which this token cannot be used to submit signatures",
+    )
+
+    # Signer details captured at execution
+    signer_name = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Full legal name of the person signing on behalf of the store/partner",
+    )
+    signer_title = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Position/title of signatory (e.g. Pemilik Toko, Direktur)",
+    )
+    signer_identity_number = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="NIK/KTP or other national ID of signer",
+    )
+    signature_image = models.TextField(
+        blank=True,
+        help_text="Base64 PNG data URL of the digital signature canvas",
+    )
+    rejection_reason = models.TextField(
+        blank=True,
+        help_text="Reason provided by store if contract is rejected or revision requested",
+    )
+
+    # Security & Audit trail
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text="Client IP address recorded at the time of signing or rejection",
+    )
+    user_agent = models.TextField(
+        blank=True,
+        help_text="Client User-Agent browser string recorded for verification",
+    )
+    signed_at = models.DateTimeField(null=True, blank=True)
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Contract Signing Token"
+        verbose_name_plural = "Contract Signing Tokens"
+
+    def __str__(self):
+        return f"Token {self.token} - Sub #{self.submission_id} ({self.status})"
+
+    @property
+    def is_valid(self) -> bool:
+        """Check whether token is currently actionable (pending and not expired)."""
+        if self.status != "pending":
+            return False
+        return timezone.now() <= self.token_expiry
+
+    @property
+    def is_expired(self) -> bool:
+        """Check whether token has passed its expiry deadline."""
+        return timezone.now() > self.token_expiry
+
+    def get_signing_url(self, request=None) -> str:
+        """Generate relative or absolute signing URL for this token."""
+        relative_url = f"/spk/sign/{self.token}/"
+        if request:
+            return request.build_absolute_uri(relative_url)
+        return relative_url
+
+
+class StampedContractDocument(models.Model):
+    """
+    Official e-Meterai stamped contract document.
+    Stores the permanently stamped PDF binary file, provider stamping identifiers,
+    audit timestamps, and execution status.
+    """
+
+    STAMP_STATUS = [
+        ("pending", "Pending"),
+        ("in_progress", "In Progress"),
+        ("stamped", "Stamped"),
+        ("failed", "Failed"),
+    ]
+
+    submission = models.OneToOneField(
+        "FormSubmission",
+        on_delete=models.CASCADE,
+        related_name="stamped_document",
+        help_text="Form submission whose SPK document is stamped",
+    )
+    stamped_file = models.FileField(
+        upload_to="stamped_contracts/",
+        blank=True,
+        null=True,
+        help_text="Official stamped PDF binary file",
+    )
+    file_name = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Saved file name",
+    )
+    file_size = models.PositiveIntegerField(
+        default=0,
+        help_text="File size in bytes",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STAMP_STATUS,
+        default="pending",
+        db_index=True,
+    )
+    provider = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Provider adapter used (e.g. EzMeteraiProvider, MockMeteraiProvider)",
+    )
+    provider_document_id = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Unique external document identifier or file_key returned by provider",
+    )
+    page_number = models.PositiveIntegerField(
+        default=1,
+        help_text="Page number where the e-meterai is stamped",
+    )
+    coordinates = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="PDF stamping bounding box coordinates: llx, lly, urx, ury",
+    )
+    error_message = models.TextField(
+        blank=True,
+        help_text="Error message if stamping failed",
+    )
+    stamped_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when stamping succeeded",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Stamped Contract Document"
+        verbose_name_plural = "Stamped Contract Documents"
+
+    def __str__(self):
+        return f"StampedDoc Sub #{self.submission_id} [{self.status}]"
+
+

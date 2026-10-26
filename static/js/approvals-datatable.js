@@ -345,19 +345,15 @@
             render: function(data) {
                 if (!data) return '';
                 var reviewMatch = data.match(/href="([^"]+)"[^>]*>\s*<i[^>]*><\/i>\s*Review/i);
-                var viewMatch = data.match(/href="([^"]+)"[^>]*>\s*<i[^>]*><\/i>\s*View/i);
                 var reviewUrl = reviewMatch ? reviewMatch[1] : '';
-                var viewUrl = viewMatch ? viewMatch[1] : '';
+                if (!reviewUrl) {
+                    var anyHref = data.match(/href="([^"]+)"/i);
+                    reviewUrl = anyHref ? anyHref[1] : '#';
+                }
 
-                var html = '<div class="d-inline-flex align-items-center justify-content-end gap-2 text-nowrap">';
-                if (reviewUrl) {
-                    html += '<a href="' + reviewUrl + '" class="btn-action-review"><i class="bi bi-check-circle"></i> Review</a>';
-                }
-                if (viewUrl) {
-                    html += '<a href="' + viewUrl + '" class="btn-action-view"><i class="bi bi-eye"></i> View</a>';
-                }
-                html += '</div>';
-                return html;
+                return '<div class="d-inline-flex align-items-center justify-content-end text-nowrap">' +
+                       '<a href="' + reviewUrl + '" class="btn-action-review"><i class="bi bi-check-circle"></i> Review</a>' +
+                       '</div>';
             }
         });
 
@@ -527,6 +523,17 @@
             }
         });
 
+        var completedColIdx = -1;
+        for (var c = 0; c < columnsConfig.length; c++) {
+            if (columnsConfig[c].name === 'completed_at' || columnsConfig[c].data === 'completed_at') {
+                completedColIdx = c;
+                break;
+            }
+        }
+        if (completedColIdx === -1) {
+            completedColIdx = hasExport ? 5 : 4;
+        }
+
         var table = $table.DataTable({
             serverSide: true,
             processing: true,
@@ -542,7 +549,7 @@
                 }
             },
             columns: columnsConfig,
-            order: [[hasExport ? 5 : 4, 'desc']],
+            order: [[completedColIdx, 'desc']],
             columnDefs: colDefs,
             pageLength: savedPageLen,
             dom: 'tr',
@@ -617,23 +624,32 @@
             var id = ids[index++];
             if (msg) msg.textContent = 'Downloading PDF ' + index + ' of ' + total + '…';
             var url = singleUrlPattern.replace('/0/', '/' + id + '/');
+            if (url.indexOf('?') === -1) {
+                url += '?download=1';
+            } else {
+                url += '&download=1';
+            }
             fetch(url)
                 .then(function(resp) {
                     if (!resp.ok) throw new Error('HTTP ' + resp.status);
                     var cd = resp.headers.get('Content-Disposition') || '';
                     var m = cd.match(/filename[^;=\n]*=["']?([^"';\n]+)["']?/i);
-                    var filename = (m && m[1]) ? m[1].trim() : ('submission_' + id + '.pdf');
+                    var filename = (m && m[1]) ? m[1].replace(/["']/g, '').trim() : ('SPK_Submission_' + id + '.pdf');
+                    if (!filename.toLowerCase().endsWith('.pdf')) {
+                        filename += '.pdf';
+                    }
                     return resp.blob().then(function(blob) { return { blob: blob, name: filename }; });
                 })
                 .then(function(data) {
-                    var blobUrl = URL.createObjectURL(data.blob);
-                    var a = document.createElement('a');
-                    a.href = blobUrl;
-                    a.download = data.name;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 10000);
+                    var blobUrl = window.URL.createObjectURL(data.blob);
+                    var link = document.createElement('a');
+                    link.href = blobUrl;
+                    link.setAttribute('download', data.name);
+                    link.download = data.name;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    setTimeout(function() { window.URL.revokeObjectURL(blobUrl); }, 10000);
                     setTimeout(downloadNext, 800);
                 })
                 .catch(function(err) {

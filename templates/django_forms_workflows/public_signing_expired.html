@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }} - Royal Corporation</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #f8fafc;
+            color: #0f172a;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .expired-card {
+            background: #ffffff;
+            max-width: 500px;
+            width: 100%;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.03);
+            overflow: hidden;
+            padding: 36px 32px;
+            text-align: left;
+        }
+
+        .status-dot {
+            width: 44px;
+            height: 44px;
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #e2e8f0;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="expired-card">
+        <div class="status-dot">
+            <i class="bi bi-clock-history fs-5"></i>
+        </div>
+
+        <h1 class="h5 fw-bold text-dark mb-1">Tautan Tidak Aktif</h1>
+        <p class="text-secondary small mb-3">Tautan penandatanganan SPK ini sudah kedaluwarsa atau tidak lagi berlaku.</p>
+
+        <p class="text-secondary small mb-3">
+            Demi keamanan dokumen perjanjian, tautan penandatanganan dibatasi oleh masa kedaluwarsa. Silakan hubungi Sales Representative atau Sales Support kami untuk penerbitan tautan baru.
+        </p>
+
+        <div class="p-2.5 bg-light rounded border text-muted small" style="font-size: 12px;">
+            <div><strong>Nomor Berkas:</strong> {{ submission.form_data.nomor_spk|default:submission.id }}</div>
+            <div><strong>Mitra:</strong> {{ submission.form_data.nama_toko }}</div>
+        </div>
+    </div>
+
+</body>
+</html>

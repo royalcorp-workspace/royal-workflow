@@ -189,6 +189,33 @@ def _build_grouped_forms(forms):
     return top_level
 
 
+def resolve_default_signing_city(user=None, branch=None, company=None):
+    """
+    Resolve default signing city dynamically:
+    1. If branch provided or user has employee_profile.branch:
+       Use branch name (if not empty and not 'Pusat' / 'Head Office').
+    2. If branch is empty or 'Pusat':
+       Fallback to legal entity city based on company:
+       - PT Royal Abadi Sejahtera / PT Bestari Mulia -> Bandung
+       - PT Cemerlang Abadi Mulia / PT Bangun Cipta Primantara / PT Anugerah Cemerlang Abadi -> Tangerang
+       - Default fallback: Bandung
+    """
+    ep = getattr(user, "employee_profile", None) if user else None
+    effective_branch = (branch or (ep.branch if ep else None) or "").strip()
+    effective_company = (company or (ep.company if ep else None) or "").strip()
+
+    if effective_branch and effective_branch.lower() not in ("pusat", "head office", "-"):
+        return effective_branch
+
+    comp_lower = effective_company.lower()
+    if any(k in comp_lower for k in ("royal abadi sejahtera", "bestari mulia")):
+        return "Bandung"
+    elif any(k in comp_lower for k in ("cemerlang", "bangun cipta", "anugerah")):
+        return "Tangerang"
+
+    return "Bandung"
+
+
 def form_list(request):
     """List all active forms the current user has access to.
 
@@ -451,6 +478,19 @@ def form_submit(request, slug):
                     # Ignore malformed client metadata; draft data remains usable.
                     pass
 
+            if form_def.slug == "permohonan-kontrak":
+                is_supp = bool(request.POST.get("is_support_provided"))
+                raw_data["is_support_provided"] = is_supp
+                raw_data["has_support"] = is_supp
+                if not is_supp:
+                    raw_data["tier_support"] = "[]"
+                    raw_data["support_promosi"] = ""
+                    raw_data["pct_support_promo"] = ""
+                    raw_data["frekuensi_pencairan"] = ""
+                    raw_data["syarat_pencairan"] = ""
+                    raw_data["komponen_biaya"] = ""
+                    raw_data["pengecualian_ketentuan_support"] = ""
+
             if draft:
                 draft.form_data = raw_data
                 draft.submission_ip = get_client_ip(request)
@@ -534,6 +574,18 @@ def form_submit(request, slug):
                 updated_data = _re_evaluate_calculated_fields(
                     updated_data, form_def
                 )
+                if form_def.slug == "permohonan-kontrak":
+                    is_supp = bool(updated_data.get("is_support_provided"))
+                    updated_data["is_support_provided"] = is_supp
+                    updated_data["has_support"] = is_supp
+                    if not is_supp:
+                        updated_data["tier_support"] = "[]"
+                        updated_data["support_promosi"] = ""
+                        updated_data["pct_support_promo"] = ""
+                        updated_data["frekuensi_pencairan"] = ""
+                        updated_data["syarat_pencairan"] = ""
+                        updated_data["komponen_biaya"] = ""
+                        updated_data["pengecualian_ketentuan_support"] = ""
 
                 from .workflow_engine import handle_resubmit_revision
 
@@ -573,6 +625,24 @@ def form_submit(request, slug):
                 submission_id=submission.pk,
                 existing_file_data=_existing_files or None,
             )
+            if form_def.slug == "permohonan-kontrak":
+                if not submission.form_data.get("kota_penandatanganan"):
+                    submission.form_data["kota_penandatanganan"] = resolve_default_signing_city(
+                        user=user_or_none,
+                        branch=submission.form_data.get("cabang"),
+                        company=submission.form_data.get("perusahaan"),
+                    )
+                is_supp = bool(submission.form_data.get("is_support_provided"))
+                submission.form_data["is_support_provided"] = is_supp
+                submission.form_data["has_support"] = is_supp
+                if not is_supp:
+                    submission.form_data["tier_support"] = "[]"
+                    submission.form_data["support_promosi"] = ""
+                    submission.form_data["pct_support_promo"] = ""
+                    submission.form_data["frekuensi_pencairan"] = ""
+                    submission.form_data["syarat_pencairan"] = ""
+                    submission.form_data["komponen_biaya"] = ""
+                    submission.form_data["pengecualian_ketentuan_support"] = ""
             submission.form_data = _re_evaluate_calculated_fields(
                 submission.form_data, form_def
             )
@@ -667,6 +737,9 @@ def form_submit(request, slug):
                         initial_data.setdefault("cabang", ep.branch)
                     if ep.company:
                         initial_data.setdefault("perusahaan", ep.company)
+                signing_city = resolve_default_signing_city(user_or_none)
+                if signing_city:
+                    initial_data.setdefault("kota_penandatanganan", signing_city)
             form = DynamicForm(
                 form_definition=form_def, user=user_or_none, initial_data=initial_data
             )
@@ -1868,6 +1941,24 @@ def approve_submission(request, task_id):
             messages.error(request, "Invalid decision.")
             return redirect("forms_workflows:approve_submission", task_id=task_id)
 
+        # Guardrail: For SPK (permohonan-kontrak) at Stage 3 (Sales Support), manual approval is blocked
+        # until the store partner has signed via the public portal.
+        if decision == "approve" and task.workflow_stage and getattr(form_def, "slug", "") == "permohonan-kontrak":
+            if (
+                task.workflow_stage.order == 3
+                or "sales support" in (task.workflow_stage.name or "").lower()
+                or "ttd toko" in (task.workflow_stage.name or "").lower()
+            ):
+                from .workflow_engine import ensure_signing_token_for_stage
+                token = ensure_signing_token_for_stage(submission, task.workflow_stage, task)
+                if not token or token.status != "signed":
+                    messages.warning(
+                        request,
+                        "Pihak mitra toko belum menandatangani draf SPK via portal publik. "
+                        "Tombol persetujuan akan aktif setelah mitra menyelesaikan tanda tangan digital."
+                    )
+                    return redirect("forms_workflows:approve_submission", task_id=task_id)
+
         # Revision request path — approver requests changes from the original submitter
         if decision == "request_revision":
             revision_reason = (request.POST.get("revision_reason", "") or comments).strip()
@@ -2091,6 +2182,13 @@ def approve_submission(request, task_id):
             )
             submission.save()
 
+        # Capture Direksi signature image if provided in request.POST
+        direksi_sig = (request.POST.get("ttd_direksi_image") or request.POST.get("signature_direksi") or "").strip()
+        if direksi_sig and decision == "approve":
+            submission.form_data = submission.form_data or {}
+            submission.form_data["ttd_direksi_image"] = direksi_sig
+            submission.save(update_fields=["form_data"])
+
         # Update task
         task.status = "approved" if decision == "approve" else "rejected"
         task.completed_by = request.user
@@ -2122,6 +2220,39 @@ def approve_submission(request, task_id):
             from .workflow_engine import handle_approval
 
             handle_approval(submission, task, workflow)
+
+            # If Stage 3 (Sales Support) was approved, automatically stamp mockup e-Meterai for SPK
+            is_stage_3 = False
+            if task.workflow_stage:
+                is_stage_3 = (
+                    task.workflow_stage.order == 3
+                    or "sales support" in (task.workflow_stage.name or "").lower()
+                )
+            if is_stage_3 and getattr(form_def, "slug", "") == "permohonan-kontrak":
+                try:
+                    from .services.ematerai import EMeteraiService
+                    EMeteraiService.stamp_submission(submission=submission, force_retry=True, user=request.user)
+                    submission.refresh_from_db()
+                    logger.info("Successfully stamped e-Meterai mockup on Stage 3 approval for sub #%s", submission.id)
+                except Exception as stamp_err:
+                    logger.error("Failed to stamp mockup e-meterai on Stage 3 approval: %s", stamp_err, exc_info=True)
+
+            # If Stage 4 (Final Review / Direksi) was approved, refresh final stamped SPK document with Direksi signature
+            is_stage_4 = False
+            if task.workflow_stage:
+                is_stage_4 = (
+                    task.workflow_stage.order == 4
+                    or "direksi" in (task.workflow_stage.name or "").lower()
+                    or "final" in (task.workflow_stage.name or "").lower()
+                )
+            if is_stage_4 and getattr(form_def, "slug", "") == "permohonan-kontrak":
+                try:
+                    from .services.ematerai import EMeteraiService
+                    EMeteraiService.stamp_submission(submission=submission, force_retry=True, user=request.user)
+                    submission.refresh_from_db()
+                    logger.info("Successfully refreshed final stamped SPK document with Direksi signature for sub #%s", submission.id)
+                except Exception as stamp_err:
+                    logger.error("Failed to refresh final stamped SPK document on Stage 4 approval: %s", stamp_err, exc_info=True)
 
         # Log audit
         audit_changes = {"task_id": task.id, "comments": comments}
@@ -2277,12 +2408,47 @@ def approve_submission(request, task_id):
         else "null"
     )
 
+    # Signing token for Stage 3 (Sales Support) / External store signature portal
+    signing_token = None
+    if task.workflow_stage and (
+        task.workflow_stage.order == 3
+        or "sales support" in (task.workflow_stage.name or "").lower()
+        or "ttd toko" in (task.workflow_stage.name or "").lower()
+    ):
+        from .workflow_engine import ensure_signing_token_for_stage
+        signing_token = ensure_signing_token_for_stage(submission, task.workflow_stage, task)
+    else:
+        signing_token = getattr(submission, "signing_tokens", None)
+        if signing_token:
+            signing_token = signing_token.order_by("-created_at").first()
+
+    signing_url = signing_token.get_signing_url(request) if signing_token else None
+
+    # Render document template preview if available (e.g. SPK document with store signature)
+    rendered_doc_html = None
+    form_def = submission.form_definition
+    if form_def.slug == "permohonan-kontrak":
+        from .company_profiles import resolve_spk_document_template
+        doc_template = resolve_spk_document_template(form_def, submission=submission)
+    else:
+        doc_template = form_def.document_templates.filter(is_active=True).first()
+
+    if doc_template:
+        try:
+            rendered_doc_html = doc_template.render(submission)
+        except Exception as exc:
+            logger.error("Error rendering document template in approve view: %s", exc)
+            rendered_doc_html = None
+
     return render(
         request,
         "django_forms_workflows/approve.html",
         {
             "task": task,
             "submission": submission,
+            "rendered_doc_html": rendered_doc_html,
+            "signing_token": signing_token,
+            "signing_url": signing_url,
             "approval_step_form": approval_step_form,
             "approval_form_enhancements_config": approval_form_enhancements_config,
             "has_approval_step_fields": has_approval_step_fields,
@@ -2837,14 +3003,10 @@ def resubmit_submission(request, submission_id):
         AuditLog.objects.create(
             action="create",
             object_type="FormSubmission",
-            object_id=draft.id,
+            object_id=str(draft.id),
             user=request.user,
-            user_ip=get_client_ip(request),
-            changes={"resubmit_from": submission.id},
-            comments=(
-                f"Draft created from {submission.get_status_display().lower()} "
-                f"submission #{submission.id}"
-            ),
+            details=f"Created draft from submission #{submission.id}",
+            ip_address=get_client_ip(request),
         )
 
         return redirect("forms_workflows:form_submit", slug=form_def.slug)
@@ -2860,7 +3022,7 @@ def resubmit_submission(request, submission_id):
 
 
 @login_required
-def submission_pdf(request, submission_id):
+def submission_pdf(request, submission_id, filename=None):
     """Generate and serve a PDF of a form submission.
 
     Respects the ``pdf_generation`` setting on the form definition:
@@ -2868,6 +3030,9 @@ def submission_pdf(request, submission_id):
       - ``anytime``       – PDF is available as soon as the form is submitted.
       - ``post_approval`` – PDF is only available once the submission is approved.
     """
+    import io
+    from django.http import FileResponse
+
     submission = get_object_or_404(FormSubmission, id=submission_id)
     form_def = submission.form_definition
 
@@ -2894,12 +3059,13 @@ def submission_pdf(request, submission_id):
 
     if pdf_setting == "post_approval" and submission.status != "approved":
         # Approvers, admins, reviewers, and superusers may download pending
-        # submissions.  Only the submitter themselves must wait until approved.
+        # submissions. Only the submitter themselves must wait until approved.
         is_elevated = (
             request.user.is_superuser
             or user_can_approve(request.user, submission)
             or request.user.groups.filter(id__in=form_def.admin_groups.all()).exists()
             or is_reviewer
+            or form_def.slug == "permohonan-kontrak"
         )
         if not is_elevated:
             return HttpResponseForbidden(
@@ -2920,6 +3086,54 @@ def submission_pdf(request, submission_id):
         workflow and workflow.hide_approval_history and is_submitter_only
     )
 
+    # Determine filename with guaranteed .pdf extension
+    if form_def.slug == "permohonan-kontrak":
+        effective_filename = f"SPK_Submission_{submission_id}.pdf"
+    elif filename:
+        effective_filename = filename
+    else:
+        effective_filename = f"submission_{submission_id}.pdf"
+    if not effective_filename.lower().endswith(".pdf"):
+        effective_filename += ".pdf"
+
+    is_download = request.GET.get("download") in ["1", "true", "True", True]
+    is_preview = request.GET.get("preview") in ["1", "true", "True", True]
+    is_sync = request.GET.get("sync") in ["1", "true", "True", True] or request.GET.get("refresh") in ["1", "true", "True", True]
+    as_attachment = is_download and not is_preview
+
+    if is_sync and hasattr(submission, "stamped_document"):
+        try:
+            from .services.ematerai import EMeteraiService
+            EMeteraiService.stamp_submission(submission=submission, force_retry=True, user=request.user)
+            submission.refresh_from_db()
+        except Exception as sync_exc:
+            logger.warning("Failed to auto-sync stamped document for sub #%s: %s", submission_id, sync_exc)
+
+    # --- check if submission already has an official e-Meterai stamped PDF ---
+    if hasattr(submission, "stamped_document"):
+        stamped_doc = submission.stamped_document
+        if (
+            stamped_doc.status == "stamped"
+            and stamped_doc.stamped_file
+            and stamped_doc.stamped_file.name
+        ):
+            try:
+                if stamped_doc.stamped_file.storage.exists(stamped_doc.stamped_file.name):
+                    content = stamped_doc.stamped_file.read()
+                    f_name = stamped_doc.file_name or f"SPK_Submission_{submission_id}_stamped.pdf"
+                    if not f_name.lower().endswith(".pdf"):
+                        f_name += ".pdf"
+                    response = FileResponse(
+                        io.BytesIO(content),
+                        as_attachment=as_attachment,
+                        filename=f_name,
+                        content_type="application/pdf",
+                    )
+                    response["Access-Control-Expose-Headers"] = "Content-Disposition"
+                    return response
+            except Exception as e:
+                logger.warning("Error serving stamped file for sub #%s: %s", submission_id, e)
+
     # --- check for custom document template ---
     from .models import DocumentTemplate
 
@@ -2930,13 +3144,20 @@ def submission_pdf(request, submission_id):
             id=template_id, form_definition=form_def, is_active=True
         ).first()
     if not custom_template:
-        custom_template = DocumentTemplate.objects.filter(
-            form_definition=form_def, is_default=True, is_active=True
-        ).first()
+        if form_def.slug == "permohonan-kontrak":
+            from .company_profiles import resolve_spk_document_template
+            custom_template = resolve_spk_document_template(form_def, submission=submission)
+        else:
+            custom_template = DocumentTemplate.objects.filter(
+                form_definition=form_def, is_default=True, is_active=True
+            ).first()
 
     if custom_template:
         # --- custom document template path ---
         html_string = custom_template.render(submission)
+        if form_def.slug != "permohonan-kontrak" and not filename:
+            template_name = custom_template.name.replace(" ", "_").lower()
+            effective_filename = f"{template_name}_{submission_id}.pdf"
     else:
         # --- default built-in PDF layout ---
         pdf_rows = _build_pdf_rows(
@@ -2963,28 +3184,46 @@ def submission_pdf(request, submission_id):
             },
         )
 
-    # --- convert HTML to PDF using WeasyPrint (with graceful print-preview fallback) ---
+    # --- convert HTML to PDF using WeasyPrint (with graceful ReportLab fallback) ---
     try:
         from weasyprint import HTML
 
         base_url = request.build_absolute_uri("/")
         pdf_bytes = HTML(string=html_string, base_url=base_url).write_pdf()
 
-        template_name = (
-            custom_template.name.replace(" ", "_").lower()
-            if custom_template
-            else "submission"
+        response = FileResponse(
+            io.BytesIO(pdf_bytes),
+            as_attachment=as_attachment,
+            filename=effective_filename,
+            content_type="application/pdf",
         )
-        filename = f"{template_name}_{submission_id}.pdf"
-        response = HttpResponse(pdf_bytes, content_type="application/pdf")
-        response["Content-Disposition"] = f'inline; filename="{filename}"'
+        response["Access-Control-Expose-Headers"] = "Content-Disposition"
         return response
     except Exception as exc:
         logger.warning(
-            "WeasyPrint unavailable or failed on current system for submission %s: %s. Serving print-preview HTML fallback.",
+            "WeasyPrint unavailable or failed on current system for submission %s: %s. Attempting fallback.",
             submission_id,
             exc,
         )
+        try:
+            from .services.ematerai import EMeteraiService
+            pdf_bytes, _ = EMeteraiService.generate_spk_pdf_bytes(submission)
+            if pdf_bytes and pdf_bytes.startswith(b"%PDF"):
+                response = FileResponse(
+                    io.BytesIO(pdf_bytes),
+                    as_attachment=as_attachment,
+                    filename=effective_filename,
+                    content_type="application/pdf",
+                )
+                response["Access-Control-Expose-Headers"] = "Content-Disposition"
+                return response
+        except Exception as rl_exc:
+            logger.warning(
+                "ReportLab PDF generation failed for submission %s: %s",
+                submission_id,
+                rl_exc,
+            )
+
         doc_title = (
             custom_template.name
             if custom_template
@@ -2994,6 +3233,7 @@ def submission_pdf(request, submission_id):
             html_string, title=doc_title, submission_id=submission.id
         )
         return HttpResponse(fallback_html, content_type="text/html; charset=utf-8")
+
 
 
 def _render_print_preview_fallback(html_string, title="Cetak Dokumen", submission_id=None):
@@ -3010,13 +3250,16 @@ def _render_print_preview_fallback(html_string, title="Cetak Dokumen", submissio
             <span style="font-weight: 600; font-size: 14px; color: #f8fafc;">{title}{sub_text}</span>
             <span style="font-size: 12px; color: #94a3b8;">· Gunakan menu cetak browser untuk menyimpan PDF</span>
         </div>
-        <div style="display: flex; gap: 10px;">
+        <div style="display: flex; gap: 10px; align-items: center;">
             <button type="button" onclick="window.history.back()" style="background: #334155; color: #f8fafc; border: 1px solid #475569; padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s;">
                 ← Kembali
             </button>
-            <button type="button" onclick="window.print()" style="background: #0284c7; color: #ffffff; border: none; padding: 7px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 6px rgba(2,132,199,0.4); transition: all 0.15s;">
-                🖨️ Cetak / Unduh PDF
+            <button type="button" onclick="window.print()" style="background: #334155; color: #f8fafc; border: 1px solid #475569; padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s;">
+                🖨️ Cetak
             </button>
+            <a href="?download=1" download="SPK_Submission_{submission_id}.pdf" style="background: #0284c7; color: #ffffff; text-decoration: none; border: none; padding: 7px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 6px rgba(2,132,199,0.4); display: inline-flex; align-items: center; gap: 6px; transition: all 0.15s;">
+                ⬇️ Unduh PDF
+            </a>
         </div>
     </div>
     <style>
@@ -4253,14 +4496,14 @@ def bulk_export_submissions(request):
             ws.cell(
                 row=row_idx,
                 column=4,
-                value=sub.submitted_at.strftime("%Y-%m-%d %H:%M")
+                value=timezone.localtime(sub.submitted_at).strftime("%Y-%m-%d %H:%M")
                 if sub.submitted_at
                 else "",
             )
             ws.cell(
                 row=row_idx,
                 column=5,
-                value=sub.completed_at.strftime("%Y-%m-%d %H:%M")
+                value=timezone.localtime(sub.completed_at).strftime("%Y-%m-%d %H:%M")
                 if sub.completed_at
                 else "",
             )
@@ -4587,10 +4830,14 @@ def completed_approvals_ajax(request):
     records_filtered = qs.count()
 
     # --- Ordering ---
-    if col_name not in _COMPLETED_SORTABLE:
-        col_name = "completed_at"
-    prefix = "" if order_dir == "asc" else "-"
-    qs = qs.order_by(f"{prefix}{col_name}")
+    if not col_name or col_name not in _COMPLETED_SORTABLE or col_name == "completed_at":
+        if order_dir == "asc":
+            qs = qs.order_by(models.F("completed_at").asc(nulls_first=True), "id")
+        else:
+            qs = qs.order_by(models.F("completed_at").desc(nulls_last=True), "-id")
+    else:
+        prefix = "" if order_dir == "asc" else "-"
+        qs = qs.order_by(f"{prefix}{col_name}", "-id")
 
     # --- Extra form-field columns ---
     extra_fields = []
@@ -4650,10 +4897,10 @@ def completed_approvals_ajax(request):
                 sub.status,
                 f'<span class="badge bg-light text-dark">{escape(sub.status)}</span>',
             ),
-            "submitted_at": sub.submitted_at.strftime("%Y-%m-%d %H:%M")
+            "submitted_at": timezone.localtime(sub.submitted_at).strftime("%Y-%m-%d %H:%M")
             if sub.submitted_at
             else "—",
-            "completed_at": sub.completed_at.strftime("%Y-%m-%d %H:%M")
+            "completed_at": timezone.localtime(sub.completed_at).strftime("%Y-%m-%d %H:%M")
             if sub.completed_at
             else '<span class="text-muted">—</span>',
         }
@@ -4809,9 +5056,7 @@ def approval_inbox_ajax(request):
             "category": _cat_html(getattr(sub.form_definition, "category", None)),
             "actions": (
                 f'<a href="{approve_url}" class="btn btn-sm btn-primary">'
-                f'<i class="bi bi-check-circle"></i> Review</a> '
-                f'<a href="{det_url}" class="btn btn-sm btn-outline-secondary">'
-                f'<i class="bi bi-eye"></i> View</a>'
+                f'<i class="bi bi-check-circle"></i> Review</a>'
             ),
             "form": escape(sub.form_definition.name),
             "submitter": escape(_submitter_label(sub)),
@@ -4826,7 +5071,7 @@ def approval_inbox_ajax(request):
                 if task.assigned_to
                 else (task.assigned_group.name if task.assigned_group else "—")
             ),
-            "submitted_at": sub.submitted_at.strftime("%Y-%m-%d %H:%M")
+            "submitted_at": timezone.localtime(sub.submitted_at).strftime("%Y-%m-%d %H:%M")
             if sub.submitted_at
             else "—",
         }
@@ -4985,7 +5230,7 @@ def my_submissions_ajax(request):
             )
 
         submitted_html = (
-            sub.submitted_at.strftime("%Y-%m-%d %H:%M")
+            timezone.localtime(sub.submitted_at).strftime("%Y-%m-%d %H:%M")
             if sub.submitted_at
             else '<em class="text-muted">Not submitted</em>'
         )
@@ -5457,6 +5702,14 @@ def create_approval_tasks(submission):
     This is a placeholder - the actual implementation should be in workflow_engine.py
     """
     try:
+        from .conditions import extract_target_value
+
+        if submission.form_data and isinstance(submission.form_data, dict):
+            target_val = extract_target_value(submission.form_data)
+            if target_val and submission.form_data.get("nilai_target") != target_val:
+                submission.form_data["nilai_target"] = target_val
+                submission.save(update_fields=["form_data"])
+
         from .workflow_engine import create_workflow_tasks
 
         create_workflow_tasks(submission)
@@ -5664,3 +5917,42 @@ def _rule_delivery_reason(rule, user):
                 reasons.append("Approver in this workflow via: " + ", ".join(names))
 
     return " · ".join(reasons) if reasons else "—"
+
+
+from django.views.decorators.http import require_POST
+
+
+@login_required
+@require_POST
+def retry_ematerai_stamping(request, submission_id):
+    """Manually trigger or retry e-Meterai stamping for an approved SPK submission."""
+    submission = get_object_or_404(FormSubmission, id=submission_id)
+
+    form_def = submission.form_definition
+    is_admin = request.user.is_superuser or (
+        request.user.groups.filter(id__in=form_def.admin_groups.all()).exists()
+    )
+    is_sales_support = request.user.groups.filter(name__icontains="sales support").exists()
+    if not (is_admin or is_sales_support or request.user.is_staff):
+        messages.error(request, "Anda tidak memiliki wewenang untuk membubuhkan e-Meterai.")
+        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+    from .services.ematerai import EMeteraiService
+
+    stamped_doc = EMeteraiService.stamp_submission(
+        submission=submission,
+        force_retry=True,
+        user=request.user,
+    )
+
+    if stamped_doc.status == "stamped":
+        messages.success(request, "e-Meterai resmi berhasil dibubuhkan ke dokumen SPK.")
+    else:
+        err = stamped_doc.error_message or "Terjadi kesalahan pada layanan e-Meterai."
+        messages.error(request, f"Pembubuhan e-Meterai gagal: {err}")
+
+    referer = request.META.get("HTTP_REFERER")
+    if referer and ("approve" in referer or "submissions" in referer):
+        return redirect(referer)
+    return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+

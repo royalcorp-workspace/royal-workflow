@@ -1,0 +1,24 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: royal_workflow_web
+    restart: unless-stopped
+    ports:
+      - "8069:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./media:/app/media
+      - ./staticfiles:/app/staticfiles
+      - ./db.sqlite3:/app/db.sqlite3
+    environment:
+      - PORT=8000
+      - DJANGO_SETTINGS_MODULE=config.settings
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

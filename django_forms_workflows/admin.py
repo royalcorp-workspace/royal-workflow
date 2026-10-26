@@ -940,7 +940,7 @@ class FormDefinitionAdmin(nested_admin.NestedModelAdmin):
             return format_html(
                 "{}<br><small>{}</small>",
                 who,
-                last.created_at.strftime("%Y-%m-%d %H:%M"),
+                timezone.localtime(last.created_at).strftime("%Y-%m-%d %H:%M") if last.created_at else "-",
             )
         return "-"
 
@@ -3166,7 +3166,7 @@ class APITokenAdmin(admin.ModelAdmin):
     list_filter = ("is_active",)
     search_fields = ("name", "user__username", "user__email")
     readonly_fields = ("token", "created_at", "last_used_at")
-    autocomplete_fields = ("user",)
+    autocomplete_fields = ("user",) 
     ordering = ("-created_at",)
 
     fieldsets = (
@@ -3267,3 +3267,25 @@ if admin.site._registry.get(User):
     user_admin = admin.site._registry[User]
     if not getattr(user_admin, "search_fields", None):
         user_admin.search_fields = ["username", "first_name", "last_name", "email"]
+
+
+from .models import StampedContractDocument
+
+
+@admin.register(StampedContractDocument)
+class StampedContractDocumentAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "submission",
+        "status",
+        "provider",
+        "page_number",
+        "file_name",
+        "stamped_at",
+        "created_at",
+    )
+    list_filter = ("status", "provider", "stamped_at")
+    search_fields = ("submission__id", "provider_document_id", "file_name", "error_message")
+    readonly_fields = ("created_at", "updated_at", "stamped_at")
+    raw_id_fields = ("submission",)
+

@@ -5,6 +5,7 @@ from django.contrib.auth.decorators import login_required
 from django.db import models
 from django.http import JsonResponse
 from django.shortcuts import render, redirect
+from django.utils import timezone
 from django_forms_workflows.models import (
     FormDefinition,
     FormSubmission,
@@ -122,6 +123,14 @@ def custom_form_submit(request, slug):
                 seq = FormSubmission.objects.filter(form_definition__slug="permohonan-kontrak").count() + 1
                 post["nomor_spk"] = f"No. {seq:04d}/{brand}/{cabang}/{month}/{year}"
 
+            if not post.get("kota_penandatanganan"):
+                from django_forms_workflows.views import resolve_default_signing_city
+                post["kota_penandatanganan"] = resolve_default_signing_city(
+                    user=request.user,
+                    branch=post.get("cabang"),
+                    company=post.get("perusahaan"),
+                )
+
         request.POST = post
 
     response = upstream_form_submit(request, slug)
@@ -129,12 +138,25 @@ def custom_form_submit(request, slug):
     if slug == "permohonan-kontrak" and request.method == "POST":
         latest = FormSubmission.objects.filter(form_definition__slug="permohonan-kontrak").order_by("-id").first()
         if latest and latest.form_data:
+            updated = False
             spk = latest.form_data.get("nomor_spk", "")
             if not spk or "OTOMATIS" in str(spk).upper() or str(spk).startswith("AUTO-") or "{" in str(spk) or str(spk).startswith("SPK-"):
                 b = str(latest.form_data.get("brand", "LADY")).upper().replace(" ", "")
                 c = str(latest.form_data.get("cabang", "Tangerang")).title().replace(" ", "")
                 today = latest.submitted_at if latest.submitted_at else datetime.date.today()
                 latest.form_data["nomor_spk"] = f"No. {latest.id:04d}/{b}/{c}/{today.month}/{today.year}"
+                updated = True
+
+            if not latest.form_data.get("kota_penandatanganan"):
+                from django_forms_workflows.views import resolve_default_signing_city
+                latest.form_data["kota_penandatanganan"] = resolve_default_signing_city(
+                    user=latest.submitter,
+                    branch=latest.form_data.get("cabang"),
+                    company=latest.form_data.get("perusahaan"),
+                )
+                updated = True
+
+            if updated:
                 latest.save(update_fields=["form_data"])
 
     return response
@@ -419,7 +441,7 @@ def custom_my_submissions_ajax(request):
         )
 
         submitted_html = (
-            sub.submitted_at.strftime("%Y-%m-%d %H:%M")
+            timezone.localtime(sub.submitted_at).strftime("%Y-%m-%d %H:%M")
             if sub.submitted_at
             else "—"
         )

@@ -46,7 +46,9 @@ def analytics_export_csv(request):
     ).order_by("-created_at"):
         writer.writerow(
             [
-                sub.created_at.strftime("%Y-%m-%d %H:%M"),
+                timezone.localtime(sub.created_at).strftime("%Y-%m-%d %H:%M")
+                if sub.created_at
+                else "",
                 sub.form_definition.name if sub.form_definition else "",
                 sub.status,
                 (

@@ -19,7 +19,7 @@
         </div>
       {% elif row.type == 'pair' or row.type == 'triple' or row.type == 'quad' %}
         {% for field in row.fields %}
-          <div class="{% if row.type == 'pair' %}col-md-6{% elif row.type == 'triple' %}col-md-4{% else %}col-md-3{% endif %}">
+          <div class="{% if field.value|is_grid_data %}col-12{% elif row.type == 'pair' %}col-md-6{% elif row.type == 'triple' %}col-md-4{% else %}col-md-3{% endif %}">
             <div class="kv-card-cell">
               <div class="kv-label">{{ field.label }}</div>
               <div class="kv-value">
@@ -48,9 +48,13 @@
                 {% elif field.value|is_boolean_value %}
                   {{ field.value|render_boolean_badge:field.label }}
                 {% elif field.value|is_grid_data %}
-                  {{ field.value|render_grid_table }}
+                  <div class="table-responsive-custom">
+                    {{ field.value|render_grid_table }}
+                  </div>
                 {% elif field.value|is_callout_note %}
                   {{ field.value|render_callout_note }}
+                {% elif field.key == 'nilai_target' or field.label == 'Nilai Target' %}
+                  <span class="font-monospace fw-semibold text-dark">{{ field.value|rupiah_format }}</span>
                 {% elif field.value == '[]' or field.value == '""' or field.value == '[ ]' %}
                   <span class="text-muted">—</span>
                 {% else %}
@@ -91,9 +95,13 @@
                 {% elif field.value|is_boolean_value %}
                   {{ field.value|render_boolean_badge:field.label }}
                 {% elif field.value|is_grid_data %}
-                  {{ field.value|render_grid_table }}
+                  <div class="table-responsive-custom">
+                    {{ field.value|render_grid_table }}
+                  </div>
                 {% elif field.value|is_callout_note %}
                   {{ field.value|render_callout_note }}
+                {% elif field.key == 'nilai_target' or field.label == 'Nilai Target' %}
+                  <span class="font-monospace fw-semibold text-dark">{{ field.value|rupiah_format }}</span>
                 {% elif field.value == '[]' or field.value == '""' or field.value == '[ ]' %}
                   <span class="text-muted">—</span>
                 {% else %}

@@ -17,8 +17,8 @@ from dotenv import load_dotenv
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load environment variables from .env
-load_dotenv(BASE_DIR / '.env')
+# Load environment variables from .env (with override=True so edits to .env take immediate effect)
+load_dotenv(BASE_DIR / '.env', override=True)
 
 
 # Quick-start development settings - unsuitable for production
@@ -51,6 +51,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -130,9 +131,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = os.getenv('LANGUAGE_CODE', 'id')
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = os.getenv('TIME_ZONE', 'Asia/Jakarta')
 
 USE_I18N = True
 
@@ -142,10 +143,22 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [
     BASE_DIR / 'static',
 ]
+
+# WhiteNoise storage for compressed static files
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -168,9 +181,25 @@ CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = False
 CELERY_BROKER_URL = 'memory://'
 CELERY_RESULT_BACKEND = 'cache+memory://'
+CELERY_TIMEZONE = TIME_ZONE
 
 # HRIS Employee API Configuration
 HRIS_API_URL = os.getenv('HRIS_API_URL', 'https://dev-api.royalcorp.co.id/api/v1/externalapi/employeesV2')
 HRIS_API_TOKEN = os.getenv('HRIS_API_TOKEN', '')
 HRIS_API_TIMEOUT = int(os.getenv('HRIS_API_TIMEOUT', '30'))
 HRIS_DEFAULT_PASSWORD = os.getenv('HRIS_DEFAULT_PASSWORD', 'Bandung*123#')
+
+# Media storage configuration
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# e-Meterai Single Stamping Provider Configuration
+EMATERAI_PROVIDER = os.getenv('EMATERAI_PROVIDER', 'mock')
+EMATERAI_BASE_URL = os.getenv('EMATERAI_BASE_URL', 'https://api-sandbox.ezmeterai.id')
+EMATERAI_API_KEY = os.getenv('EMATERAI_API_KEY', '')
+EMATERAI_PAGE = os.getenv('EMATERAI_PAGE', 'last')
+EMATERAI_POS_LLX = float(os.getenv('EMATERAI_POS_LLX', '63.0'))
+EMATERAI_POS_LLY = float(os.getenv('EMATERAI_POS_LLY', '125.0'))
+EMATERAI_POS_URX = float(os.getenv('EMATERAI_POS_URX', '117.0'))
+EMATERAI_POS_URY = float(os.getenv('EMATERAI_POS_URY', '177.0'))
+

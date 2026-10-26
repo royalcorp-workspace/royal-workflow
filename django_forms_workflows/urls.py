@@ -1,5 +1,6 @@
 from django.urls import include, path
 
+from . import signing_views
 from . import views
 from .payments import views as payment_views
 from .reporting_views import analytics_dashboard, analytics_export_csv
@@ -9,6 +10,22 @@ from .sync_views import sync_export_view, sync_import_view
 app_name = "forms_workflows"
 
 urlpatterns = [
+    # Public signing portal for external store partners (Stage 4 SPK)
+    path(
+        "spk/sign/<uuid:token>/",
+        signing_views.public_spk_signing_view,
+        name="public_spk_signing",
+    ),
+    path(
+        "spk/sign/<uuid:token>/submit/",
+        signing_views.public_spk_submit_signature,
+        name="public_spk_submit_signature",
+    ),
+    path(
+        "spk/sign/<uuid:token>/reject/",
+        signing_views.public_spk_reject_view,
+        name="public_spk_reject",
+    ),
     # Form list and submission
     path("", views.form_list, name="form_list"),
     path("<slug:slug>/submit/", views.form_submit, name="form_submit"),
@@ -53,6 +70,17 @@ urlpatterns = [
         views.submission_pdf,
         name="submission_pdf",
     ),
+    path(
+        "submissions/<int:submission_id>/pdf/<str:filename>",
+        views.submission_pdf,
+        name="submission_pdf_named",
+    ),
+    path(
+        "submissions/<int:submission_id>/retry-ematerai/",
+        views.retry_ematerai_stamping,
+        name="retry_ematerai_stamping",
+    ),
+
     # Bulk export
     path(
         "submissions/bulk-export/",

@@ -12,7 +12,28 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/enterprise-tables.css' %}">
-<link rel="stylesheet" href="{% static 'css/document-review.css' %}">
+<link rel="stylesheet" href="{% static 'css/document-review.css' %}?v=2.1">
+<style>
+.btn-download-pdf {
+    background-color: #fff5f5 !important;
+    border: 1px solid #fca5a5 !important;
+    color: #dc2626 !important;
+    font-weight: 500 !important;
+    white-space: nowrap !important;
+}
+.btn-download-pdf i {
+    color: #dc2626 !important;
+}
+.btn-download-pdf:hover, .btn-download-pdf:focus {
+    background-color: #dc2626 !important;
+    border-color: #dc2626 !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.28) !important;
+}
+.btn-download-pdf:hover i, .btn-download-pdf:focus i {
+    color: #ffffff !important;
+}
+</style>
 {% endblock %}
 
 {% block content %}
@@ -59,37 +80,62 @@
             <span><i class="bi bi-folder2 me-1"></i>{{ submission.form_definition.category.name }}</span>
             <span>&bull;</span>
             {% endif %}
-            <span><i class="bi bi-person me-1"></i>{{ submission.submitter.get_full_name|default:submission.submitter.username|default:"Anonymous" }}</span>
+            <span><i class="bi bi-person me-1"></i>{% if submission.submitter %}{{ submission.submitter.get_full_name|default:submission.submitter.username }}{% else %}Anonymous{% endif %}</span>
             <span>&bull;</span>
             <span><i class="bi bi-calendar3 me-1"></i>{{ submission.created_at|date:"Y-m-d H:i" }}</span>
           </div>
         </div>
 
         {# Right: Top Action Bar (Download PDF & Back to Submissions) #}
-        <div class="d-flex align-items-center gap-2 flex-wrap">
+        <div class="d-flex align-items-center gap-2 flex-wrap flex-sm-nowrap w-100 w-md-auto justify-content-start justify-content-md-end">
+          {% if submission.stamped_document %}
+            {% if submission.stamped_document.status == 'stamped' %}
+              <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1.5 d-inline-flex align-items-center gap-1 font-monospace" style="font-size: 11px;">
+                <i class="bi bi-patch-check-fill text-success"></i>
+                <span>e-Meterai Resmi</span>
+              </span>
+            {% elif submission.stamped_document.status == 'in_progress' %}
+              <span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-1.5 d-inline-flex align-items-center gap-1 font-monospace" style="font-size: 11px;">
+                <span class="spinner-border spinner-border-sm" role="status" style="width: 0.75rem; height: 0.75rem;"></span>
+                <span>Proses e-Meterai...</span>
+              </span>
+            {% elif submission.stamped_document.status == 'failed' %}
+              <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1.5 d-inline-flex align-items-center gap-1 font-monospace" style="font-size: 11px;" title="{{ submission.stamped_document.error_message }}">
+                <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+                <span>e-Meterai Gagal</span>
+              </span>
+              <form method="post" action="{% url 'forms_workflows:retry_ematerai_stamping' submission.id %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-warning d-inline-flex align-items-center gap-1" title="Coba ulang pembubuhan e-Meterai">
+                  <i class="bi bi-arrow-repeat"></i>
+                  <span>Retry e-Meterai</span>
+                </button>
+              </form>
+            {% endif %}
+          {% elif submission.status == 'approved' and submission.form_definition.slug == 'permohonan-kontrak' %}
+            <form method="post" action="{% url 'forms_workflows:retry_ematerai_stamping' submission.id %}" class="d-inline">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" title="Bubuhkan e-Meterai resmi ke dokumen SPK">
+                <i class="bi bi-patch-plus"></i>
+                <span>Bubuhkan e-Meterai</span>
+              </button>
+            </form>
+          {% endif %}
+
           {% with pdf=submission.form_definition.pdf_generation %}
-            {% if pdf == 'anytime' and submission.status != 'draft' %}
-              <a href="{% url 'forms_workflows:submission_pdf' submission.id %}" target="_blank" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1.5">
-                <i class="bi bi-file-earmark-pdf"></i>
-                <span>Download PDF</span>
-              </a>
-            {% elif pdf == 'post_approval' and submission.status == 'approved' %}
-              <a href="{% url 'forms_workflows:submission_pdf' submission.id %}" target="_blank" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1.5">
-                <i class="bi bi-file-earmark-pdf"></i>
-                <span>Download PDF</span>
-              </a>
-            {% elif can_approve_pdf and submission.status != 'draft' %}
-              <a href="{% url 'forms_workflows:submission_pdf' submission.id %}" target="_blank" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1.5">
-                <i class="bi bi-file-earmark-pdf"></i>
-                <span>Download PDF</span>
+            {% if pdf == 'anytime' and submission.status != 'draft' or pdf == 'post_approval' and submission.status == 'approved' or can_approve_pdf and submission.status != 'draft' %}
+              <a href="{% url 'forms_workflows:submission_pdf' submission.id %}SPK_Submission_{{ submission.id }}.pdf" target="_blank" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;" title="Buka dokumen PDF di tab baru">
+                <i class="bi bi-file-earmark-pdf-fill text-danger"></i>
+                <span>PDF</span>
               </a>
             {% endif %}
           {% endwith %}
-          <a href="{% url 'forms_workflows:my_submissions' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1.5">
+          <a href="{% url 'forms_workflows:my_submissions' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;">
             <i class="bi bi-arrow-left"></i>
             <span>Back to Submissions</span>
           </a>
         </div>
+
 
       </div>
     </div>
@@ -102,14 +148,14 @@
       <span class="text-muted small">Reference: #{{ submission.id }}</span>
     </div>
     <div class="doc-card-body">
-      <div class="row g-3">
-        <div class="col-sm-6 col-md-3">
+      <div class="row g-2 g-md-3 overview-grid">
+        <div class="col-6 col-md-3">
           <div class="kv-card-cell">
             <div class="kv-label">Submitter</div>
-            <div class="kv-value">{{ submission.submitter.get_full_name|default:submission.submitter.username|default:"Anonymous" }}</div>
+            <div class="kv-value">{% if submission.submitter %}{{ submission.submitter.get_full_name|default:submission.submitter.username }}{% else %}Anonymous{% endif %}</div>
           </div>
         </div>
-        <div class="col-sm-6 col-md-3">
+        <div class="col-6 col-md-3">
           <div class="kv-card-cell">
             <div class="kv-label">Date Submitted</div>
             <div class="kv-value">
@@ -121,7 +167,7 @@
             </div>
           </div>
         </div>
-        <div class="col-sm-6 col-md-3">
+        <div class="col-6 col-md-3">
           <div class="kv-card-cell">
             <div class="kv-label">Current Status</div>
             <div class="kv-value">
@@ -141,7 +187,7 @@
             </div>
           </div>
         </div>
-        <div class="col-sm-6 col-md-3">
+        <div class="col-6 col-md-3">
           <div class="kv-card-cell">
             <div class="kv-label">Completed Date</div>
             <div class="kv-value">
@@ -173,44 +219,74 @@
   <div class="doc-card mb-3">
     <div class="doc-card-header">
       <span class="doc-card-title">Approval Step Responses</span>
-      <span class="text-muted small">Recorded during review</span>
+      <span class="text-muted small">{{ approval_step_sections|length }} completed stages</span>
     </div>
-    <div class="doc-card-body p-0">
-      {% for section in approval_step_sections %}
-      <div class="p-3 {% if not forloop.last %}border-bottom{% endif %}">
-        <div class="d-flex align-items-center justify-content-between mb-2">
-          <div>
-            <span class="fw-bold text-dark" style="font-size: 14px;">{{ section.display_label|default:section.step_name }}</span>
-            {% if section.completed_by %}
-            <span class="text-muted small ms-2">by <strong>{{ section.completed_by }}</strong></span>
-            {% endif %}
-          </div>
-          {% if section.status == "approved" %}
-            <span class="badge-status-pill badge-status-approved"><i class="bi bi-check me-1"></i>Approved</span>
-          {% elif section.status == "rejected" %}
-            <span class="badge-status-pill badge-status-rejected"><i class="bi bi-x me-1"></i>Rejected</span>
-          {% endif %}
-        </div>
-        {% if section.comments %}
-        <div class="comment-quote-box mb-3">
-          <i class="bi bi-chat-quote me-1 text-muted"></i>
-          <span class="fst-italic">&#8220;{{ section.comments }}&#8221;</span>
-        </div>
-        {% endif %}
-        {% if section.fields %}
-        <div class="row g-2">
-          {% for field in section.fields %}
-          <div class="col-md-6">
-            <div class="kv-card-cell">
-              <div class="kv-label">{{ field.label }}</div>
-              <div class="kv-value small">{{ field.value|default:"—" }}</div>
+    <div class="doc-card-body">
+      <div class="timeline-container">
+        {% for section in approval_step_sections %}
+          <div class="timeline-item">
+            <div class="timeline-dot {% if section.status == 'rejected' %}timeline-dot-rejected{% endif %}">
+              {% if section.status == 'rejected' %}
+                <i class="bi bi-x-lg" style="font-size: 10px;"></i>
+              {% else %}
+                <i class="bi bi-check-lg" style="font-size: 12px;"></i>
+              {% endif %}
+            </div>
+            <div class="timeline-card">
+              {# Detail Kolom Kiri #}
+              <div class="timeline-content-left flex-grow-1 pe-md-3">
+                <div class="timeline-step-title">
+                  {{ section.display_label|default:section.step_name }}
+                </div>
+                <div class="timeline-reviewer">
+                  oleh <strong class="text-dark">{{ section.completed_by|default:"Reviewer" }}</strong>
+                  {% if section.is_surrogate %}
+                    <span class="text-secondary">(on behalf of {{ section.assigned_to }})</span>
+                  {% endif %}
+                </div>
+
+                {% if section.comments %}
+                  <div class="timeline-quote-box">
+                    <i class="bi bi-chat-left-text me-1 text-muted"></i>
+                    <span class="fst-italic">&#8220;{{ section.comments }}&#8221;</span>
+                  </div>
+                {% endif %}
+
+                {% if section.fields %}
+                  <div class="mt-2.5 pt-2 border-top">
+                    <div class="row g-2">
+                      {% for field in section.fields %}
+                        <div class="col-md-6">
+                          <div class="kv-card-cell">
+                            <div class="kv-label">{{ field.label }}</div>
+                            <div class="kv-value" style="font-size: 13px;">{{ field.value|default:"—" }}</div>
+                          </div>
+                        </div>
+                      {% endfor %}
+                    </div>
+                  </div>
+                {% endif %}
+              </div>
+
+              {# Kolom Kanan (Timestamp & Badge) #}
+              <div class="timeline-content-right d-flex flex-column align-items-end justify-content-center gap-1.5 flex-shrink-0 text-end">
+                {% if section.completed_at %}
+                  <span class="timeline-timestamp">{{ section.completed_at|date:"M d, Y H:i" }}</span>
+                {% endif %}
+                {% if section.status == "approved" %}
+                  <span class="timeline-badge-approved">
+                    <i class="bi bi-check-lg" style="font-size: 11px;"></i> Approved
+                  </span>
+                {% elif section.status == "rejected" %}
+                  <span class="timeline-badge-rejected">
+                    <i class="bi bi-x-lg" style="font-size: 11px;"></i> Rejected
+                  </span>
+                {% endif %}
+              </div>
             </div>
           </div>
-          {% endfor %}
-        </div>
-        {% endif %}
+        {% endfor %}
       </div>
-      {% endfor %}
     </div>
   </div>
   {% endif %}
@@ -252,22 +328,24 @@
             </div>
 
             <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-1 mb-1">
-              <div>
+              <div class="min-w-0" style="min-width: 0; word-break: break-word;">
                 <span class="fw-bold text-dark" style="font-size: 13.5px;">{{ task.display_label }}</span>
-                <span class="text-muted small ms-2">
+                <span class="text-muted small ms-md-2 d-block d-md-inline">
                   Assignee:
                   <strong>
                     {% if task.assigned_to %}
                       {{ task.assigned_to.get_full_name|default:task.assigned_to.username }}
                     {% elif task.assigned_group %}
                       {{ task.assigned_group.name }}
+                    {% elif task.status == 'skipped' %}
+                      <span class="text-muted">Auto-Skipped by System</span>
                     {% else %}
-                      Unassigned
+                      <span class="text-muted">-</span>
                     {% endif %}
                   </strong>
                 </span>
               </div>
-              <div>
+              <div class="flex-shrink-0 mt-1 mt-md-0">
                 {% if task.status == 'approved' %}
                   <span class="badge-status-pill badge-status-approved"><i class="bi bi-check me-1"></i>Approved</span>
                 {% elif task.status == 'rejected' %}
@@ -286,7 +364,19 @@
 
             <div class="text-muted small mb-1" style="font-size: 12px;">
               {% if task.completed_at %}
-                Decided by <strong>{{ task.completed_by.get_full_name|default:task.completed_by.username }}</strong> on {{ task.completed_at|date:"Y-m-d H:i" }}
+                Decided by <strong>
+                  {% if task.completed_by %}
+                    {{ task.completed_by.get_full_name|default:task.completed_by.username }}
+                  {% elif task.assigned_to %}
+                    {{ task.assigned_to.get_full_name|default:task.assigned_to.username }}
+                  {% elif task.assigned_group %}
+                    {{ task.assigned_group.name }}
+                  {% elif task.status == 'skipped' %}
+                    <span class="text-muted">Auto-Skipped by System</span>
+                  {% else %}
+                    <span class="text-muted">-</span>
+                  {% endif %}
+                </strong> on {{ task.completed_at|date:"Y-m-d H:i" }}
               {% else %}
                 Created on {{ task.created_at|date:"Y-m-d H:i" }}
               {% endif %}

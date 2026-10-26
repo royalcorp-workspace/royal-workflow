@@ -8,7 +8,7 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'django_forms_workflows/css/forms.css' %}">
-<link rel="stylesheet" href="{% static 'django_forms_workflows/css/kontrak-form.css' %}">
+<link rel="stylesheet" href="{% static 'django_forms_workflows/css/kontrak-form.css' %}?v=20261023_v1">
 <style>
     /* ── Enterprise Document UI Styling ── */
     .form-document-card {
@@ -249,7 +249,7 @@
                 <div class="d-flex justify-content-between align-items-center mt-4 pt-3 border-top w-100 form-wizard-footer">
                     <div class="footer-left-actions d-flex gap-2 align-items-center">
                         <a href="{% url 'forms_workflows:form_list' %}" class="btn btn-outline-secondary btn-back-to-forms" id="btnBackToForms">
-                            <i class="bi bi-arrow-left me-1"></i> Kembali ke Daftar Form
+                            <i class="bi bi-arrow-left me-1"></i> <span class="d-none d-sm-inline">Kembali ke Daftar Form</span><span class="d-sm-none">Daftar Form</span>
                         </a>
                         {% if form_def.enable_multi_step %}
                         <button type="button" class="btn btn-outline-secondary btn-wizard-prev d-none" id="btnWizardPrev">
@@ -269,15 +269,12 @@
                         </button>
                         {% endif %}
                         {% if form_def.enable_multi_step %}
-                        <button type="button" class="btn btn-outline-secondary btn-preview-spk d-none" id="btnPreviewSPK">
-                            <i class="bi bi-file-earmark-text me-1"></i> Preview SPK
-                        </button>
                         <button type="button" class="btn btn-primary btn-wizard-next" id="btnWizardNext">
                             <span id="btnWizardNextText">Lanjut Detail Kontrak</span> <i class="bi bi-arrow-right ms-1"></i>
                         </button>
                         {% endif %}
                         <button type="submit" name="action" value="submit" class="btn btn-primary btn-wizard-submit {% if form_def.enable_multi_step %}d-none{% endif %}" id="btnSubmitApplication">
-                            <i class="bi bi-check2-circle me-1"></i> Submit Pengajuan
+                            <i class="bi bi-check2-circle me-1"></i> Submit
                         </button>
                     </div>
                 </div>

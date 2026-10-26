@@ -23,19 +23,119 @@ submission data satisfies the rule set, or when ``conditions`` is
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
+def extract_target_value(form_data: dict | None) -> int:
+    """Extract and normalize numerical target value from submission form data.
+
+    Supports:
+    1. Direct 'nilai_target' (integer, float, or formatted currency string e.g. 'Rp 80.000.000').
+    2. 'target_incentive' JSON string / list with [{'target_bulanan': 80000000, ...}].
+    3. 'tier_support' JSON string / list with [{'target_tahunan': 80000000, ...}].
+    """
+    if not form_data or not isinstance(form_data, dict):
+        return 0
+
+    # 1. Cek jika nilai_target sudah ada dan bernilai valid
+    raw_val = form_data.get("nilai_target")
+    if raw_val is not None and str(raw_val).strip() != "":
+        coerced = _coerce_numeric(raw_val)
+        if coerced is not None and coerced > 0:
+            return int(coerced)
+
+    # 2. Ekstrak dari target_incentive (JSON string array atau list dict)
+    raw_incentive = form_data.get("target_incentive")
+    if raw_incentive:
+        try:
+            if isinstance(raw_incentive, str):
+                data_list = json.loads(raw_incentive)
+            else:
+                data_list = raw_incentive
+
+            if isinstance(data_list, list) and len(data_list) > 0:
+                targets = []
+                for item in data_list:
+                    if isinstance(item, dict):
+                        tb = item.get("target_bulanan")
+                        if tb is not None:
+                            coerced_tb = _coerce_numeric(tb)
+                            if coerced_tb is not None:
+                                targets.append(int(coerced_tb))
+                if targets:
+                    return max(targets)
+        except Exception:
+            pass
+
+    # 3. Fallback: Ekstrak dari tier_support jika ada target_tahunan
+    raw_tier = form_data.get("tier_support")
+    if raw_tier:
+        try:
+            if isinstance(raw_tier, str):
+                tier_list = json.loads(raw_tier)
+            else:
+                tier_list = raw_tier
+
+            if isinstance(tier_list, list) and len(tier_list) > 0:
+                tier_targets = []
+                for item in tier_list:
+                    if isinstance(item, dict):
+                        tt = item.get("target_tahunan")
+                        if tt is not None:
+                            coerced_tt = _coerce_numeric(tt)
+                            if coerced_tt is not None:
+                                tier_targets.append(int(coerced_tt))
+                if tier_targets and max(tier_targets) > 0:
+                    return max(tier_targets)
+        except Exception:
+            pass
+
+    return 0
+
+
 def _coerce_numeric(val: Any) -> Decimal | None:
-    """Try to coerce a value to Decimal for numeric comparisons."""
+    """Try to coerce a value to Decimal for numeric comparisons.
+    Handles int, float, Decimal, and formatted currency strings (e.g. 'Rp 80.000.000', '80,000,000').
+    """
     if val is None:
         return None
-    try:
+    if isinstance(val, (int, float, Decimal)):
         return Decimal(str(val))
+    val_str = str(val).strip()
+    try:
+        return Decimal(val_str)
+    except (InvalidOperation, ValueError, TypeError):
+        pass
+
+    # Clean non-numeric characters (strip Rp, commas/dots as thousands)
+    cleaned = re.sub(r"[^\d.,\-]", "", val_str)
+    if not cleaned:
+        return None
+
+    if "." in cleaned and "," in cleaned:
+        if cleaned.rfind(",") > cleaned.rfind("."):
+            cleaned = cleaned.replace(".", "").replace(",", ".")
+        else:
+            cleaned = cleaned.replace(",", "")
+    elif "." in cleaned:
+        parts = cleaned.split(".")
+        if len(parts) > 2 or (len(parts) == 2 and len(parts[1]) == 3 and parts[0] != "0"):
+            cleaned = cleaned.replace(".", "")
+    elif "," in cleaned:
+        parts = cleaned.split(",")
+        if len(parts) > 2 or (len(parts) == 2 and len(parts[1]) == 3 and parts[0] != "0"):
+            cleaned = cleaned.replace(",", "")
+        else:
+            cleaned = cleaned.replace(",", ".")
+
+    try:
+        return Decimal(cleaned)
     except (InvalidOperation, ValueError, TypeError):
         return None
 
@@ -68,7 +168,15 @@ def _evaluate_single(condition: dict, data: dict) -> bool:
     operator = operator_map.get(raw_operator, raw_operator.lower())
     expected = condition.get("value")
 
-    actual = data.get(field)
+    actual = data.get(field) if isinstance(data, dict) else None
+
+    # Fallback normalizer for 'nilai_target' if missing or None
+    if field == "nilai_target" and (actual is None or str(actual).strip() in ("", "None", "0")):
+        extracted = extract_target_value(data)
+        if extracted:
+            actual = extracted
+            if isinstance(data, dict):
+                data["nilai_target"] = extracted
 
     # Presence / absence operators (no expected value needed)
     if operator == "not_empty":
