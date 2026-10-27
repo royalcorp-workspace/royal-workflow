@@ -95,14 +95,6 @@ def forms_workflows(request):
                 })
 
 
-            for c_val in cat_map.values():
-                if len(c_val["forms"]) == 1 and "SALES & MARKETING" in c_val["category_name"].upper():
-                    c_val["extra_mock_forms"] = [
-                        {"name": "Form B (Promo & Claim Ritel)", "badge": "Draft"},
-                        {"name": "Form C (Pengajuan Display)", "badge": "Draft"},
-                        {"name": "Form D (Sponsorship)", "badge": "Draft"},
-                    ]
-
             sidebar_categories = list(cat_map.values())
         except Exception:
             sidebar_categories = []

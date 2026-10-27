@@ -453,7 +453,7 @@ class EMeteraiService:
 
         elements.append(
             Paragraph(
-                f"Dalam upaya meningkatkan kerjasama dalam penjualan produk {brand}, kedua belah pihak di atas sepakat untuk "
+                f"Dalam upaya meningkatkan kerjasama dalam penjualan produk <b>{brand}</b>, kedua belah pihak di atas sepakat untuk "
                 f"menandatangani kontrak perjanjian kerja sama dengan mengikuti syarat – syarat dan ketentuan – ketentuan sebagai berikut :",
                 body_style,
             )
@@ -464,8 +464,8 @@ class EMeteraiService:
         elements.append(Paragraph("<u><b>Pasal 1</b></u>", pasal_heading_style))
         elements.append(
             Paragraph(
-                f"Pihak Pertama menitipkan/menjual kepada Pihak Kedua Produk Springbed dengan merk “ {brand} “ untuk dijual oleh Pihak Kedua "
-                f"pada tempat yang telah diberitahukan dan disetujui oleh Pihak Pertama dengan mengacu pada ketentuan Volume dan Harga Penjualan yang telah di sepakati.",
+                f"<b>Pihak Pertama</b> menitipkan/menjual kepada <b>Pihak Kedua</b> Produk Springbed dengan merk “ <b>{brand}</b> “ untuk dijual oleh <b>Pihak Kedua</b> "
+                f"pada tempat yang telah diberitahukan dan disetujui oleh <b>Pihak Pertama</b> dengan mengacu pada ketentuan Volume dan Harga Penjualan yang telah di sepakati.",
                 body_style,
             )
         )
@@ -482,8 +482,8 @@ class EMeteraiService:
         elements.append(Paragraph("<b>BAB II<br/>VOLUME PENJUALAN dan PENGHARGAAN – PERIODE KONTRAK - SKEMA DISCOUNT</b>", bab_heading_style))
         elements.append(Paragraph("<u><b>Pasal 3</b></u>", pasal_heading_style))
         p3_text = (
-            f"1. Para Pihak sepakat bahwa Target Volume Penjualan produk selama jangka waktu perjanjian ini <b>{target_rp}</b> per bulan Exclude Ppn.<br/>"
-            f"2. Pihak Kedua wajib memenuhi Volume Penjualan yang telah ditentukan dalam perjanjian ini."
+            f"(1) Para Pihak sepakat bahwa Target Volume Penjualan produk selama jangka waktu perjanjian ini <b>{target_rp}</b> per bulan Exclude Ppn.<br/>"
+            f"(2) Pihak Kedua wajib memenuhi Volume Penjualan yang telah ditentukan dalam perjanjian ini."
         )
         elements.append(Paragraph(p3_text, body_style))
 

@@ -49,7 +49,7 @@
                   {{ field.value|render_boolean_badge:field.label }}
                 {% elif field.value|is_grid_data %}
                   <div class="table-responsive-custom">
-                    {{ field.value|render_grid_table }}
+                    {{ field.value|render_grid_table:submission.form_data.brand }}
                   </div>
                 {% elif field.value|is_callout_note %}
                   {{ field.value|render_callout_note }}

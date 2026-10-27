@@ -6,6 +6,8 @@
 (function () {
     'use strict';
 
+    const STORAGE_KEY = 'royal_kontrak_form_draft';
+
     document.addEventListener('DOMContentLoaded', function () {
         initKontrakFormWidgets();
     });
@@ -28,7 +30,6 @@
 
         console.log('[KontrakGridWidget] Initializing Permohonan Kontrak widgets...');
 
-        const STORAGE_KEY = 'royal_kontrak_form_draft';
         let hasRestoredDraft = false;
 
         // Clean initial state for fresh new submissions
@@ -63,28 +64,21 @@
                     if (radio) radio.checked = true;
                 } else {
                     if (val !== undefined && val !== null) {
-                        el.value = val;
+                        let finalVal = val;
+                        if (name === 'metode_pembayaran') {
+                            const u = String(val).trim().toUpperCase();
+                            if (u.includes('TRANSFER')) finalVal = 'Transfer';
+                            else if (u.includes('GIRO')) finalVal = 'Giro';
+                            else if (u.includes('CEK')) finalVal = 'Cek';
+                        }
+                        el.value = finalVal;
                     }
                 }
             });
             hasRestoredDraft = true;
-            showDiscardDraftButton(form, true);
             // Refresh summary and preview tabs if currently rendered
             renderSummaryTab(form);
             renderSPKTab(form);
-        }
-
-        // Check if draft exists in localStorage - do NOT auto-fill; prompt user first
-        try {
-            const rawDraft = localStorage.getItem(STORAGE_KEY);
-            if (rawDraft) {
-                const draftData = JSON.parse(rawDraft);
-                if (draftData && typeof draftData === 'object' && hasMeaningfulData(draftData)) {
-                    showDraftAvailablePrompt(form, draftData, applyDraftData);
-                }
-            }
-        } catch (e) {
-            console.warn('[KontrakDraft] Error checking saved draft:', e);
         }
 
         // 0. Lock Readonly Fields & Force Slate-200 Tone
@@ -95,6 +89,12 @@
 
         // 2. Setup JDE Lookup
         setupJDELookup(form);
+
+        // 2b. Setup Jenis Identitas & Nomor Identitas Validation
+        setupIdentitasValidation(form);
+
+        // 2c. Setup Metode Pembayaran (Transfer, Cek, Giro)
+        setupMetodePembayaran(form);
 
         // 3. Setup Durasi Calculation
         setupDurasiCalculation(form);
@@ -118,8 +118,7 @@
         // 7. Setup Wizard Footer Actions & Stepper Navigation
         setupWizardFooter(form);
 
-        // Re-render grids and trigger dynamic updates if draft was restored
-        if (hasRestoredDraft) {
+        function refreshAllGridsAndHeaders() {
             if (window.renderAssetGrid) window.renderAssetGrid();
             if (window.renderMarketGrid) window.renderMarketGrid();
             if (window.renderTargetGrid) window.renderTargetGrid();
@@ -137,14 +136,69 @@
                 cabangSelect.dispatchEvent(new Event('change', { bubbles: true }));
                 cabangSelect.dispatchEvent(new Event('input', { bubbles: true }));
             }
+            const jpSelect = form.querySelector('[name="jenis_pajak"]');
+            if (jpSelect && jpSelect.value) {
+                jpSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            }
 
-            // Display restored notification banner
-            showDraftRestoredAlert(form);
-            updateAutoSaveStatus('saved');
+            if (typeof form._validateNomorIdentitas === 'function') {
+                form._validateNomorIdentitas(false);
+            }
+
+            updateAutoSaveStatus('saved_server');
         }
 
-        // 8. Setup Client-side Draft Persistence & Auto-save
-        setupFormPersistence(form, hasRestoredDraft);
+        // 8. Auto-restore or Prompt for Existing Draft
+        const urlParams = new URLSearchParams(window.location.search);
+        const isExplicitDraftUrl = urlParams.has('draft') || urlParams.has('draft_id');
+        const isPageReload = (window.performance && window.performance.getEntriesByType && window.performance.getEntriesByType('navigation')[0]?.type === 'reload');
+
+        // Check for server draft data embedded in template
+        let serverDraftData = null;
+        const serverDraftMeta = document.getElementById('activeServerDraftMeta');
+        const scriptEl = document.getElementById('active_server_draft_data');
+        if (scriptEl && scriptEl.textContent) {
+            try {
+                serverDraftData = JSON.parse(scriptEl.textContent);
+            } catch (e) {}
+        }
+
+        // Check for local draft data in localStorage
+        let localDraftData = null;
+        try {
+            const rawDraft = localStorage.getItem(STORAGE_KEY);
+            if (rawDraft) {
+                localDraftData = JSON.parse(rawDraft);
+            }
+        } catch (e) {}
+
+        const candidateDraftData = (localDraftData && hasMeaningfulData(localDraftData)) ? localDraftData : (serverDraftData && hasMeaningfulData(serverDraftData) ? serverDraftData : null);
+
+        if (candidateDraftData) {
+            if (isExplicitDraftUrl || isPageReload) {
+                // User explicitly clicked "Lanjutkan Draft" from hub or refreshed the page (F5)
+                applyDraftData(candidateDraftData);
+                if (serverDraftMeta && serverDraftMeta.dataset.draftId) {
+                    form.dataset.currentDraftId = serverDraftMeta.dataset.draftId;
+                }
+                refreshAllGridsAndHeaders();
+            } else {
+                // User clicked "+ Buat Pengajuan Baru": Show interactive modal prompt!
+                showDraftPromptModal(form, candidateDraftData, serverDraftMeta, () => {
+                    applyDraftData(candidateDraftData);
+                    if (serverDraftMeta && serverDraftMeta.dataset.draftId) {
+                        form.dataset.currentDraftId = serverDraftMeta.dataset.draftId;
+                    }
+                    refreshAllGridsAndHeaders();
+                });
+                updateAutoSaveStatus('idle');
+            }
+        } else {
+            updateAutoSaveStatus('idle');
+        }
+
+        // 9. Setup Client-side Draft Persistence & Auto-save
+        setupFormPersistence(form);
     }
 
     /* --------------------------------------------------------------------------
@@ -276,13 +330,101 @@
      * -------------------------------------------------------------------------- */
     function formatRupiah(num) {
         if (num === null || num === undefined || isNaN(num)) return '0';
-        return Number(num).toLocaleString('id-ID');
+        return Math.round(Number(num)).toLocaleString('id-ID');
     }
 
     function parseRupiah(val) {
         if (!val) return 0;
-        const cleaned = String(val).replace(/[^0-9.-]/g, '');
-        return parseFloat(cleaned) || 0;
+        // In Indonesian locale, '.' is thousands separator. Remove dots, normalize comma to dot.
+        const s = String(val).trim().replace(/\./g, '').replace(/,/g, '.').replace(/[^0-9.-]/g, '');
+        return Math.round(parseFloat(s)) || 0;
+    }
+
+    /**
+     * Attach currency input behavior to an input element
+     * - Real-time keystroke blocking (digits 0-9 only, blocks letters & symbols)
+     * - Live thousands separator formatting (e.g. 1.000.000)
+     * - Auto-select content on focus when current value is '0'
+     * - Restores '0' on blur if field is left completely empty
+     */
+    function attachCurrencyInputBehavior(input, onValueChange) {
+        if (!input || input.readOnly || input.dataset.currencyAttached) return;
+        input.dataset.currencyAttached = 'true';
+        input.setAttribute('inputmode', 'numeric');
+        input.setAttribute('autocomplete', 'off');
+
+        // 1. Auto-select text on focus if current value is '0'
+        input.addEventListener('focus', function () {
+            if (this.value.trim() === '0') {
+                this.select();
+            }
+        });
+
+        // 2. Keydown: directly block non-numeric characters before they appear
+        input.addEventListener('keydown', function (e) {
+            // Control keys: backspace, delete, tab, escape, enter, arrows, home, end
+            const allowedKeys = ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home', 'End'];
+            if (allowedKeys.includes(e.key)) return;
+
+            // Allow Ctrl / Meta combinations (Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+Z, Ctrl+Y)
+            if (e.ctrlKey || e.metaKey) return;
+
+            // Reject anything not digit 0-9
+            if (!/^[0-9]$/.test(e.key)) {
+                e.preventDefault();
+            }
+        });
+
+        // 3. Live input: filter digits, live format with dot thousands separator, preserve cursor
+        input.addEventListener('input', function () {
+            const raw = this.value;
+            const digits = raw.replace(/\D/g, '');
+            const cursorPosition = this.selectionStart;
+            const oldLength = raw.length;
+
+            if (!digits) {
+                this.value = '';
+            } else {
+                const num = parseInt(digits, 10);
+                const formatted = Number(num).toLocaleString('id-ID');
+                this.value = formatted;
+
+                // Adjust cursor position gracefully
+                const newLength = formatted.length;
+                const diff = newLength - oldLength;
+                const newCursor = Math.max(0, cursorPosition + diff);
+                this.setSelectionRange(newCursor, newCursor);
+            }
+
+            if (typeof onValueChange === 'function') {
+                onValueChange(parseRupiah(this.value));
+            }
+        });
+
+        // 4. Blur: if empty, restore '0' and format properly
+        input.addEventListener('blur', function () {
+            if (this.value.trim() === '') {
+                this.value = '0';
+                if (typeof onValueChange === 'function') {
+                    onValueChange(0);
+                }
+            } else {
+                const val = parseRupiah(this.value);
+                this.value = formatRupiah(val);
+                if (typeof onValueChange === 'function') {
+                    onValueChange(val);
+                }
+            }
+        });
+
+        // 5. Change event fallback
+        input.addEventListener('change', function () {
+            const val = parseRupiah(this.value);
+            this.value = formatRupiah(val);
+            if (typeof onValueChange === 'function') {
+                onValueChange(val);
+            }
+        });
     }
 
     /* --------------------------------------------------------------------------
@@ -352,7 +494,14 @@
                         setFieldValue(form, 'nomor_identitas', c.nomor_identitas || c.no_identitas);
                     }
                     if (c.jenis_identitas) {
-                        setFieldValue(form, 'jenis_identitas', c.jenis_identitas);
+                        let cleanJenis = c.jenis_identitas;
+                        if (cleanJenis.includes('/') || cleanJenis.includes('KTP')) {
+                            cleanJenis = 'NIK';
+                        }
+                        setFieldValue(form, 'jenis_identitas', cleanJenis);
+                    }
+                    if (typeof form._validateNomorIdentitas === 'function') {
+                        form._validateNomorIdentitas(false);
                     }
                     if (c.cabang) setFieldValue(form, 'cabang', c.cabang);
                     lockReadonlyFields(form);
@@ -395,8 +544,27 @@
         });
     }
 
+    function formatIndonesianMobile(val) {
+        if (!val) return '';
+        let s = String(val).trim();
+        let digits = s.replace(/[^0-9]/g, '');
+        if (digits.startsWith('62')) {
+            digits = '0' + digits.slice(2);
+        }
+        if (digits.startsWith('08')) {
+            if (digits.length <= 4) return digits;
+            if (digits.length <= 8) return digits.slice(0, 4) + '-' + digits.slice(4);
+            if (digits.length <= 12) return digits.slice(0, 4) + '-' + digits.slice(4, 8) + '-' + digits.slice(8);
+            return digits.slice(0, 4) + '-' + digits.slice(4, 8) + '-' + digits.slice(8, 12) + (digits.length > 12 ? '-' + digits.slice(12) : '');
+        }
+        return s;
+    }
+
     function setFieldValue(form, fieldName, value) {
         if (!value) return;
+        if (fieldName === 'no_telepon') {
+            value = formatIndonesianMobile(value);
+        }
         const el = form.querySelector(`[name="${fieldName}"]`);
         if (el) {
             el.value = value;
@@ -407,6 +575,230 @@
                     window.jQuery(el).trigger('input').trigger('change');
                 } catch (e) {}
             }
+        }
+    }
+
+    /* --------------------------------------------------------------------------
+     * 1b. Setup Jenis Identitas & Nomor Identitas Validation
+     * -------------------------------------------------------------------------- */
+    function setupIdentitasValidation(form) {
+        const jenisSelect = form.querySelector('[name="jenis_identitas"]');
+        const nomorInput = form.querySelector('[name="nomor_identitas"]');
+        if (!jenisSelect && !nomorInput) return;
+
+        // 1. Bersihkan pilihan dropdown: hanya sediakan NIK dan NPWP (hapus NIK / NPWP)
+        if (jenisSelect) {
+            const options = Array.from(jenisSelect.options);
+            let hasNIK = false;
+            let hasNPWP = false;
+
+            options.forEach(opt => {
+                const val = (opt.value || '').trim();
+                const text = (opt.text || '').trim();
+
+                // Hapus opsi kombinasi "NIK / NPWP"
+                if (val.includes('/') || text.includes('/')) {
+                    opt.remove();
+                } else if (val.toUpperCase().includes('NIK') || text.toUpperCase().includes('NIK')) {
+                    opt.value = 'NIK';
+                    opt.textContent = 'NIK';
+                    hasNIK = true;
+                } else if (val.toUpperCase().includes('NPWP') || text.toUpperCase().includes('NPWP')) {
+                    opt.value = 'NPWP';
+                    opt.textContent = 'NPWP';
+                    hasNPWP = true;
+                }
+            });
+
+            if (!hasNIK) {
+                const optNIK = document.createElement('option');
+                optNIK.value = 'NIK';
+                optNIK.textContent = 'NIK';
+                jenisSelect.appendChild(optNIK);
+            }
+            if (!hasNPWP) {
+                const optNPWP = document.createElement('option');
+                optNPWP.value = 'NPWP';
+                optNPWP.textContent = 'NPWP';
+                jenisSelect.appendChild(optNPWP);
+            }
+        }
+
+        if (!nomorInput) return;
+
+        // 2. Setup atribut input
+        nomorInput.setAttribute('inputmode', 'numeric');
+        nomorInput.setAttribute('autocomplete', 'off');
+        nomorInput.setAttribute('maxlength', '16');
+
+        // Wrapper label dinamis
+        const wrapper = nomorInput.closest('.field-wrapper') || nomorInput.closest('.mb-3') || nomorInput.parentElement;
+        const labelEl = wrapper ? wrapper.querySelector('label.form-label, label') : null;
+
+        function updateLabel(jenis) {
+            if (!labelEl) return;
+            if (jenis === 'NIK') {
+                labelEl.innerHTML = 'Nomor NIK <span class="text-danger">*</span>';
+                nomorInput.placeholder = '16 digit NIK (KTP)';
+            } else if (jenis === 'NPWP') {
+                labelEl.innerHTML = 'Nomor NPWP <span class="text-danger">*</span>';
+                nomorInput.placeholder = '15 atau 16 digit NPWP';
+            } else {
+                labelEl.innerHTML = 'Nomor Identitas (NIK / NPWP) <span class="text-danger">*</span>';
+                nomorInput.placeholder = 'Nomor NIK atau NPWP';
+            }
+        }
+
+        // Feedback container
+        let feedbackEl = wrapper ? wrapper.querySelector('.nomor-identitas-feedback') : null;
+        if (!feedbackEl) {
+            feedbackEl = document.createElement('div');
+            feedbackEl.className = 'nomor-identitas-feedback mt-1 small';
+            if (nomorInput.nextSibling) {
+                nomorInput.parentNode.insertBefore(feedbackEl, nomorInput.nextSibling);
+            } else {
+                nomorInput.parentNode.appendChild(feedbackEl);
+            }
+        }
+
+        function validateNomorIdentitas(showErrorIfEmpty = false) {
+            const rawVal = nomorInput.value || '';
+            const digits = rawVal.replace(/\D/g, '');
+            if (rawVal !== digits) {
+                nomorInput.value = digits.slice(0, 16);
+            }
+
+            const val = nomorInput.value.trim();
+            const jenis = (jenisSelect ? jenisSelect.value : '').trim().toUpperCase();
+            updateLabel(jenis);
+
+            nomorInput.classList.remove('is-valid', 'is-invalid');
+            feedbackEl.className = 'nomor-identitas-feedback mt-1 small';
+            feedbackEl.innerHTML = '';
+
+            if (!val) {
+                if (showErrorIfEmpty) {
+                    nomorInput.classList.add('is-invalid');
+                    feedbackEl.className = 'nomor-identitas-feedback mt-1 small text-danger';
+                    feedbackEl.innerHTML = '<i class="bi bi-exclamation-circle me-1"></i> Nomor Identitas wajib diisi.';
+                    return false;
+                }
+                return false;
+            }
+
+            if (jenis === 'NIK') {
+                if (val.length === 16) {
+                    nomorInput.classList.add('is-valid');
+                    feedbackEl.className = 'nomor-identitas-feedback mt-1 small text-success';
+                    feedbackEl.innerHTML = '<i class="bi bi-check-circle me-1"></i> Format NIK 16 digit valid.';
+                    return true;
+                } else {
+                    nomorInput.classList.add('is-invalid');
+                    feedbackEl.className = 'nomor-identitas-feedback mt-1 small text-danger';
+                    feedbackEl.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i> Nomor NIK harus tepat 16 digit angka (saat ini: ${val.length} digit).`;
+                    return false;
+                }
+            } else if (jenis === 'NPWP') {
+                if (val.length === 15 || val.length === 16) {
+                    nomorInput.classList.add('is-valid');
+                    feedbackEl.className = 'nomor-identitas-feedback mt-1 small text-success';
+                    feedbackEl.innerHTML = `<i class="bi bi-check-circle me-1"></i> Format NPWP ${val.length} digit valid.`;
+                    return true;
+                } else {
+                    nomorInput.classList.add('is-invalid');
+                    feedbackEl.className = 'nomor-identitas-feedback mt-1 small text-danger';
+                    feedbackEl.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i> Nomor NPWP harus 15 atau 16 digit angka (saat ini: ${val.length} digit).`;
+                    return false;
+                }
+            } else {
+                nomorInput.classList.add('is-invalid');
+                feedbackEl.className = 'nomor-identitas-feedback mt-1 small text-warning';
+                feedbackEl.innerHTML = '<i class="bi bi-info-circle me-1"></i> Silakan pilih Jenis Identitas (NIK atau NPWP) terlebih dahulu.';
+                return false;
+            }
+        }
+
+        form._validateNomorIdentitas = validateNomorIdentitas;
+
+        // Keydown filter
+        nomorInput.addEventListener('keydown', function (e) {
+            const allowedKeys = ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home', 'End'];
+            if (allowedKeys.includes(e.key)) return;
+            if (e.ctrlKey || e.metaKey) return;
+
+            if (!/^[0-9]$/.test(e.key)) {
+                e.preventDefault();
+                return;
+            }
+
+            const selStart = this.selectionStart;
+            const selEnd = this.selectionEnd;
+            if (selStart === selEnd && this.value.length >= 16) {
+                e.preventDefault();
+            }
+        });
+
+        nomorInput.addEventListener('input', function () {
+            validateNomorIdentitas(false);
+        });
+
+        nomorInput.addEventListener('blur', function () {
+            validateNomorIdentitas(true);
+        });
+
+        if (jenisSelect) {
+            jenisSelect.addEventListener('change', function () {
+                validateNomorIdentitas(nomorInput.value.length > 0);
+            });
+        }
+
+        if (nomorInput.value) {
+            validateNomorIdentitas(false);
+        }
+    }
+
+    /* --------------------------------------------------------------------------
+     * 1c. Setup Metode Pembayaran Dropdown & Migration
+     * -------------------------------------------------------------------------- */
+    function setupMetodePembayaran(form) {
+        const select = form.querySelector('[name="metode_pembayaran"]');
+        if (!select) return;
+
+        const STANDAR_OPSI = ['Transfer', 'Cek', 'Giro'];
+
+        function normalizeMetode(val) {
+            if (!val) return '';
+            const u = String(val).trim().toUpperCase();
+            if (u.includes('TRANSFER')) return 'Transfer';
+            if (u.includes('GIRO')) return 'Giro';
+            if (u.includes('CEK')) return 'Cek';
+            return val;
+        }
+
+        const currentVal = normalizeMetode(select.value);
+
+        const existingOptions = Array.from(select.options);
+        const placeholderOpt = existingOptions.find(o => !o.value || o.value === '');
+        const placeholderText = placeholderOpt ? placeholderOpt.textContent : '-- Pilih Metode Pembayaran --';
+
+        select.innerHTML = '';
+        const emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = placeholderText;
+        select.appendChild(emptyOpt);
+
+        STANDAR_OPSI.forEach(item => {
+            const opt = document.createElement('option');
+            opt.value = item;
+            opt.textContent = item;
+            if (currentVal === item) {
+                opt.selected = true;
+            }
+            select.appendChild(opt);
+        });
+
+        if (currentVal && STANDAR_OPSI.includes(currentVal)) {
+            select.value = currentVal;
         }
     }
 
@@ -617,11 +1009,11 @@
                     <table class="table table-bordered kontrak-grid-table" data-grid="asset_toko">
                         <thead>
                             <tr>
-                                <th style="width: 60px;">No</th>
+                                <th style="width: 50px;" class="text-center">No</th>
                                 <th>Keterangan Aset / Toko</th>
                                 <th>Alamat</th>
-                                <th style="width: 140px;">Status</th>
-                                <th style="width: 60px;" class="text-center">Aksi</th>
+                                <th style="width: 130px;">Status</th>
+                                <th style="width: 50px;" class="text-center">Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -694,6 +1086,61 @@
         field.style.display = 'none';
         const container = createGridContainer(field, 'Data Market Share', 'Estimasi omset bulanan toko vs kompetitor.', 'market_share');
 
+        const STANDAR_BULAN = [
+            'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+            'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+        ];
+
+        function getCurrentBrand() {
+            const brandSelect = form.querySelector('[name="brand"]');
+            return (brandSelect && brandSelect.value) ? brandSelect.value : '';
+        }
+
+        function getMarketShareBrandHeader(brandName) {
+            if (!brandName || typeof brandName !== 'string') {
+                return 'ROYAL / SERENITY (RP)';
+            }
+            const b = brandName.trim().toUpperCase();
+
+            // Aturan Khusus: LADY AMERICANA -> LADY (RP)
+            if (b.includes('LADY')) {
+                return 'LADY (RP)';
+            }
+            if (b.includes('ROYAL') || b.includes('FOAM')) {
+                return 'ROYAL FOAM (RP)';
+            }
+            if (b.includes('SERENITY')) {
+                return 'SERENITY (RP)';
+            }
+            if (b.includes('GRAND')) {
+                return 'GRAND EXCLUSIVE (RP)';
+            }
+            if (b.includes('ELITE')) {
+                return 'ELITE (RP)';
+            }
+
+            return `${b} (RP)`;
+        }
+
+        function renderMonthSelectOptions(selectedValue) {
+            const valClean = (selectedValue || '').trim().toLowerCase();
+            let optionsHtml = '<option value="">-- Pilih Bulan --</option>';
+            let isMatched = false;
+
+            STANDAR_BULAN.forEach(b => {
+                const isSelected = (valClean === b.toLowerCase());
+                if (isSelected) isMatched = true;
+                optionsHtml += `<option value="${b}" ${isSelected ? 'selected' : ''}>${b}</option>`;
+            });
+
+            // Pertahankan nilai lama jika ada input kustom di data draft sebelumnya
+            if (selectedValue && !isMatched && selectedValue.trim() !== '') {
+                optionsHtml += `<option value="${escapeHtml(selectedValue)}" selected>${escapeHtml(selectedValue)}</option>`;
+            }
+
+            return optionsHtml;
+        }
+
         function getRows() {
             try {
                 return JSON.parse(field.value || '[]');
@@ -716,13 +1163,15 @@
                 saveRows(rows);
             }
 
+            const brandHeader = getMarketShareBrandHeader(getCurrentBrand());
+
             let html = `
                 <div class="table-responsive">
                     <table class="table table-bordered kontrak-grid-table" data-grid="market_share">
                         <thead>
                             <tr>
-                                <th style="width: 120px;">Bulan</th>
-                                <th>Royal / SERENITY (Rp)</th>
+                                <th style="width: 140px;">Bulan</th>
+                                <th id="thMarketShareBrand" style="min-width: 170px;">${brandHeader}</th>
                                 <th>Kompetitor 1 (Rp)</th>
                                 <th>Kompetitor 2 (Rp)</th>
                                 <th>Kompetitor 3 (Rp)</th>
@@ -736,12 +1185,16 @@
             rows.forEach((r, idx) => {
                 html += `
                     <tr data-index="${idx}">
-                        <td><input type="text" class="cell-input" data-key="bulan" value="${escapeHtml(r.bulan || '')}" placeholder="Bulan"></td>
-                        <td><input type="text" class="cell-input cell-num" data-key="serenity" value="${formatRupiah(r.serenity)}"></td>
-                        <td><input type="text" class="cell-input cell-num" data-key="kompetitor_1" value="${formatRupiah(r.kompetitor_1)}"></td>
-                        <td><input type="text" class="cell-input cell-num" data-key="kompetitor_2" value="${formatRupiah(r.kompetitor_2)}"></td>
-                        <td><input type="text" class="cell-input cell-num" data-key="kompetitor_3" value="${formatRupiah(r.kompetitor_3)}"></td>
-                        <td><input type="text" class="cell-input cell-num" data-key="kompetitor_4" value="${formatRupiah(r.kompetitor_4)}"></td>
+                        <td>
+                            <select class="cell-input form-select form-select-sm" data-key="bulan" style="min-width: 130px; font-size: 0.85rem;">
+                                ${renderMonthSelectOptions(r.bulan)}
+                            </select>
+                        </td>
+                        <td><input type="text" inputmode="numeric" class="cell-input cell-num" data-key="serenity" value="${formatRupiah(r.serenity)}"></td>
+                        <td><input type="text" inputmode="numeric" class="cell-input cell-num" data-key="kompetitor_1" value="${formatRupiah(r.kompetitor_1)}"></td>
+                        <td><input type="text" inputmode="numeric" class="cell-input cell-num" data-key="kompetitor_2" value="${formatRupiah(r.kompetitor_2)}"></td>
+                        <td><input type="text" inputmode="numeric" class="cell-input cell-num" data-key="kompetitor_3" value="${formatRupiah(r.kompetitor_3)}"></td>
+                        <td><input type="text" inputmode="numeric" class="cell-input cell-num" data-key="kompetitor_4" value="${formatRupiah(r.kompetitor_4)}"></td>
                         <td class="text-center">
                             <button type="button" class="btn-delete-row" title="Hapus"><i class="bi bi-trash"></i></button>
                         </td>
@@ -761,17 +1214,20 @@
             container.innerHTML = html;
 
             container.querySelectorAll('.cell-input').forEach(input => {
-                input.addEventListener('change', () => {
-                    const idx = parseInt(input.closest('tr').dataset.index);
-                    const key = input.dataset.key;
-                    if (key === 'bulan') {
-                        rows[idx][key] = input.value;
-                    } else {
-                        rows[idx][key] = parseRupiah(input.value);
-                        input.value = formatRupiah(rows[idx][key]);
-                    }
-                    saveRows(rows);
-                });
+                const key = input.dataset.key;
+                if (key === 'bulan') {
+                    input.addEventListener('change', () => {
+                        const idx = parseInt(input.closest('tr').dataset.index);
+                        rows[idx].bulan = input.value;
+                        saveRows(rows);
+                    });
+                } else {
+                    attachCurrencyInputBehavior(input, (newVal) => {
+                        const idx = parseInt(input.closest('tr').dataset.index);
+                        rows[idx][key] = newVal;
+                        saveRows(rows);
+                    });
+                }
             });
 
             container.querySelectorAll('.btn-delete-row').forEach(btn => {
@@ -788,6 +1244,19 @@
                 saveRows(rows);
                 render();
             });
+        }
+
+        function updateBrandHeader() {
+            const th = container.querySelector('#thMarketShareBrand');
+            if (th) {
+                th.textContent = getMarketShareBrandHeader(getCurrentBrand());
+            }
+        }
+
+        const brandSelect = form.querySelector('[name="brand"]');
+        if (brandSelect) {
+            brandSelect.addEventListener('change', updateBrandHeader);
+            brandSelect.addEventListener('input', updateBrandHeader);
         }
 
         window.renderMarketGrid = render;
@@ -815,12 +1284,25 @@
             field.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
+        function isExcludePPNSelected() {
+            const jpInput = form.querySelector('[name="jenis_pajak"]');
+            const val = (jpInput ? jpInput.value : '').trim().toLowerCase();
+            return val.includes('exclude');
+        }
+
         function render() {
             let rows = getRows();
+            const currentExclude = isExcludePPNSelected();
+
             if (!rows.length) {
                 rows = [
-                    { target_bulanan: 0, exclude_ppn: true, incentive_pct: 0, keterangan: '' }
+                    { target_bulanan: 0, exclude_ppn: currentExclude, incentive_pct: 0, keterangan: '' }
                 ];
+                saveRows(rows);
+            } else {
+                rows.forEach(r => {
+                    r.exclude_ppn = currentExclude;
+                });
                 saveRows(rows);
             }
 
@@ -842,11 +1324,11 @@
             rows.forEach((r, idx) => {
                 html += `
                     <tr data-index="${idx}">
-                        <td><input type="text" class="cell-input cell-num" data-key="target_bulanan" value="${formatRupiah(r.target_bulanan)}"></td>
+                        <td><input type="text" inputmode="numeric" class="cell-input cell-num" data-key="target_bulanan" value="${formatRupiah(r.target_bulanan)}"></td>
                         <td class="text-center">
-                            <input type="checkbox" class="form-check-input" data-key="exclude_ppn" ${r.exclude_ppn ? 'checked' : ''}>
+                            <input type="checkbox" class="form-check-input" data-key="exclude_ppn" ${currentExclude ? 'checked' : ''} disabled title="Mengikuti pilihan Jenis Pajak (${currentExclude ? 'Exclude PPN' : 'Include PPN'})">
                         </td>
-                        <td><input type="number" step="0.1" class="cell-input cell-num" data-key="incentive_pct" value="${r.incentive_pct || 0}"></td>
+                        <td><input type="text" inputmode="decimal" class="cell-input cell-num" data-key="incentive_pct" value="${r.incentive_pct !== undefined ? r.incentive_pct : 0}" placeholder="0"></td>
                         <td><input type="text" class="cell-input" data-key="keterangan" value="${escapeHtml(r.keterangan || '')}" placeholder="Catatan reward"></td>
                         <td class="text-center">
                             <button type="button" class="btn-delete-row" title="Hapus"><i class="bi bi-trash"></i></button>
@@ -867,21 +1349,69 @@
             container.innerHTML = html;
 
             container.querySelectorAll('input').forEach(input => {
-                input.addEventListener('change', () => {
-                    const idx = parseInt(input.closest('tr').dataset.index);
-                    const key = input.dataset.key;
-                    if (key === 'exclude_ppn') {
-                        rows[idx][key] = input.checked;
-                    } else if (key === 'target_bulanan') {
-                        rows[idx][key] = parseRupiah(input.value);
-                        input.value = formatRupiah(rows[idx][key]);
-                    } else if (key === 'incentive_pct') {
-                        rows[idx][key] = parseFloat(input.value) || 0;
-                    } else {
+                const key = input.dataset.key;
+                if (key === 'target_bulanan') {
+                    attachCurrencyInputBehavior(input, (newVal) => {
+                        const idx = parseInt(input.closest('tr').dataset.index);
+                        rows[idx][key] = newVal;
+                        saveRows(rows);
+                    });
+                } else if (key === 'incentive_pct') {
+                    input.addEventListener('focus', function () {
+                        if (this.value.trim() === '0') {
+                            this.select();
+                        }
+                    });
+
+                    input.addEventListener('keydown', (e) => {
+                        const allowedKeys = ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home', 'End'];
+                        if (allowedKeys.includes(e.key)) return;
+                        if (e.ctrlKey || e.metaKey) return;
+                        // Prevent negative sign, signs, letters
+                        if (!/^[0-9.,]$/.test(e.key)) {
+                            e.preventDefault();
+                            return;
+                        }
+                        if ((e.key === '.' || e.key === ',') && (input.value.includes('.') || input.value.includes(','))) {
+                            e.preventDefault();
+                        }
+                    });
+
+                    const handleIncentive = () => {
+                        let clean = input.value.replace(/[^0-9.,]/g, '').replace(',', '.');
+                        const parts = clean.split('.');
+                        if (parts.length > 2) {
+                            clean = parts[0] + '.' + parts.slice(1).join('');
+                        }
+                        let num = parseFloat(clean);
+                        if (!isNaN(num) && num > 100) {
+                            num = 100;
+                            clean = '100';
+                        }
+                        input.value = clean;
+                        const idx = parseInt(input.closest('tr').dataset.index);
+                        rows[idx][key] = isNaN(num) ? 0 : num;
+                        saveRows(rows);
+                    };
+
+                    input.addEventListener('input', handleIncentive);
+                    input.addEventListener('blur', () => {
+                        let clean = input.value.replace(/[^0-9.,]/g, '').replace(',', '.');
+                        let num = parseFloat(clean);
+                        if (isNaN(num) || num < 0) num = 0;
+                        if (num > 100) num = 100;
+                        input.value = num;
+                        const idx = parseInt(input.closest('tr').dataset.index);
+                        rows[idx][key] = num;
+                        saveRows(rows);
+                    });
+                } else if (key === 'keterangan') {
+                    input.addEventListener('input', () => {
+                        const idx = parseInt(input.closest('tr').dataset.index);
                         rows[idx][key] = input.value;
-                    }
-                    saveRows(rows);
-                });
+                        saveRows(rows);
+                    });
+                }
             });
 
             container.querySelectorAll('.btn-delete-row').forEach(btn => {
@@ -894,10 +1424,27 @@
             });
 
             container.querySelector('.btn-add-row').addEventListener('click', () => {
-                rows.push({ target_bulanan: 0, exclude_ppn: true, incentive_pct: 0, keterangan: '' });
+                rows.push({ target_bulanan: 0, exclude_ppn: isExcludePPNSelected(), incentive_pct: 0, keterangan: '' });
                 saveRows(rows);
                 render();
             });
+        }
+
+        // Listener for Jenis Pajak change to automatically update all rows
+        const jenisPajakSelect = form.querySelector('[name="jenis_pajak"]');
+        if (jenisPajakSelect && !jenisPajakSelect.dataset.syncTargetIncentive) {
+            jenisPajakSelect.dataset.syncTargetIncentive = 'true';
+            const handleJPChange = () => {
+                const isExclude = isExcludePPNSelected();
+                let currentRows = getRows();
+                currentRows.forEach(r => {
+                    r.exclude_ppn = isExclude;
+                });
+                saveRows(currentRows);
+                render();
+            };
+            jenisPajakSelect.addEventListener('change', handleJPChange);
+            jenisPajakSelect.addEventListener('input', handleJPChange);
         }
 
         window.renderTargetGrid = render;
@@ -929,7 +1476,7 @@
             let rows = getRows();
             if (!rows.length) {
                 rows = [
-                    { komponen: '', nilai: '', tipe: 'Persentase', keterangan: '' }
+                    { komponen: '', nilai: '0%', tipe: 'Persentase', keterangan: '' }
                 ];
                 saveRows(rows);
             }
@@ -950,17 +1497,28 @@
             `;
 
             rows.forEach((r, idx) => {
-                const tipeVal = (r.tipe === 'Persentage' || r.tipe === 'Percentage') ? 'Persentase' : (r.tipe || 'Persentase');
-                r.tipe = tipeVal;
+                const isNominal = (r.tipe === 'Nominal');
+                let displayVal = r.nilai || '';
+                if (isNominal) {
+                    displayVal = formatRupiah(parseRupiah(r.nilai));
+                }
 
                 html += `
                     <tr data-index="${idx}">
                         <td><input type="text" class="cell-input" data-key="komponen" value="${escapeHtml(r.komponen || '')}" placeholder="Komponen diskon"></td>
-                        <td><input type="text" class="cell-input" data-key="nilai" value="${escapeHtml(r.nilai || '')}" placeholder="Misal: 10%"></td>
                         <td>
-                            <select class="cell-input" data-key="tipe">
-                                <option value="Persentase" ${r.tipe === 'Persentase' ? 'selected' : ''}>Persentase</option>
-                                <option value="Nominal" ${r.tipe === 'Nominal' ? 'selected' : ''}>Nominal</option>
+                            <input type="text"
+                                   inputmode="${isNominal ? 'numeric' : 'decimal'}"
+                                   class="cell-input ${isNominal ? 'cell-num cell-nilai-nominal' : 'cell-nilai-persen'}"
+                                   data-key="nilai"
+                                   data-tipe="${isNominal ? 'Nominal' : 'Persentase'}"
+                                   value="${escapeHtml(String(displayVal))}"
+                                   placeholder="${isNominal ? 'Misal: 50.000' : 'Misal: 10%'}">
+                        </td>
+                        <td>
+                            <select class="cell-input select-tipe-diskon" data-key="tipe">
+                                <option value="Persentase" ${!isNominal ? 'selected' : ''}>Persentase</option>
+                                <option value="Nominal" ${isNominal ? 'selected' : ''}>Nominal</option>
                             </select>
                         </td>
                         <td><input type="text" class="cell-input" data-key="keterangan" value="${escapeHtml(r.keterangan || '')}" placeholder="Catatan syarat"></td>
@@ -982,13 +1540,100 @@
 
             container.innerHTML = html;
 
-            container.querySelectorAll('.cell-input').forEach(input => {
-                input.addEventListener('input', () => {
-                    const idx = parseInt(input.closest('tr').dataset.index);
-                    const key = input.dataset.key;
-                    rows[idx][key] = input.value;
-                    saveRows(rows);
-                });
+            container.querySelectorAll('tr[data-index]').forEach(tr => {
+                const idx = parseInt(tr.dataset.index);
+                const r = rows[idx];
+                const nilaiInput = tr.querySelector('[data-key="nilai"]');
+                const tipeSelect = tr.querySelector('[data-key="tipe"]');
+                const komponenInput = tr.querySelector('[data-key="komponen"]');
+                const ketInput = tr.querySelector('[data-key="keterangan"]');
+
+                if (komponenInput) {
+                    komponenInput.addEventListener('input', () => {
+                        rows[idx].komponen = komponenInput.value;
+                        saveRows(rows);
+                    });
+                }
+
+                if (ketInput) {
+                    ketInput.addEventListener('input', () => {
+                        rows[idx].keterangan = ketInput.value;
+                        saveRows(rows);
+                    });
+                }
+
+                if (tipeSelect) {
+                    tipeSelect.addEventListener('change', () => {
+                        const newTipe = tipeSelect.value;
+                        rows[idx].tipe = newTipe;
+                        if (newTipe === 'Nominal') {
+                            const rawNum = parseRupiah(rows[idx].nilai);
+                            rows[idx].nilai = rawNum || 0;
+                        } else {
+                            let clean = String(rows[idx].nilai || '').replace(/[^0-9.,]/g, '').replace(',', '.');
+                            let p = parseFloat(clean) || 0;
+                            if (p > 100) p = 100;
+                            rows[idx].nilai = p + '%';
+                        }
+                        saveRows(rows);
+                        render();
+                    });
+                }
+
+                if (nilaiInput) {
+                    const isNominal = (r.tipe === 'Nominal');
+                    if (isNominal) {
+                        attachCurrencyInputBehavior(nilaiInput, (newVal) => {
+                            rows[idx].nilai = newVal;
+                            saveRows(rows);
+                        });
+                    } else {
+                        // Persentase behavior: block letters, allow 0-9, dot, comma, %
+                        nilaiInput.addEventListener('focus', function () {
+                            if (this.value.trim() === '0%' || this.value.trim() === '0') {
+                                this.select();
+                            }
+                        });
+
+                        nilaiInput.addEventListener('keydown', (e) => {
+                            const allowedKeys = ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home', 'End'];
+                            if (allowedKeys.includes(e.key)) return;
+                            if (e.ctrlKey || e.metaKey) return;
+                            if (!/^[0-9.,%]$/.test(e.key)) {
+                                e.preventDefault();
+                                return;
+                            }
+                            if ((e.key === '.' || e.key === ',') && (nilaiInput.value.includes('.') || nilaiInput.value.includes(','))) {
+                                e.preventDefault();
+                            }
+                        });
+
+                        nilaiInput.addEventListener('input', () => {
+                            let clean = nilaiInput.value.replace(/[^0-9.,%]/g, '');
+                            let numStr = clean.replace('%', '').replace(',', '.');
+                            let num = parseFloat(numStr) || 0;
+                            if (num > 100) {
+                                num = 100;
+                                clean = '100%';
+                            }
+                            nilaiInput.value = clean;
+                            rows[idx].nilai = clean;
+                            saveRows(rows);
+                        });
+
+                        nilaiInput.addEventListener('blur', () => {
+                            let raw = nilaiInput.value.trim();
+                            let numStr = raw.replace(/[^0-9.,]/g, '').replace(',', '.');
+                            let num = parseFloat(numStr);
+                            if (isNaN(num) || num < 0) num = 0;
+                            if (num > 100) num = 100;
+                            const formatted = num + '%';
+                            nilaiInput.value = formatted;
+                            rows[idx].nilai = formatted;
+                            saveRows(rows);
+                        });
+                    }
+                }
             });
 
             container.querySelectorAll('.btn-delete-row').forEach(btn => {
@@ -1033,7 +1678,10 @@
         }
 
         function calculateNetto(target, supportPct, pphPct) {
-            return Math.round(target * (supportPct / 100) * (1 - pphPct / 100));
+            const t = Math.max(0, Number(target) || 0);
+            const s = Math.min(100, Math.max(0, Number(supportPct) || 0));
+            const p = Math.min(100, Math.max(0, Number(pphPct) || 0));
+            return Math.round(t * (s / 100) * (1 - p / 100));
         }
 
         function render() {
@@ -1075,9 +1723,9 @@
 
                 html += `
                     <tr data-index="${idx}">
-                        <td><input type="text" class="cell-input cell-num" data-key="target_tahunan" value="${formatRupiah(r.target_tahunan)}"></td>
-                        <td><input type="number" step="0.1" class="cell-input cell-num" data-key="support_pct" value="${r.support_pct || 0}"></td>
-                        <td><input type="number" step="0.1" class="cell-input cell-num" data-key="pph_pct" value="${r.pph_pct || 0}"></td>
+                        <td><input type="text" inputmode="numeric" class="cell-input cell-num" data-key="target_tahunan" value="${formatRupiah(r.target_tahunan)}"></td>
+                        <td><input type="text" inputmode="decimal" class="cell-input cell-num" data-key="support_pct" value="${r.support_pct !== undefined ? r.support_pct : 0}" placeholder="0"></td>
+                        <td><input type="text" inputmode="decimal" class="cell-input cell-num" data-key="pph_pct" value="${r.pph_pct !== undefined ? r.pph_pct : 0}" placeholder="0"></td>
                         <td><input type="text" class="cell-input cell-num cell-readonly" data-key="netto" value="${formatRupiah(netto)}" readonly></td>
                         <td><input type="text" class="cell-input" data-key="keterangan" value="${escapeHtml(r.keterangan || '')}" placeholder="Keterangan"></td>
                         <td class="text-center">
@@ -1092,7 +1740,7 @@
                         <tfoot>
                             <tr class="grid-summary-footer">
                                 <td colspan="3" class="text-end">Total Netto Tier:</td>
-                                <td class="text-end fw-bold text-primary">${formatRupiah(totalNetto)}</td>
+                                <td class="text-end fw-bold text-primary total-netto-cell">${formatRupiah(totalNetto)}</td>
                                 <td colspan="2"><span class="badge bg-info text-dark">Formula: Target × Support% × (1 - PPh%)</span></td>
                             </tr>
                         </tfoot>
@@ -1106,33 +1754,118 @@
             container.innerHTML = html;
 
             container.querySelectorAll('input').forEach(input => {
-                input.addEventListener('change', () => {
-                    const rowEl = input.closest('tr');
-                    const idx = parseInt(rowEl.dataset.index);
-                    const key = input.dataset.key;
+                const key = input.dataset.key;
+                if (key === 'target_tahunan') {
+                    attachCurrencyInputBehavior(input, (newVal) => {
+                        const rowEl = input.closest('tr');
+                        const idx = parseInt(rowEl.dataset.index);
+                        rows[idx][key] = newVal;
 
-                    if (key === 'target_tahunan') {
-                        rows[idx][key] = parseRupiah(input.value);
-                        input.value = formatRupiah(rows[idx][key]);
-                    } else if (key === 'support_pct' || key === 'pph_pct') {
-                        rows[idx][key] = parseFloat(input.value) || 0;
-                    } else if (key === 'keterangan') {
+                        // Recalculate Netto
+                        const target = Number(rows[idx].target_tahunan) || 0;
+                        const supp = Number(rows[idx].support_pct) || 0;
+                        const pph = Number(rows[idx].pph_pct) || 0;
+                        const netto = calculateNetto(target, supp, pph);
+                        rows[idx].netto = netto;
+
+                        const nettoInput = rowEl.querySelector('[data-key="netto"]');
+                        if (nettoInput) nettoInput.value = formatRupiah(netto);
+
+                        // Recalculate Total Netto footer without re-rendering the whole table
+                        const currentTotalNetto = rows.reduce((sum, r) => sum + (Number(r.netto) || 0), 0);
+                        const footerNetto = container.querySelector('.total-netto-cell');
+                        if (footerNetto) footerNetto.textContent = formatRupiah(currentTotalNetto);
+
+                        saveRows(rows);
+                    });
+                } else if (key === 'support_pct' || key === 'pph_pct') {
+                    input.addEventListener('focus', function () {
+                        if (this.value.trim() === '0') {
+                            this.select();
+                        }
+                    });
+
+                    input.addEventListener('keydown', function (e) {
+                        const allowedKeys = ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home', 'End'];
+                        if (allowedKeys.includes(e.key)) return;
+                        if (e.ctrlKey || e.metaKey) return;
+                        // Block negative signs, +, letters, symbols
+                        if (!/^[0-9.,]$/.test(e.key)) {
+                            e.preventDefault();
+                            return;
+                        }
+                        if ((e.key === '.' || e.key === ',') && (this.value.includes('.') || this.value.includes(','))) {
+                            e.preventDefault();
+                        }
+                    });
+
+                    const handlePct = () => {
+                        let clean = input.value.replace(/[^0-9.,]/g, '').replace(',', '.');
+                        const parts = clean.split('.');
+                        if (parts.length > 2) {
+                            clean = parts[0] + '.' + parts.slice(1).join('');
+                        }
+                        let num = parseFloat(clean);
+                        if (!isNaN(num) && num > 100) {
+                            num = 100;
+                            clean = '100';
+                        }
+                        input.value = clean;
+                        const rowEl = input.closest('tr');
+                        const idx = parseInt(rowEl.dataset.index);
+                        rows[idx][key] = isNaN(num) ? 0 : num;
+
+                        // Recalculate Netto
+                        const target = Number(rows[idx].target_tahunan) || 0;
+                        const supp = Number(rows[idx].support_pct) || 0;
+                        const pph = Number(rows[idx].pph_pct) || 0;
+                        const netto = calculateNetto(target, supp, pph);
+                        rows[idx].netto = netto;
+
+                        const nettoInput = rowEl.querySelector('[data-key="netto"]');
+                        if (nettoInput) nettoInput.value = formatRupiah(netto);
+
+                        const currentTotalNetto = rows.reduce((sum, r) => sum + (Number(r.netto) || 0), 0);
+                        const footerNetto = container.querySelector('.total-netto-cell');
+                        if (footerNetto) footerNetto.textContent = formatRupiah(currentTotalNetto);
+
+                        saveRows(rows);
+                    };
+
+                    input.addEventListener('input', handlePct);
+                    input.addEventListener('blur', () => {
+                        let clean = input.value.replace(/[^0-9.,]/g, '').replace(',', '.');
+                        let num = parseFloat(clean);
+                        if (isNaN(num) || num < 0) num = 0;
+                        if (num > 100) num = 100;
+                        input.value = num;
+                        const rowEl = input.closest('tr');
+                        const idx = parseInt(rowEl.dataset.index);
+                        rows[idx][key] = num;
+
+                        const target = Number(rows[idx].target_tahunan) || 0;
+                        const supp = Number(rows[idx].support_pct) || 0;
+                        const pph = Number(rows[idx].pph_pct) || 0;
+                        const netto = calculateNetto(target, supp, pph);
+                        rows[idx].netto = netto;
+
+                        const nettoInput = rowEl.querySelector('[data-key="netto"]');
+                        if (nettoInput) nettoInput.value = formatRupiah(netto);
+
+                        const currentTotalNetto = rows.reduce((sum, r) => sum + (Number(r.netto) || 0), 0);
+                        const footerNetto = container.querySelector('.total-netto-cell');
+                        if (footerNetto) footerNetto.textContent = formatRupiah(currentTotalNetto);
+
+                        saveRows(rows);
+                    });
+                } else if (key === 'keterangan') {
+                    input.addEventListener('input', () => {
+                        const rowEl = input.closest('tr');
+                        const idx = parseInt(rowEl.dataset.index);
                         rows[idx][key] = input.value;
-                    }
-
-                    // Recalculate Netto
-                    const target = Number(rows[idx].target_tahunan) || 0;
-                    const supp = Number(rows[idx].support_pct) || 0;
-                    const pph = Number(rows[idx].pph_pct) || 0;
-                    const netto = calculateNetto(target, supp, pph);
-                    rows[idx].netto = netto;
-
-                    const nettoInput = rowEl.querySelector('[data-key="netto"]');
-                    if (nettoInput) nettoInput.value = formatRupiah(netto);
-
-                    saveRows(rows);
-                    render(); // Re-render to update summary footer
-                });
+                        saveRows(rows);
+                    });
+                }
             });
 
             container.querySelectorAll('.btn-delete-row').forEach(btn => {
@@ -1156,7 +1889,16 @@
     }
 
     function createGridContainer(field, title, hint, gridKey) {
-        const wrapper = field.closest('.field-wrapper') || field.parentElement;
+        const wrapper = field.closest('.field-wrapper') || field.closest('.mb-3') || field.parentElement;
+
+        // Hide redundant default Django label and help text
+        if (wrapper) {
+            const origLabel = wrapper.querySelector('label.form-label, label');
+            if (origLabel) origLabel.style.display = 'none';
+            const origHelp = wrapper.querySelector('.form-text, .help-block');
+            if (origHelp) origHelp.style.display = 'none';
+        }
+
         const container = document.createElement('div');
         const gridClass = gridKey ? `table-${gridKey.replace(/_/g, '-')}` : '';
         container.className = `kontrak-grid-container ${gridClass}`.trim();
@@ -1356,10 +2098,93 @@
             }
         }
 
+        // Setup live validation for Support Tambahan fields (pct_support_promo, syarat_pencairan, komponen_biaya)
+        setupSupportFieldsValidation(form);
+
         window.updateSupportVisibility = updateSupportVisibility;
 
         toggleSwitch.addEventListener('change', updateSupportVisibility);
         updateSupportVisibility();
+    }
+
+    function setupSupportFieldsValidation(form) {
+        // 1. pct_support_promo: strictly positive percentage (0 - 100%)
+        const pctInput = form.querySelector('[name="pct_support_promo"]');
+        if (pctInput && !pctInput.dataset.validationAttached) {
+            pctInput.dataset.validationAttached = 'true';
+            pctInput.setAttribute('type', 'text');
+            pctInput.setAttribute('inputmode', 'decimal');
+            pctInput.setAttribute('autocomplete', 'off');
+
+            pctInput.addEventListener('focus', function () {
+                if (this.value.trim() === '0') {
+                    this.select();
+                }
+            });
+
+            pctInput.addEventListener('keydown', function (e) {
+                const allowedKeys = ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home', 'End'];
+                if (allowedKeys.includes(e.key)) return;
+                if (e.ctrlKey || e.metaKey) return;
+                // Reject negative signs, +, letters, symbols
+                if (!/^[0-9.,]$/.test(e.key)) {
+                    e.preventDefault();
+                    return;
+                }
+                if ((e.key === '.' || e.key === ',') && (this.value.includes('.') || this.value.includes(','))) {
+                    e.preventDefault();
+                }
+            });
+
+            pctInput.addEventListener('input', function () {
+                let clean = this.value.replace(/[^0-9.,]/g, '').replace(',', '.');
+                const parts = clean.split('.');
+                if (parts.length > 2) {
+                    clean = parts[0] + '.' + parts.slice(1).join('');
+                }
+                let num = parseFloat(clean);
+                if (!isNaN(num) && num > 100) {
+                    num = 100;
+                    clean = '100';
+                }
+                this.value = clean;
+            });
+
+            pctInput.addEventListener('blur', function () {
+                let clean = this.value.replace(/[^0-9.,]/g, '').replace(',', '.');
+                let num = parseFloat(clean);
+                if (isNaN(num) || num < 0) {
+                    this.value = '';
+                } else {
+                    if (num > 100) num = 100;
+                    this.value = num;
+                }
+            });
+        }
+
+        // 2. syarat_pencairan: reject disallowed symbols like * and #
+        const syaratInput = form.querySelector('[name="syarat_pencairan"]');
+        if (syaratInput && !syaratInput.dataset.validationAttached) {
+            syaratInput.dataset.validationAttached = 'true';
+            syaratInput.addEventListener('input', function () {
+                const cleaned = this.value.replace(/[^\w\s.,/\-()'"&]/gi, '');
+                if (this.value !== cleaned) {
+                    this.value = cleaned;
+                }
+            });
+        }
+
+        // 3. komponen_biaya: reject disallowed symbols like * and #
+        const biayaInput = form.querySelector('[name="komponen_biaya"]');
+        if (biayaInput && !biayaInput.dataset.validationAttached) {
+            biayaInput.dataset.validationAttached = 'true';
+            biayaInput.addEventListener('input', function () {
+                const cleaned = this.value.replace(/[^\w\s.,/\-()]/gi, '');
+                if (this.value !== cleaned) {
+                    this.value = cleaned;
+                }
+            });
+        }
     }
 
     /* --------------------------------------------------------------------------
@@ -1843,7 +2668,7 @@
                     <p style="margin-bottom: 12px;">Selanjutnya disebut sebagai <strong>PIHAK KEDUA</strong> Dealer produk Springbed merk <strong>“${brand}”</strong></p>
 
                     <p style="text-align: justify; margin-bottom: 16px;">
-                        Dalam upaya meningkatkan kerjasama dalam penjualan produk ${brand}, kedua belah pihak di atas sepakat untuk menandatangani kontrak perjanjian kerja sama dengan mengikuti syarat – syarat dan ketentuan – ketentuan sebagai berikut :
+                        Dalam upaya meningkatkan kerjasama dalam penjualan produk <strong>${brand}</strong>, kedua belah pihak di atas sepakat untuk menandatangani kontrak perjanjian kerja sama dengan mengikuti syarat – syarat dan ketentuan – ketentuan sebagai berikut :
                     </p>
 
                     <!-- BAB I -->
@@ -1852,7 +2677,7 @@
                     </div>
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 1</div>
                     <p style="text-align: justify; margin-bottom: 12px;">
-                        Pihak Pertama menitipkan/menjual kepada Pihak Kedua Produk Springbed dengan merk “ ${brand} “ untuk dijual oleh Pihak Kedua pada tempat yang telah diberitahukan dan disetujui oleh Pihak Pertama dengan mengacu pada ketentuan Volume dan Harga Penjualan yang telah di sepakati.
+                        <strong>Pihak Pertama</strong> menitipkan/menjual kepada <strong>Pihak Kedua</strong> Produk Springbed dengan merk “ <strong>${brand}</strong> “ untuk dijual oleh <strong>Pihak Kedua</strong> pada tempat yang telah diberitahukan dan disetujui oleh <strong>Pihak Pertama</strong> dengan mengacu pada ketentuan Volume dan Harga Penjualan yang telah di sepakati.
                     </p>
 
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 2</div>
@@ -1866,10 +2691,10 @@
                     </div>
                     
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 3</div>
-                    <ol style="margin-top: 0; margin-bottom: 12px; padding-left: 20px;">
-                        <li style="text-align: justify; margin-bottom: 4px;">Para Pihak sepakat bahwa Target Volume Penjualan produk selama jangka waktu perjanjian ini <strong>${targetVolText}</strong> per bulan Exclude Ppn.</li>
-                        <li style="text-align: justify;">Pihak Kedua wajib memenuhi Volume Penjualan yang telah ditentukan dalam perjanjian ini.</li>
-                    </ol>
+                    <div style="margin-top: 0; margin-bottom: 12px;">
+                        <p style="text-align: justify; margin-bottom: 4px; text-indent: -24px; padding-left: 24px;">(1) Para Pihak sepakat bahwa Target Volume Penjualan produk selama jangka waktu perjanjian ini <strong>${targetVolText}</strong> per bulan Exclude Ppn.</p>
+                        <p style="text-align: justify; margin-bottom: 0; text-indent: -24px; padding-left: 24px;">(2) Pihak Kedua wajib memenuhi Volume Penjualan yang telah ditentukan dalam perjanjian ini.</p>
+                    </div>
                     ${targetTableHtml || '<p class="text-muted fst-italic">Belum ada tier target bulanan yang ditambahkan.</p>'}
 
                     ${isSupport ? `
@@ -2209,6 +3034,16 @@
                         }
                     });
 
+                    // Custom validation for Nomor Identitas when leaving Step 1
+                    if (currentStep === 0 && typeof form._validateNomorIdentitas === 'function') {
+                        const isIdValid = form._validateNomorIdentitas(true);
+                        if (!isIdValid) {
+                            hasError = true;
+                            const nomorInput = form.querySelector('[name="nomor_identitas"]');
+                            if (!firstInvalid && nomorInput) firstInvalid = nomorInput;
+                        }
+                    }
+
                     if (hasError && firstInvalid) {
                         firstInvalid.focus();
                         firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -2414,11 +3249,40 @@
         if (!data || typeof data !== 'object') return false;
         return Object.entries(data).some(([k, v]) => {
             if (k === 'nomor_spk' || k === 'csrfmiddlewaretoken' || k === 'action') return false;
+            if (k === 'cabang' || k === 'perusahaan') return false;
             if (typeof v === 'boolean') return v;
             if (typeof v === 'string') {
                 const trimmed = v.trim();
                 if (!trimmed) return false;
-                if (trimmed === '[]' || trimmed === '[{"no":1,"keterangan":"","alamat":"","status":"Pribadi"}]') return false;
+                if (trimmed === '[]') return false;
+                if (trimmed === '[{"no":1,"keterangan":"","alamat":"","status":"Pribadi"}]') return false;
+                if (trimmed.includes('"bulan":""') && trimmed.includes('"serenity":0')) {
+                    try {
+                        const parsed = JSON.parse(trimmed);
+                        const hasVal = parsed.some(r => (r.bulan && r.bulan.trim() !== '') || r.serenity > 0 || r.kompetitor_1 > 0 || r.kompetitor_2 > 0 || r.kompetitor_3 > 0 || r.kompetitor_4 > 0);
+                        if (!hasVal) return false;
+                    } catch (e) {
+                        return false;
+                    }
+                }
+                if (trimmed.includes('"target_bulanan":0') && trimmed.includes('"incentive_pct":0')) {
+                    try {
+                        const parsed = JSON.parse(trimmed);
+                        const hasVal = parsed.some(r => r.target_bulanan > 0 || r.incentive_pct > 0 || (r.keterangan && r.keterangan.trim() !== ''));
+                        if (!hasVal) return false;
+                    } catch (e) {
+                        return false;
+                    }
+                }
+                if (trimmed.includes('"target_tahunan":0') && trimmed.includes('"support_pct":0')) {
+                    try {
+                        const parsed = JSON.parse(trimmed);
+                        const hasVal = parsed.some(r => r.target_tahunan > 0 || r.support_pct > 0 || (r.keterangan && r.keterangan.trim() !== ''));
+                        if (!hasVal) return false;
+                    } catch (e) {
+                        return false;
+                    }
+                }
                 return true;
             }
             return Boolean(v);
@@ -2455,7 +3319,10 @@
         if (state === 'saving') {
             indicator.className = 'auto-save-indicator saving';
             indicator.innerHTML = '<i class="bi bi-arrow-repeat spin me-1"></i> Menyimpan draf...';
-        } else if (state === 'saved') {
+        } else if (state === 'saved_server' || state === 'saved') {
+            indicator.className = 'auto-save-indicator saved';
+            indicator.innerHTML = '<i class="bi bi-cloud-check text-success me-1"></i> Draf tersimpan di server';
+        } else if (state === 'saved_local') {
             indicator.className = 'auto-save-indicator saved';
             indicator.innerHTML = '<i class="bi bi-cloud-check text-success me-1"></i> Draf tersimpan di browser';
         } else if (state === 'error') {
@@ -2467,76 +3334,90 @@
         }
     }
 
-    function showDraftAvailablePrompt(form, draftData, onConfirm) {
-        if (document.getElementById('draftAvailableAlert')) return;
-        const alertBox = document.createElement('div');
-        alertBox.id = 'draftAvailableAlert';
-        alertBox.className = 'alert alert-light border border-primary-subtle d-flex justify-content-between align-items-center py-2 px-3 mb-3';
-        alertBox.innerHTML = `
-            <div class="d-flex align-items-center gap-2 text-primary-emphasis small">
-                <i class="bi bi-clock-history text-primary fs-6"></i>
-                <span><strong>Draf Tersimpan Ditemukan</strong>: Ada isian formulir yang belum disubmit dari sesi sebelumnya. Ingin pulihkan?</span>
-            </div>
-            <div class="d-flex gap-2">
-                <button type="button" class="btn btn-primary btn-sm py-0.5 px-2.5" id="btnRestoreDraftConfirm" style="font-size: 0.8rem; font-weight: 500;">
-                    <i class="bi bi-arrow-repeat me-1"></i> Pulihkan Draf
-                </button>
-                <button type="button" class="btn btn-outline-secondary btn-sm py-0.5 px-2" id="btnDiscardDraftPrompt" style="font-size: 0.8rem;">
-                    Abaikan
-                </button>
-            </div>
-        `;
-        const wrapper = form.querySelector('.form-fields-wrapper') || form;
-        form.insertBefore(alertBox, wrapper);
+    function showDraftPromptModal(form, draftData, serverDraftMeta, onContinue) {
+        const tokoName = draftData.nama_toko || serverDraftMeta?.dataset.toko || 'Toko Belum Diisi';
+        const spkNo = draftData.nomor_spk || serverDraftMeta?.dataset.spk || 'Nomor SPK Otomatis';
+        const brand = draftData.brand || serverDraftMeta?.dataset.brand || 'SERENITY';
+        const dateStr = serverDraftMeta?.dataset.createdAt || 'tersimpan sebelumnya';
 
-        const btnRestore = alertBox.querySelector('#btnRestoreDraftConfirm');
-        if (btnRestore) {
-            btnRestore.addEventListener('click', function() {
-                onConfirm(draftData);
-                alertBox.remove();
-            });
-        }
-        const btnDiscard = alertBox.querySelector('#btnDiscardDraftPrompt');
-        if (btnDiscard) {
-            btnDiscard.addEventListener('click', function() {
-                try {
-                    localStorage.removeItem('royal_kontrak_form_draft');
-                } catch (e) {}
-                alertBox.remove();
-            });
-        }
-    }
+        let modalEl = document.getElementById('kontrakDraftDetectedModal');
+        if (!modalEl) {
+            modalEl = document.createElement('div');
+            modalEl.id = 'kontrakDraftDetectedModal';
+            modalEl.className = 'modal fade';
+            modalEl.setAttribute('tabindex', '-1');
+            modalEl.setAttribute('data-bs-backdrop', 'static');
+            modalEl.setAttribute('data-bs-keyboard', 'false');
 
-    function showDraftRestoredAlert(form) {
-        if (document.getElementById('draftRestoredAlert')) return;
-        const alertBox = document.createElement('div');
-        alertBox.id = 'draftRestoredAlert';
-        alertBox.className = 'alert alert-light border border-info-subtle d-flex justify-content-between align-items-center py-2 px-3 mb-3';
-        alertBox.innerHTML = `
-            <div class="d-flex align-items-center gap-2 text-info-emphasis small">
-                <i class="bi bi-info-circle-fill text-info"></i>
-                <span><strong>Draf Dipulihkan</strong>: Isian formulir berhasil dipulihkan dari sesi sebelumnya.</span>
-            </div>
-            <button type="button" class="btn btn-outline-danger btn-sm py-0 px-2" id="btnAlertDiscardDraft" style="font-size: 0.8rem;">
-                <i class="bi bi-trash3 me-1"></i> Buang Draf
-            </button>
-        `;
-        const wrapper = form.querySelector('.form-fields-wrapper') || form;
-        form.insertBefore(alertBox, wrapper);
-
-        const btnAlertDiscard = alertBox.querySelector('#btnAlertDiscardDraft');
-        if (btnAlertDiscard) {
-            btnAlertDiscard.addEventListener('click', function() {
-                discardDraft(form);
-            });
+            modalEl.innerHTML = `
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                        <div class="modal-header bg-light border-0 py-3 px-4">
+                            <h5 class="modal-title fw-bold text-dark d-flex align-items-center gap-2 mb-0" style="font-size: 1.1rem;">
+                                <i class="bi bi-clock-history text-primary fs-5"></i> Draf Pengajuan Ditemukan
+                            </h5>
+                        </div>
+                        <div class="modal-body p-4">
+                            <p class="text-secondary mb-3" style="font-size: 14px;">
+                                Anda memiliki draf pengajuan yang belum selesai tersimpan di sistem:
+                            </p>
+                            <div class="p-3 bg-light rounded-3 border mb-3">
+                                <div class="d-flex align-items-center justify-content-between mb-1">
+                                    <span class="badge bg-primary-subtle text-primary fw-semibold px-2 py-1" style="font-size: 11px;" id="modalDraftBrand">${escapeHtml(brand)}</span>
+                                    <span class="text-muted small" style="font-size: 11.5px;" id="modalDraftDate">${escapeHtml(dateStr)}</span>
+                                </div>
+                                <div class="fw-bold text-dark fs-6 mt-2" id="modalDraftToko">${escapeHtml(tokoName)}</div>
+                                <div class="text-muted small mt-1" style="font-family: monospace; font-size: 12px;" id="modalDraftSPK">${escapeHtml(spkNo)}</div>
+                            </div>
+                            <p class="text-secondary small mb-0">
+                                Apakah Anda ingin melanjutkan pengisian draf ini atau membuat pengajuan baru dari awal?
+                            </p>
+                        </div>
+                        <div class="modal-footer border-0 bg-light py-3 px-4 d-flex justify-content-between">
+                            <button type="button" class="btn btn-outline-danger btn-sm px-3" id="btnModalDiscardDraft">
+                                <i class="bi bi-trash me-1"></i> Buat Pengajuan Baru
+                            </button>
+                            <button type="button" class="btn btn-primary btn-sm px-4 fw-semibold" id="btnModalContinueDraft">
+                                <i class="bi bi-pencil-square me-1"></i> Lanjutkan Draf
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modalEl);
         }
+
+        const bsModal = new bootstrap.Modal(modalEl);
+
+        const btnContinue = modalEl.querySelector('#btnModalContinueDraft');
+        const btnDiscard = modalEl.querySelector('#btnModalDiscardDraft');
+
+        btnContinue.onclick = function () {
+            bsModal.hide();
+            if (typeof onContinue === 'function') {
+                onContinue();
+            }
+        };
+
+        btnDiscard.onclick = function () {
+            bsModal.hide();
+            discardDraft(form, true);
+        };
+
+        bsModal.show();
     }
 
     function showDiscardDraftButton(form, show) {
-        let btnDiscard = form.querySelector('#btnLocalDiscardDraft');
         const footerActions = form.querySelector('.footer-right-actions') || form.querySelector('.form-wizard-footer');
         if (!footerActions) return;
 
+        const serverDiscardBtn = footerActions.querySelector('#btnDiscardDraft');
+        if (serverDiscardBtn) {
+            // Server button already exists, no need to add duplicate
+            return;
+        }
+
+        let btnDiscard = form.querySelector('#btnLocalDiscardDraft');
         if (!btnDiscard) {
             btnDiscard = document.createElement('button');
             btnDiscard.type = 'button';
@@ -2562,28 +3443,97 @@
         }
     }
 
-    function discardDraft(form) {
-        if (confirm('Apakah Anda yakin ingin membuang draft dan mengosongkan seluruh formulir?')) {
+    function discardDraft(form, skipConfirm) {
+        if (skipConfirm || confirm('Apakah Anda yakin ingin membuang draft dan mengosongkan seluruh formulir?')) {
             try {
                 localStorage.removeItem(STORAGE_KEY);
             } catch (e) {}
+
+            const serverDraftId = form.dataset.currentDraftId || form.querySelector('input[name="draft_id"]')?.value;
+            if (serverDraftId) {
+                const tokenInput = form.querySelector('[name="csrfmiddlewaretoken"]');
+                const csrfToken = tokenInput ? tokenInput.value : '';
+                fetch(`/forms/submissions/${serverDraftId}/discard/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                }).catch(e => console.warn('[KontrakDraft] Failed to discard server draft:', e));
+            }
+
             window.location.href = window.location.pathname;
         }
     }
 
-    function setupFormPersistence(form, hasRestoredDraft) {
+    function setupFormPersistence(form) {
         let autoSaveTimeout = null;
+        let serverSaveTimeout = null;
+
+        function saveDraftToServer(data) {
+            const autoSaveUrl = '/forms/permohonan-kontrak/auto-save/';
+            const tokenInput = form.querySelector('[name="csrfmiddlewaretoken"]');
+            let csrfToken = tokenInput ? tokenInput.value : '';
+            if (!csrfToken) {
+                csrfToken = document.cookie
+                    .split('; ')
+                    .find(row => row.startsWith('csrftoken='))
+                    ?.split('=')[1] || '';
+            }
+
+            fetch(autoSaveUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(res => {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.json();
+            })
+            .then(resData => {
+                if (resData.success) {
+                    updateAutoSaveStatus('saved_server');
+                    if (resData.draft_id) {
+                        form.dataset.currentDraftId = resData.draft_id;
+                        let draftIdInput = form.querySelector('input[name="draft_id"]');
+                        if (!draftIdInput) {
+                            draftIdInput = document.createElement('input');
+                            draftIdInput.type = 'hidden';
+                            draftIdInput.name = 'draft_id';
+                            form.appendChild(draftIdInput);
+                        }
+                        draftIdInput.value = resData.draft_id;
+                    }
+                } else {
+                    updateAutoSaveStatus('saved_local');
+                }
+            })
+            .catch(err => {
+                console.warn('[KontrakDraft] Server auto-save failed, saved in browser:', err);
+                updateAutoSaveStatus('saved_local');
+            });
+        }
 
         function scheduleSave() {
             clearTimeout(autoSaveTimeout);
+            clearTimeout(serverSaveTimeout);
             updateAutoSaveStatus('saving');
+
             autoSaveTimeout = setTimeout(() => {
                 try {
                     const data = collectFormData(form);
                     if (hasMeaningfulData(data)) {
                         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-                        updateAutoSaveStatus('saved');
+                        updateAutoSaveStatus('saved_local');
                         showDiscardDraftButton(form, true);
+
+                        serverSaveTimeout = setTimeout(() => {
+                            saveDraftToServer(data);
+                        }, 500);
                     } else {
                         localStorage.removeItem(STORAGE_KEY);
                         updateAutoSaveStatus('idle');
@@ -2593,7 +3543,7 @@
                     console.warn('[KontrakDraft] Error saving draft:', e);
                     updateAutoSaveStatus('error');
                 }
-            }, 400);
+            }, 300);
         }
 
         form.addEventListener('input', scheduleSave);
@@ -2601,6 +3551,21 @@
 
         // Clear on successful form submission
         form.addEventListener('submit', function (e) {
+            if (typeof form._validateNomorIdentitas === 'function') {
+                const isIdValid = form._validateNomorIdentitas(true);
+                if (!isIdValid) {
+                    e.preventDefault();
+                    if (window.switchWizardStep) {
+                        window.switchWizardStep(0, false);
+                    }
+                    const nomorInput = form.querySelector('[name="nomor_identitas"]');
+                    if (nomorInput) {
+                        nomorInput.focus();
+                        nomorInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                    return false;
+                }
+            }
             if (!e.defaultPrevented) {
                 try {
                     localStorage.removeItem(STORAGE_KEY);

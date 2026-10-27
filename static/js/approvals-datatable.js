@@ -285,8 +285,12 @@
                 className: 'align-middle',
                 render: function(data, type, row) {
                     var catHtml = row.category || '—';
+                    var isSpk = data && (data.indexOf('No.') === 0 || data.indexOf('/') !== -1);
+                    var titleStyle = isSpk
+                        ? 'font-weight: 600; color: #1e293b; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13.5px;'
+                        : 'font-weight: 600; color: #0f172a; font-size: 14px;';
                     return '<div class="d-flex flex-column py-0.5">' +
-                           '<span class="fw-semibold text-dark" style="font-size: 14px; line-height: 1.35;">' + data + '</span>' +
+                           '<span style="line-height: 1.35; ' + titleStyle + '">' + data + '</span>' +
                            '<span class="text-muted small mt-1 d-inline-flex align-items-center" style="font-size: 12px;">' + catHtml + '</span>' +
                            '</div>';
                 }
@@ -458,8 +462,12 @@
                 className: 'align-middle',
                 render: function(data, type, row) {
                     var catHtml = row.category || '—';
+                    var isSpk = data && (data.indexOf('No.') === 0 || data.indexOf('/') !== -1);
+                    var titleStyle = isSpk
+                        ? 'font-weight: 600; color: #1e293b; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13.5px;'
+                        : 'font-weight: 600; color: #0f172a; font-size: 14px;';
                     return '<div class="d-flex flex-column py-0.5">' +
-                           '<span class="fw-semibold text-dark" style="font-size: 14px; line-height: 1.35;">' + data + '</span>' +
+                           '<span style="line-height: 1.35; ' + titleStyle + '">' + data + '</span>' +
                            '<span class="text-muted small mt-1 d-inline-flex align-items-center" style="font-size: 12px;">' + catHtml + '</span>' +
                            '</div>';
                 }

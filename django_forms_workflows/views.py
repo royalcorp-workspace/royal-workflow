@@ -433,6 +433,7 @@ def form_submit(request, slug):
 
     # Drafts are only loaded when explicitly requested via draft_id / draft parameter
     draft = None
+    active_server_draft = None
     if not revision_submission:
         draft_id_param = request.GET.get("draft_id") or request.GET.get("draft") or request.POST.get("draft_id")
         if not is_anonymous and draft_id_param:
@@ -442,6 +443,10 @@ def form_submit(request, slug):
                 ).first()
             except (ValueError, TypeError):
                 draft = None
+        elif not is_anonymous:
+            active_server_draft = FormSubmission.objects.filter(
+                form_definition=form_def, submitter=request.user, status="draft"
+            ).order_by("-id").first()
 
     user_or_none = request.user if not is_anonymous else None
 
@@ -772,6 +777,7 @@ def form_submit(request, slug):
             "form": form,
             "is_draft": draft is not None,
             "draft_id": draft.id if draft else None,
+            "active_server_draft": active_server_draft,
             "is_revision": revision_submission is not None,
             "revision_id": revision_submission.id if revision_submission else None,
             "revision_submission": revision_submission,
@@ -1032,18 +1038,27 @@ def form_auto_save(request, slug):
 
         # Upsert draft.  We avoid update_or_create so we can set
         # _skip_change_history *before* save() fires the signal.
-        try:
-            draft = FormSubmission.objects.get(
-                form_definition=form_def,
-                submitter=request.user,
-                status="draft",
-            )
-        except FormSubmission.DoesNotExist:
+        draft = FormSubmission.objects.filter(
+            form_definition=form_def,
+            submitter=request.user,
+            status="draft",
+        ).order_by("-id").first()
+        if not draft:
             draft = FormSubmission(
                 form_definition=form_def,
                 submitter=request.user,
                 status="draft",
             )
+
+        if form_def.slug == "permohonan-kontrak":
+            brand = (data.get("brand") or "LADY").upper().replace(" ", "")
+            cabang = (data.get("cabang") or "Tangerang").title().replace(" ", "")
+            import datetime
+            today = datetime.date.today()
+            current_spk = str(data.get("nomor_spk", "")).strip()
+            if not current_spk or "OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-"):
+                seq = FormSubmission.objects.filter(form_definition=form_def).count() + 1
+                data["nomor_spk"] = f"No. {seq:04d}/{brand}/{cabang}/{today.month}/{today.year}"
 
         draft.form_data = data
         draft.submission_ip = get_client_ip(request)
@@ -1093,7 +1108,11 @@ def form_submission_hub(request, slug):
     )
 
     if is_privileged:
-        submissions_qs = FormSubmission.objects.filter(form_definition=form_def)
+        # Dokumen DRAFT hanya boleh terlihat oleh pembuatnya sendiri!
+        # Reviewer / Approver di level selanjutnya tidak boleh melihat draf user lain.
+        submissions_qs = FormSubmission.objects.filter(form_definition=form_def).filter(
+            ~models.Q(status="draft") | models.Q(submitter=user)
+        )
     else:
         submissions_qs = FormSubmission.objects.filter(
             form_definition=form_def,
@@ -1106,6 +1125,9 @@ def form_submission_hub(request, slug):
         submissions_qs = submissions_qs.filter(
             models.Q(form_data__icontains=search_query)
             | models.Q(id__icontains=search_query)
+            | models.Q(submitter__username__icontains=search_query)
+            | models.Q(submitter__first_name__icontains=search_query)
+            | models.Q(submitter__last_name__icontains=search_query)
         )
 
     # Filter Bar: Dropdown filter status: [ Semua Status | Menunggu Review | Disetujui | Ditolak | Draft ]
@@ -1187,6 +1209,7 @@ def form_submission_hub(request, slug):
 
         rows.append({
             "submission": sub,
+            "status_raw": status_raw,
             "spk_no": spk_no,
             "toko": toko,
             "jenis": jenis,
@@ -1203,6 +1226,7 @@ def form_submission_hub(request, slug):
         "django_forms_workflows/form_submission_hub.html",
         {
             "form_def": form_def,
+            "can_submit": user_can_submit_form(user, form_def),
             "rows": rows,
             "total_count": len(rows),
             "search_query": search_query,
@@ -4824,6 +4848,7 @@ def completed_approvals_ajax(request):
             | models.Q(submitter__last_name__icontains=search)
             | models.Q(submitter__username__icontains=search)
             | models.Q(status__icontains=search)
+            | models.Q(form_data__icontains=search)
             | _form_data_search_q(form_slug, search, field_prefix="form_data")
         )
 
@@ -4891,7 +4916,7 @@ def completed_approvals_ajax(request):
                 f'<i class="bi bi-eye"></i> View</a>'
             ),
             "category": _cat_html(getattr(sub.form_definition, "category", None)),
-            "form": escape(sub.form_definition.name),
+            "form": escape((sub.form_data or {}).get("nomor_spk") or sub.form_definition.name),
             "submitter": escape(_submitter_label(sub)),
             "status": _STATUS_BADGE.get(
                 sub.status,
@@ -4969,6 +4994,7 @@ def approval_inbox_ajax(request):
             | models.Q(assigned_group__in=user_groups)
         )
 
+    qs = qs.exclude(submission__status="draft")
     records_total = qs.count()
 
     # --- URL filters ---
@@ -4985,6 +5011,7 @@ def approval_inbox_ajax(request):
             | models.Q(submission__submitter__last_name__icontains=search)
             | models.Q(submission__submitter__username__icontains=search)
             | models.Q(step_name__icontains=search)
+            | models.Q(submission__form_data__icontains=search)
             | _form_data_search_q(
                 form_slug, search, field_prefix="submission__form_data"
             )
@@ -5058,7 +5085,7 @@ def approval_inbox_ajax(request):
                 f'<a href="{approve_url}" class="btn btn-sm btn-primary">'
                 f'<i class="bi bi-check-circle"></i> Review</a>'
             ),
-            "form": escape(sub.form_definition.name),
+            "form": escape((sub.form_data or {}).get("nomor_spk") or sub.form_definition.name),
             "submitter": escape(_submitter_label(sub)),
             "step_num": escape(stage_name),
             # Prefer the individual when both are set. The reassign view
@@ -5139,6 +5166,7 @@ def my_submissions_ajax(request):
         qs = qs.filter(
             models.Q(form_definition__name__icontains=search)
             | models.Q(status__icontains=search)
+            | models.Q(form_data__icontains=search)
             | _form_data_search_q(form_slug, search, field_prefix="form_data")
         )
 

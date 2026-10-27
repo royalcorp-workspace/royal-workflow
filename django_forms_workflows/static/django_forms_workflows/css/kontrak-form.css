@@ -133,6 +133,12 @@ input[name="kota"][readonly]:focus {
     transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
 }
 
+.kontrak-grid-table select.cell-input {
+    cursor: pointer;
+    background-color: #ffffff;
+}
+
+
 .kontrak-grid-table .cell-input:focus {
     border-color: #0284c7;
     outline: 0;
@@ -563,6 +569,16 @@ table.clause-table td.cell-currency {
     -webkit-overflow-scrolling: touch;
 }
 
+/* Hide redundant Django labels when custom grid header is rendered */
+.field-wrapper:has(.kontrak-grid-container) > label.form-label,
+.field-wrapper:has(.kontrak-grid-container) > .form-text,
+.field-wrapper:has(.kontrak-grid-container) > .help-block,
+.mb-3:has(.kontrak-grid-container) > label.form-label,
+.mb-3:has(.kontrak-grid-container) > .form-text,
+.mb-3:has(.kontrak-grid-container) > .help-block {
+    display: none !important;
+}
+
 /* Enforce safe min-widths per table to prevent column compression */
 .kontrak-grid-table {
     min-width: 600px;
@@ -573,9 +589,21 @@ table.clause-table td.cell-currency {
     min-width: 780px !important;
 }
 
+/* Asset Toko: fits 100% width on tablet/desktop to eliminate horizontal scrollbar */
 .table-asset-toko .kontrak-grid-table,
 .kontrak-grid-table[data-grid="asset_toko"] {
-    min-width: 620px !important;
+    min-width: 100% !important;
+    width: 100% !important;
+}
+
+.table-asset-toko .table-responsive {
+    overflow-x: auto;
+}
+
+@media (min-width: 768px) {
+    .table-asset-toko .table-responsive {
+        overflow-x: visible;
+    }
 }
 
 .table-target-incentive .kontrak-grid-table,

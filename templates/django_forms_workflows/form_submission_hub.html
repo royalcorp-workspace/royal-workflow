@@ -385,12 +385,14 @@
       <h1 class="hub-page-title">{{ form_def.name }}</h1>
       <p class="hub-page-subtitle">Kelola dan pantau riwayat serta status pengajuan kontrak kerjasama toko/dealer ritel.</p>
     </div>
+    {% if can_submit %}
     <div class="align-self-stretch align-self-md-auto">
       <a href="{{ submit_url }}" class="btn-create-submission w-100 justify-content-center" id="btnCreateNewSubmission">
         <i class="bi bi-plus-lg"></i>
         <span>Buat Pengajuan Baru</span>
       </a>
     </div>
+    {% endif %}
   </div>
 
   {# ── Unified Enterprise Data Card (Filter Bar + Table) ── #}
@@ -403,25 +405,22 @@
           <i class="bi bi-search filter-search-icon"></i>
           <input type="text"
                  name="q"
+                 id="hubSearchInput"
                  class="form-control filter-search-input"
-                 placeholder="Cari no. SPK / toko..."
+                 placeholder="Cari no. SPK, brand, toko, diajukan oleh..."
                  value="{{ search_query }}"
-                 aria-label="Cari no. SPK atau toko">
+                 aria-label="Cari no. SPK, brand, toko, atau pemohon"
+                 autocomplete="off">
         </div>
 
         <div class="d-flex align-items-center gap-2 flex-wrap">
-          <select name="status" class="form-select filter-status-select" aria-label="Filter status pengajuan">
+          <select name="status" id="hubStatusSelect" class="form-select filter-status-select" aria-label="Filter status pengajuan">
             <option value="all" {% if not status_filter or status_filter == 'all' %}selected{% endif %}>Semua Status</option>
             <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Menunggu Review</option>
             <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Disetujui</option>
             <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Ditolak</option>
             <option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>Draft</option>
           </select>
-
-          <button type="submit" class="btn btn-filter-neutral">
-            <i class="bi bi-funnel"></i>
-            <span>Terapkan</span>
-          </button>
 
           {% if search_query or status_filter != 'all' and status_filter %}
           <a href="?" class="btn btn-filter-reset" title="Reset filter pencarian">
@@ -531,4 +530,65 @@
   </div>
 
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const filterForm = document.getElementById('filterForm');
+    const searchInput = document.getElementById('hubSearchInput');
+    const statusSelect = document.getElementById('hubStatusSelect');
+    const table = document.getElementById('submissionsUnifiedTable');
+    if (!filterForm) return;
+
+    // 1. Auto-filter saat status dropdown berubah
+    if (statusSelect) {
+        statusSelect.addEventListener('change', function() {
+            filterForm.submit();
+        });
+    }
+
+    // 2. Auto-search saat mengetik (Live DOM filter + debounced server query)
+    if (searchInput && table) {
+        let debounceTimer = null;
+
+        // Restore focus to search input if query exists
+        if (searchInput.value) {
+            const val = searchInput.value;
+            searchInput.focus();
+            searchInput.setSelectionRange(val.length, val.length);
+        }
+
+        searchInput.addEventListener('input', function() {
+            const query = this.value.trim().toLowerCase();
+
+            // A. Live Instant DOM Filter (0ms delay)
+            const rows = table.querySelectorAll('tbody tr');
+            let visibleCount = 0;
+            rows.forEach(function(row) {
+                // Jangan filter jika row adalah empty-state
+                if (row.querySelector('.enterprise-empty-state')) return;
+                const rowText = row.innerText.toLowerCase();
+                const matches = !query || rowText.includes(query);
+                row.style.display = matches ? '' : 'none';
+                if (matches) visibleCount++;
+            });
+
+            // B. Debounce Server Query (450ms) to ensure full DB search coverage
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(function() {
+                filterForm.submit();
+            }, 450);
+        });
+
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                clearTimeout(debounceTimer);
+                filterForm.submit();
+            }
+        });
+    }
+});
+</script>
 {% endblock %}

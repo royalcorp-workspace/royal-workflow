@@ -231,6 +231,36 @@ def _get_column_info(key):
     return {"label": label, "align": "start", "type": "text"}
 
 
+def get_market_share_brand_label(brand_name):
+    if not brand_name:
+        return "Royal / SERENITY (Rp)"
+    b = str(brand_name).strip().upper()
+    if "LADY" in b:
+        return "LADY (Rp)"
+    if "SERENITY" in b:
+        return "SERENITY (Rp)"
+    if "ROYAL" in b or "FOAM" in b:
+        return "ROYAL FOAM (Rp)"
+    if "GRAND" in b:
+        return "GRAND EXCLUSIVE (Rp)"
+    if "ELITE" in b:
+        return "ELITE (Rp)"
+@register.filter
+def whatsapp_phone(val):
+    """Normalize Indonesian phone number to WhatsApp international standard (e.g. 6281234567890)."""
+    if not val:
+        return ""
+    import re
+    digits = re.sub(r"[^0-9]", "", str(val))
+    if digits.startswith("0"):
+        digits = "62" + digits[1:]
+    elif digits.startswith("62"):
+        pass
+    elif digits:
+        digits = "62" + digits
+    return digits
+
+
 def _is_empty_template(rows):
     """Check if all rows are default templates with no meaningful user input."""
     for r in rows:
@@ -273,7 +303,7 @@ def is_grid_data(value):
 
 
 @register.filter(is_safe=True)
-def render_grid_table(value):
+def render_grid_table(value, brand=None):
     """Render structured grid data (list of dicts or JSON array) as a clean corporate table."""
     import json
     import re
@@ -311,14 +341,18 @@ def render_grid_table(value):
     ]
     for h in headers:
         cinfo = _get_column_info(h)
+        col_label = cinfo["label"]
+        if h == "serenity" and brand:
+            col_label = get_market_share_brand_label(brand)
         align_class = f"text-{cinfo.get('align', 'start')}"
         width_style = f"width: {cinfo['width']};" if 'width' in cinfo else ""
         out.append(
             f'<th class="text-nowrap {align_class}" '
             f'style="background-color: #f1f5f9; color: #1e293b; padding: 8px 10px; font-size: 0.85rem; '
             f'border: 1px solid #cbd5e1; font-weight: 600; {width_style}">'
-            f'{escape(cinfo["label"])}</th>'
+            f'{escape(col_label)}</th>'
         )
+
     out.append('</tr></thead><tbody>')
 
     for r in rows:

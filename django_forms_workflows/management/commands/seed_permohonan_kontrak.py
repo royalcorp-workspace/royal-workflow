@@ -73,7 +73,7 @@ class Command(BaseCommand):
         sol_identitas = self._ensure_shared_option_list(
             slug="jenis-identitas-list",
             name="Daftar Jenis Identitas",
-            items=["NIK / NPWP", "NIK (KTP)", "NPWP"],
+            items=["NIK", "NPWP"],
         )
 
         # 3. Category
@@ -142,18 +142,14 @@ class Command(BaseCommand):
             form.description = clean_description
             form.save(update_fields=["description"])
 
-        # Assign form access groups
+        # Assign form access groups: strictly Sales Staff only (initiators)
         self._set_form_groups(
             form,
             submit_groups=[
                 groups["Sales Staff"],
-                groups["Sales And Marketing"],
-                groups["Sales Area Manager"],
             ],
             view_groups=[
                 groups["Sales Staff"],
-                groups["Sales And Marketing"],
-                groups["Sales Area Manager"],
             ],
             admin_groups=[],
             reviewer_groups=[groups["General Manager Sales"], groups["Legal Team"]],
@@ -565,7 +561,7 @@ class Command(BaseCommand):
             <p style="margin-bottom: 12px;">Selanjutnya disebut sebagai <strong>PIHAK KEDUA</strong> Dealer produk Springbed merk <strong>“{brand}”</strong></p>
 
             <p style="text-align: justify; margin-bottom: 16px;">
-                Dalam upaya meningkatkan kerjasama dalam penjualan produk {brand}, kedua belah pihak di atas sepakat untuk menandatangani kontrak perjanjian kerja sama dengan mengikuti syarat – syarat dan ketentuan – ketentuan sebagai berikut :
+                Dalam upaya meningkatkan kerjasama dalam penjualan produk <strong>{brand}</strong>, kedua belah pihak di atas sepakat untuk menandatangani kontrak perjanjian kerja sama dengan mengikuti syarat – syarat dan ketentuan – ketentuan sebagai berikut :
             </p>
 
             <!-- BAB I -->
@@ -574,7 +570,7 @@ class Command(BaseCommand):
             </div>
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 1</div>
             <p style="text-align: justify; margin-bottom: 12px;">
-                Pihak Pertama menitipkan/menjual kepada Pihak Kedua Produk Springbed dengan merk “ {brand} “ untuk dijual oleh Pihak Kedua pada tempat yang telah diberitahukan dan disetujui oleh Pihak Pertama dengan mengacu pada ketentuan Volume dan Harga Penjualan yang telah di sepakati.
+                <strong>Pihak Pertama</strong> menitipkan/menjual kepada <strong>Pihak Kedua</strong> Produk Springbed dengan merk “ <strong>{brand}</strong> “ untuk dijual oleh <strong>Pihak Kedua</strong> pada tempat yang telah diberitahukan dan disetujui oleh <strong>Pihak Pertama</strong> dengan mengacu pada ketentuan Volume dan Harga Penjualan yang telah di sepakati.
             </p>
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 2</div>
@@ -588,10 +584,10 @@ class Command(BaseCommand):
             </div>
             
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 3</div>
-            <ol style="margin-top: 0; margin-bottom: 12px; padding-left: 20px;">
-                <li style="text-align: justify; margin-bottom: 4px;">Para Pihak sepakat bahwa Target Volume Penjualan produk selama jangka waktu perjanjian ini <strong>{target_volume_text}</strong> per bulan Exclude Ppn.</li>
-                <li style="text-align: justify;">Pihak Kedua wajib memenuhi Volume Penjualan yang telah ditentukan dalam perjanjian ini.</li>
-            </ol>
+            <div style="margin-top: 0; margin-bottom: 12px;">
+                <p style="text-align: justify; margin-bottom: 4px; text-indent: -24px; padding-left: 24px;">(1) Para Pihak sepakat bahwa Target Volume Penjualan produk selama jangka waktu perjanjian ini <strong>{target_volume_text}</strong> per bulan Exclude Ppn.</p>
+                <p style="text-align: justify; margin-bottom: 0; text-indent: -24px; padding-left: 24px;">(2) Pihak Kedua wajib memenuhi Volume Penjualan yang telah ditentukan dalam perjanjian ini.</p>
+            </div>
             <div style="margin-bottom: 12px;">{target_incentive_table}</div>
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 4</div>
@@ -766,7 +762,7 @@ class Command(BaseCommand):
             <p style="margin-bottom: 12px;">Selanjutnya disebut sebagai <strong>PIHAK KEDUA</strong> Dealer produk Springbed merk <strong>“{brand}”</strong></p>
 
             <p style="text-align: justify; margin-bottom: 16px;">
-                Dalam upaya meningkatkan kerjasama dalam penjualan produk {brand}, kedua belah pihak di atas sepakat untuk menandatangani kontrak perjanjian kerja sama dengan mengikuti syarat – syarat dan ketentuan – ketentuan sebagai berikut :
+                Dalam upaya meningkatkan kerjasama dalam penjualan produk <strong>{brand}</strong>, kedua belah pihak di atas sepakat untuk menandatangani kontrak perjanjian kerja sama dengan mengikuti syarat – syarat dan ketentuan – ketentuan sebagai berikut :
             </p>
 
             <!-- BAB I -->
@@ -775,7 +771,7 @@ class Command(BaseCommand):
             </div>
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 1</div>
             <p style="text-align: justify; margin-bottom: 12px;">
-                Pihak Pertama menitipkan/menjual kepada Pihak Kedua Produk Springbed dengan merk “ {brand} “ untuk dijual oleh Pihak Kedua pada tempat yang telah diberitahukan dan disetujui oleh Pihak Pertama dengan mengacu pada ketentuan Volume dan Harga Penjualan yang telah di sepakati.
+                <strong>Pihak Pertama</strong> menitipkan/menjual kepada <strong>Pihak Kedua</strong> Produk Springbed dengan merk “ <strong>{brand}</strong> “ untuk dijual oleh <strong>Pihak Kedua</strong> pada tempat yang telah diberitahukan dan disetujui oleh <strong>Pihak Pertama</strong> dengan mengacu pada ketentuan Volume dan Harga Penjualan yang telah di sepakati.
             </p>
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 2</div>
@@ -789,10 +785,10 @@ class Command(BaseCommand):
             </div>
             
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 3</div>
-            <ol style="margin-top: 0; margin-bottom: 12px; padding-left: 20px;">
-                <li style="text-align: justify; margin-bottom: 4px;">Para Pihak sepakat bahwa Target Volume Penjualan produk selama jangka waktu perjanjian ini <strong>{target_volume_text}</strong> per bulan Exclude Ppn.</li>
-                <li style="text-align: justify;">Pihak Kedua wajib memenuhi Volume Penjualan yang telah ditentukan dalam perjanjian ini.</li>
-            </ol>
+            <div style="margin-top: 0; margin-bottom: 12px;">
+                <p style="text-align: justify; margin-bottom: 4px; text-indent: -24px; padding-left: 24px;">(1) Para Pihak sepakat bahwa Target Volume Penjualan produk selama jangka waktu perjanjian ini <strong>{target_volume_text}</strong> per bulan Exclude Ppn.</p>
+                <p style="text-align: justify; margin-bottom: 0; text-indent: -24px; padding-left: 24px;">(2) Pihak Kedua wajib memenuhi Volume Penjualan yang telah ditentukan dalam perjanjian ini.</p>
+            </div>
             <div style="margin-bottom: 12px;">{target_incentive_table}</div>
 
             <!-- PASAL 4 KHUSUS SUPPORT PROMOSI -->
@@ -1262,7 +1258,7 @@ class Command(BaseCommand):
                 "order": 22,
                 "step_number": 2,
                 "required": True,
-                "choices": ["Transfer / Cek / Giro", "Transfer Bank", "Cek / Bilyet Giro"],
+                "choices": ["Transfer", "Cek", "Giro"],
             },
             {
                 "field_name": "discount_do",
