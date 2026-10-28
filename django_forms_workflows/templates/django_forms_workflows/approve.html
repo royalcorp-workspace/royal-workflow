@@ -699,26 +699,13 @@
             </div>
 
             <div class="decision-actions-right d-flex align-items-center gap-2.5 flex-grow-1 flex-md-grow-0 justify-content-end">
-              {% if send_back_stages %}
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-warning text-dark d-inline-flex align-items-center justify-content-center gap-1.5 flex-fill flex-md-grow-0"
-                  style="padding: 0.45rem 1rem; font-weight: 500; font-size: 0.875rem; border-radius: 6px;"
-                  data-bs-toggle="modal"
-                  data-bs-target="#sendBackModal">
-                  <i class="bi bi-arrow-return-left"></i>
-                  <span>Send Back</span>
-                </button>
-              {% endif %}
-
               <button
-                type="submit"
-                name="decision"
-                value="reject"
-                formnovalidate
+                type="button"
                 class="btn btn-sm btn-outline-danger btn-decision-reject d-inline-flex align-items-center justify-content-center gap-1.5 flex-fill flex-md-grow-0"
-                style="padding: 0.45rem 1rem; font-weight: 500; font-size: 0.875rem; border-radius: 6px;">
-                <i class="bi bi-x-circle me-1"></i> Reject
+                style="padding: 0.45rem 1rem; font-weight: 500; font-size: 0.875rem; border-radius: 6px;"
+                data-bs-toggle="modal"
+                data-bs-target="#rejectModal">
+                <i class="bi bi-arrow-counterclockwise me-1"></i> Tolak / Minta Revisi
               </button>
 
               {% if task.workflow_stage and task.workflow_stage.order == 3 %}
@@ -729,7 +716,7 @@
                     value="approve"
                     class="btn btn-sm btn-success btn-decision-approve d-inline-flex align-items-center justify-content-center gap-1.5 flex-fill flex-md-grow-0 shadow-sm"
                     style="padding: 0.45rem 1.25rem; font-weight: 600; font-size: 0.875rem; border-radius: 6px;">
-                    <i class="bi bi-check2-circle me-1"></i> Approve
+                    <i class="bi bi-check2-circle me-1"></i> Setujui ({{ task.workflow_stage.name|default:"Sales Support" }})
                   </button>
                 {% elif signing_token and signing_token.status != 'signed' %}
                   <button
@@ -746,15 +733,15 @@
                     type="submit"
                     name="decision"
                     value="approve"
-                    class="btn btn-sm btn-dark btn-decision-approve d-inline-flex align-items-center justify-content-center gap-1.5 flex-fill flex-md-grow-0"
+                    class="btn btn-sm btn-primary btn-decision-approve d-inline-flex align-items-center justify-content-center gap-1.5 flex-fill flex-md-grow-0"
                     style="padding: 0.45rem 1.25rem; font-weight: 600; font-size: 0.875rem; border-radius: 6px;">
-                    <i class="bi bi-check2-circle me-1"></i> {{ task.workflow_stage.approve_label|default:"Approve" }}
+                    <i class="bi bi-check2-circle me-1"></i> Setujui ({{ task.workflow_stage.name|default:"Approve" }})
                   </button>
                 {% endif %}
               {% elif task.workflow_stage and task.workflow_stage.order == 4 and submission.form_definition.slug == 'permohonan-kontrak' %}
                 <button
                   type="button"
-                  class="btn btn-sm btn-dark btn-decision-approve d-inline-flex align-items-center justify-content-center gap-1.5 flex-fill flex-md-grow-0"
+                  class="btn btn-sm btn-primary btn-decision-approve d-inline-flex align-items-center justify-content-center gap-1.5 flex-fill flex-md-grow-0"
                   style="padding: 0.45rem 1.25rem; font-weight: 600; font-size: 0.875rem; border-radius: 6px;"
                   data-bs-toggle="modal"
                   data-bs-target="#direkturSignModal">
@@ -765,9 +752,9 @@
                   type="submit"
                   name="decision"
                   value="approve"
-                  class="btn btn-sm btn-dark btn-decision-approve d-inline-flex align-items-center justify-content-center gap-1.5 flex-fill flex-md-grow-0"
+                  class="btn btn-sm btn-primary btn-decision-approve d-inline-flex align-items-center justify-content-center gap-1.5 flex-fill flex-md-grow-0"
                   style="padding: 0.45rem 1.25rem; font-weight: 600; font-size: 0.875rem; border-radius: 6px;">
-                  <i class="bi bi-check2-circle me-1"></i> {{ task.workflow_stage.approve_label|default:"Approve" }}
+                  <i class="bi bi-check2-circle me-1"></i> Setujui ({{ task.workflow_stage.name|default:"Approve" }})
                 </button>
               {% endif %}
             </div>
@@ -830,60 +817,61 @@
       </div>
     {% endif %}
 
-    {# ── Send Back for Correction Modal ── #}
-    {% if send_back_stages %}
-      <div class="modal fade" id="sendBackModal" tabindex="-1" aria-labelledby="sendBackModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-          <div class="modal-content border">
-            <form method="post" data-loading-message="Sending back for correction…">
-              {% csrf_token %}
-              <input type="hidden" name="decision" value="send_back">
+    {# ── Reject / Kembalikan ke Pemohon Modal ── #}
+    <div class="modal fade" id="rejectModal" tabindex="-1" aria-labelledby="rejectModalLabel" aria-hidden="true" data-bs-backdrop="static">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-danger shadow-lg">
+          <form method="post" id="formRejectModal" data-loading-message="Mengembalikan pengajuan ke pemohon…">
+            {% csrf_token %}
+            <input type="hidden" name="decision" value="request_revision">
 
-              <div class="modal-header bg-light border-bottom">
-                <h5 class="modal-title h6 fw-bold text-dark mb-0" id="sendBackModalLabel">
-                  <i class="bi bi-arrow-return-left me-1"></i> Send Back for Correction
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-              </div>
+            <div class="modal-header bg-danger bg-opacity-10 text-danger border-bottom border-danger-subtle py-3">
+              <h5 class="modal-title h6 fw-bold text-danger mb-0 d-flex align-items-center gap-2" id="rejectModalLabel">
+                <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+                <span>Kembalikan Pengajuan untuk Revisi</span>
+              </h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+            </div>
 
-              <div class="modal-body">
-                <p class="text-secondary small mb-3">
-                  The submission will not be rejected. It will be returned to the selected prior stage so the approver can revise their entries and re-approve.
-                </p>
-
-                <div class="mb-3">
-                  <label for="send_back_stage_id" class="form-label fw-semibold text-dark small">Return to Stage <span class="text-danger">*</span></label>
-                  <select class="form-select form-select-sm" id="send_back_stage_id" name="send_back_stage_id" required>
-                    <option value="">— Select prior stage —</option>
-                    {% for stage in send_back_stages %}
-                      <option value="{{ stage.id }}">{{ stage.name }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-
-                <div class="mb-2">
-                  <label for="send_back_reason" class="form-label fw-semibold text-dark small">Reason for Correction <span class="text-danger">*</span></label>
-                  <textarea
-                    class="form-control form-control-sm"
-                    id="send_back_reason"
-                    name="send_back_reason"
-                    rows="3"
-                    placeholder="Describe what needs correction and why…"
-                    required></textarea>
+            <div class="modal-body p-3 p-md-4">
+              <div class="alert alert-warning py-2.5 px-3 small d-flex align-items-start gap-2 mb-3 rounded-2">
+                <i class="bi bi-info-circle-fill mt-0.5 flex-shrink-0 text-warning fs-6"></i>
+                <div style="font-size: 13px; line-height: 1.45;">
+                  Pengajuan akan dialirkan mundur ke <strong>Admin Sales Cabang ({% if submission.submitter %}{{ submission.submitter.get_full_name|default:submission.submitter.username }}{% else %}Pemohon{% endif %})</strong>. Tiket <strong>tidak dihapus</strong> melainkan dibuka kembali untuk diperbaiki sebelum masuk kembali ke Tahap 1.
                 </div>
               </div>
 
-              <div class="modal-footer bg-light border-top d-flex justify-content-between">
-                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="submit" class="btn btn-sm btn-warning text-dark fw-semibold">
-                  <i class="bi bi-arrow-return-left me-1"></i> Confirm Send Back
-                </button>
+              <div class="mb-2">
+                <label for="rejectReasonTextarea" class="form-label fw-bold text-dark small mb-1">
+                  Catatan / Alasan Revisi untuk Pemohon <span class="text-danger">*</span>
+                </label>
+                <textarea
+                  class="form-control"
+                  id="rejectReasonTextarea"
+                  name="comments"
+                  rows="4"
+                  placeholder="Contoh: Lampiran KTP penjamin belum jelas, mohon perbaiki besaran DP dan upload ulang bukti transfer..."
+                  required
+                  minlength="10"
+                  style="font-size: 0.925rem; line-height: 1.4;"></textarea>
+                <div class="d-flex justify-content-between align-items-center mt-1.5">
+                  <span id="rejectCharCounter" class="text-muted small" style="font-size: 11.5px;">Minimal 10 karakter</span>
+                  <div class="text-danger small d-none" id="rejectErrorMsg" style="font-size: 11.5px;">Wajib diisi minimal 10 karakter.</div>
+                </div>
               </div>
-            </form>
-          </div>
+            </div>
+
+            <div class="modal-footer bg-light border-top py-2.5 px-3 d-flex justify-content-between">
+              <button type="button" class="btn btn-sm btn-outline-secondary px-3" data-bs-dismiss="modal">Batal</button>
+              <button type="submit" id="btnConfirmReject" class="btn btn-sm btn-danger px-3.5 fw-semibold d-inline-flex align-items-center gap-1.5" disabled>
+                <i class="bi bi-arrow-return-left"></i>
+                <span>Kembalikan ke Pemohon</span>
+              </button>
+            </div>
+          </form>
         </div>
       </div>
-    {% endif %}
+    </div>
 
   {% endif %}
 
@@ -899,6 +887,40 @@
     const config = {{ approval_form_enhancements_config|default:"null"|safe }};
     if (formElement && config) {
       window.approvalFormEnhancements = new FormEnhancements(formElement, config);
+    }
+
+    // ── Live validation for Reject / Kembalikan ke Pemohon Modal ──
+    const rejectTextarea = document.getElementById('rejectReasonTextarea');
+    const rejectSubmitBtn = document.getElementById('btnConfirmReject');
+    const rejectCharCounter = document.getElementById('rejectCharCounter');
+    const rejectErrorMsg = document.getElementById('rejectErrorMsg');
+
+    if (rejectTextarea && rejectSubmitBtn) {
+      function validateRejectInput() {
+        const val = rejectTextarea.value.trim();
+        const len = val.length;
+        if (len < 10) {
+          rejectSubmitBtn.disabled = true;
+          rejectCharCounter.textContent = `${len}/10 karakter (kurang ${10 - len} karakter)`;
+          rejectCharCounter.classList.add('text-muted');
+          rejectCharCounter.classList.remove('text-success', 'fw-semibold');
+        } else {
+          rejectSubmitBtn.disabled = false;
+          rejectCharCounter.textContent = `${len} karakter (valid)`;
+          rejectCharCounter.classList.remove('text-muted');
+          rejectCharCounter.classList.add('text-success', 'fw-semibold');
+        }
+      }
+      rejectTextarea.addEventListener('input', validateRejectInput);
+      rejectTextarea.addEventListener('change', validateRejectInput);
+
+      const rejectModalEl = document.getElementById('rejectModal');
+      if (rejectModalEl) {
+        rejectModalEl.addEventListener('shown.bs.modal', function () {
+          rejectTextarea.focus();
+          validateRejectInput();
+        });
+      }
     }
   });
 

@@ -172,7 +172,7 @@ class Command(BaseCommand):
         # Run migration for legacy 5-stage workflow if present
         self._migrate_existing_workflow_stages_and_tasks(workflow, groups)
 
-        # Stage 1: Review SPK oleh ASM (Dinamis: supervisor_1) - Aktif jika target >= 100jt
+        # Stage 1: Review SPK oleh ASM (Dinamis: supervisor_1) - Unconditional (Always Run)
         st1 = self._ensure_stage(
             workflow,
             name="Review SPK oleh ASM",
@@ -184,12 +184,12 @@ class Command(BaseCommand):
                 "allow_send_back": True,
                 "allow_reassign": True,
                 "approve_label": "Setujui (ASM)",
-                "trigger_conditions": {"field": "nilai_target", "operator": ">=", "value": 100000000},
+                "trigger_conditions": None,
             },
         )
         self._set_stage_groups(st1, [groups["Sales Area Manager"], groups["Branch Manager"]])
 
-        # Stage 2: Review SPK oleh RSOM (Dinamis: supervisor_2) - Aktif jika target > 800jt
+        # Stage 2: Review SPK oleh RSOM (Dinamis: supervisor_2) - Unconditional (Always Run)
         st2 = self._ensure_stage(
             workflow,
             name="Review SPK oleh RSOM",
@@ -201,7 +201,7 @@ class Command(BaseCommand):
                 "allow_send_back": True,
                 "allow_reassign": True,
                 "approve_label": "Setujui (RSOM)",
-                "trigger_conditions": {"field": "nilai_target", "operator": ">", "value": 800000000},
+                "trigger_conditions": None,
             },
         )
         self._set_stage_groups(st2, [groups["Sales Area Manager"], groups["General Manager Sales"]])

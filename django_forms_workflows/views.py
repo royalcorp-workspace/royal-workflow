@@ -463,8 +463,8 @@ def form_submit(request, slug):
         # ------------------------------------------------------------------ #
         # Draft save: only for authenticated users.                          #
         # ------------------------------------------------------------------ #
-        if "save_draft" in request.POST and not is_anonymous:
-            _skip = {"csrfmiddlewaretoken", "save_draft", "submit", "_stashed_files"}
+        if ("save_draft" in request.POST or request.POST.get("action") == "draft") and not is_anonymous:
+            _skip = {"csrfmiddlewaretoken", "save_draft", "submit", "action", "_stashed_files"}
             raw_data = {}
             for k in request.POST:
                 if k in _skip:
@@ -526,7 +526,9 @@ def form_submit(request, slug):
                 user_ip=get_client_ip(request),
                 comments="Saved as draft",
             )
-            messages.success(request, "Draft saved successfully.")
+            messages.success(request, "Draf pengajuan berhasil disimpan.")
+            if form_def.slug == "permohonan-kontrak":
+                return redirect("forms_workflows:form_submission_hub", slug=form_def.slug)
             return redirect("forms_workflows:my_submissions")
 
         # ------------------------------------------------------------------ #
@@ -1130,10 +1132,12 @@ def form_submission_hub(request, slug):
             | models.Q(submitter__last_name__icontains=search_query)
         )
 
-    # Filter Bar: Dropdown filter status: [ Semua Status | Menunggu Review | Disetujui | Ditolak | Draft ]
+    # Filter Bar: Dropdown filter status: [ Semua Status | Menunggu Review | Perlu Revisi | Disetujui | Ditolak | Draft ]
     status_filter = request.GET.get("status", "all").strip().lower()
     if status_filter in ["menunggu", "pending", "pending_approval"]:
         submissions_qs = submissions_qs.filter(status__in=["pending_approval", "submitted"])
+    elif status_filter in ["needs_revision", "revisi"]:
+        submissions_qs = submissions_qs.filter(status="needs_revision")
     elif status_filter in ["disetujui", "approved"]:
         submissions_qs = submissions_qs.filter(status="approved")
     elif status_filter in ["ditolak", "rejected"]:
@@ -1176,11 +1180,14 @@ def form_submission_hub(request, slug):
         # 4. Tanggal Diajukan
         tanggal = sub.submitted_at or sub.created_at
 
-        # 5. Status (Badge status halus: Menunggu, Disetujui, Ditolak, Draft)
+        # 5. Status (Badge status halus: Menunggu, Perlu Revisi, Disetujui, Ditolak, Draft)
         status_raw = sub.status
         if status_raw in ["pending_approval", "submitted"]:
             status_label = "Menunggu Review"
             badge_class = "badge-status-menunggu"
+        elif status_raw == "needs_revision":
+            status_label = "Perlu Revisi"
+            badge_class = "badge-status-revisi"
         elif status_raw == "approved":
             status_label = "Disetujui"
             badge_class = "badge-status-disetujui"
@@ -1197,10 +1204,14 @@ def form_submission_hub(request, slug):
             status_label = sub.get_status_display()
             badge_class = "badge-status-draft"
 
-        # 6. Aksi (Link "Detail" / "Review")
+        # 6. Aksi (Link "Detail" / "Review" / "Perbaiki")
         if status_raw == "draft" and sub.submitter_id == user.id:
             action_url = reverse("forms_workflows:form_submit", kwargs={"slug": form_def.slug}) + f"?draft={sub.id}"
             action_label = "Lanjutkan Draft"
+            action_is_review = False
+        elif status_raw == "needs_revision" and sub.submitter_id == user.id:
+            action_url = reverse("forms_workflows:form_submit", kwargs={"slug": form_def.slug}) + f"?revision={sub.id}"
+            action_label = "Perbaiki"
             action_is_review = False
         else:
             action_url = reverse("forms_workflows:submission_detail", kwargs={"submission_id": sub.id})
@@ -1983,12 +1994,12 @@ def approve_submission(request, task_id):
                     )
                     return redirect("forms_workflows:approve_submission", task_id=task_id)
 
-        # Revision request path — approver requests changes from the original submitter
-        if decision == "request_revision":
-            revision_reason = (request.POST.get("revision_reason", "") or comments).strip()
-            if not revision_reason:
+        # Reject / Revision request path — approver requests changes from the original submitter (Admin Sales Cabang)
+        if decision in ["request_revision", "reject"]:
+            revision_reason = (request.POST.get("comments", "") or request.POST.get("revision_reason", "")).strip()
+            if len(revision_reason) < 10:
                 messages.error(
-                    request, "Catatan/alasan perbaikan wajib diisi saat meminta revisi."
+                    request, "Catatan / alasan revisi untuk pemohon wajib diisi minimal 10 karakter."
                 )
                 return redirect("forms_workflows:approve_submission", task_id=task_id)
 
@@ -2003,7 +2014,7 @@ def approve_submission(request, task_id):
             )
             messages.warning(
                 request,
-                f"Permohonan #{submission.id} dikembalikan ke {submitter_name} untuk perbaikan/revisi data.",
+                f"Pengajuan SPK #{submission.id} dikembalikan ke {submitter_name} untuk perbaikan / revisi data.",
             )
             return redirect("forms_workflows:approval_inbox")
 
@@ -2911,13 +2922,18 @@ def withdraw_submission(request, submission_id):
 def discard_draft(request, submission_id):
     """Permanently delete a draft submission owned by the current user."""
     submission = get_object_or_404(FormSubmission, id=submission_id)
+    is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest" or request.META.get("HTTP_X_REQUESTED_WITH") == "XMLHttpRequest"
 
     # Only the submitter may discard their own draft
     if submission.submitter != request.user:
+        if is_ajax:
+            return JsonResponse({"success": False, "error": "Akses ditolak."}, status=403)
         return HttpResponseForbidden("You can only discard your own drafts.")
 
     # Must actually be a draft
     if submission.status != "draft":
+        if is_ajax:
+            return JsonResponse({"success": False, "error": "Hanya draf yang dapat dibuang."}, status=400)
         messages.error(request, "Only drafts can be discarded.")
         return redirect(
             "forms_workflows:submission_detail", submission_id=submission_id
@@ -2935,6 +2951,9 @@ def discard_draft(request, submission_id):
             user_ip=get_client_ip(request),
             comments=f'Draft discarded for form "{form_name}"',
         )
+
+        if is_ajax:
+            return JsonResponse({"success": True, "message": "Draft discarded successfully."})
 
         messages.success(request, "Draft discarded.")
         return redirect("forms_workflows:my_submissions")

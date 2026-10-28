@@ -270,6 +270,14 @@
   .badge-status-menunggu .badge-status-dot {
     background-color: #f59e0b;
   }
+  .badge-status-revisi {
+    background-color: #fff7ed;
+    color: #c2410c;
+    border-color: #ffedd5;
+  }
+  .badge-status-revisi .badge-status-dot {
+    background-color: #ea580c;
+  }
   .badge-status-disetujui {
     background-color: #f0fdf4;
     color: #166534;
@@ -417,6 +425,7 @@
           <select name="status" id="hubStatusSelect" class="form-select filter-status-select" aria-label="Filter status pengajuan">
             <option value="all" {% if not status_filter or status_filter == 'all' %}selected{% endif %}>Semua Status</option>
             <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Menunggu Review</option>
+            <option value="needs_revision" {% if status_filter == 'needs_revision' %}selected{% endif %}>Perlu Revisi</option>
             <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Disetujui</option>
             <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Ditolak</option>
             <option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>Draft</option>

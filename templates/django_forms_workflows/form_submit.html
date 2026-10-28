@@ -189,22 +189,51 @@
             {# ── Document Header ── #}
             <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center pb-3 mb-4 border-bottom gap-2">
                 <div>
-                    <div class="d-flex align-items-center gap-2">
-                        <h1 class="form-doc-title">{{ form_def.name }}</h1>
-                        {% if is_draft %}
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <h1 class="form-doc-title mb-0">{{ form_def.name }}</h1>
+                        {% if is_revision %}
+                            <span class="badge bg-warning text-dark border border-warning fw-semibold px-2 py-1"><i class="bi bi-pencil-square me-1"></i>Mode Revisi SPK #{{ revision_id }}</span>
+                        {% elif is_draft %}
                             <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Draft</span>
                         {% endif %}
                     </div>
-                    <p class="form-doc-subtitle">Complete all required fields below before submitting for approval.</p>
+                    <p class="form-doc-subtitle mt-1">{% if is_revision %}Perbaiki kolom formulir yang diminta, lalu klik Kirim Ulang Revisi.{% else %}Complete all required fields below before submitting for approval.{% endif %}</p>
                 </div>
                 <div id="autoSaveSlot">
-                    {% if form_def.enable_auto_save and user.is_authenticated %}
+                    {% if form_def.enable_auto_save and user.is_authenticated and not is_revision %}
                     <div id="autoSaveIndicator" class="auto-save-indicator">
                         <span id="autoSaveStatus"><i class="bi bi-cloud-check text-success me-1"></i> Auto-save enabled</span>
                     </div>
                     {% endif %}
                 </div>
             </div>
+
+            {# ── Revision Notice Banner ── #}
+            {% if is_revision %}
+                <div class="alert alert-warning border border-warning shadow-sm mb-4 p-3 rounded-2">
+                    <div class="d-flex align-items-start gap-2.5">
+                        <i class="bi bi-exclamation-triangle-fill text-warning fs-5 mt-0.5 flex-shrink-0"></i>
+                        <div class="flex-grow-1">
+                            <div class="fw-bold text-dark">Pengajuan SPK #{{ revision_id }} Memerlukan Perbaikan Data</div>
+                            <div class="small text-secondary mb-1">
+                                Anda sedang mengedit pengajuan yang dikembalikan oleh peninjau. Perbaiki isian sesuai catatan di bawah ini, kemudian kirimkan kembali agar tiket diteruskan ke Tahap 1 (ASM).
+                            </div>
+                            {% if last_revision_task and last_revision_task.comments %}
+                            <div class="p-2.5 bg-white rounded border border-warning-subtle small mt-2">
+                                <div class="text-muted mb-1" style="font-size: 11.5px;">
+                                    <i class="bi bi-chat-quote-fill text-warning me-1"></i>
+                                    <strong>Catatan dari {% if last_revision_task.completed_by %}{{ last_revision_task.completed_by.get_full_name|default:last_revision_task.completed_by.username }}{% else %}Approver{% endif %}{% if last_revision_task.workflow_stage %} ({{ last_revision_task.workflow_stage.name }}){% endif %}:</strong>
+                                    <span>{{ last_revision_task.completed_at|date:"d M Y H:i" }}</span>
+                                </div>
+                                <div class="fst-italic text-dark ps-2 border-start border-2 border-warning" style="font-size: 0.925rem;">
+                                    &#8220;{{ last_revision_task.comments }}&#8221;
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
 
             {# ── Instructions Banner ── #}
             {% if form_def.instructions %}
@@ -284,7 +313,11 @@
                         </button>
                         {% endif %}
                         <button type="submit" name="action" value="submit" class="btn btn-primary btn-wizard-submit {% if form_def.enable_multi_step %}d-none{% endif %}" id="btnSubmitApplication">
-                            <i class="bi bi-check2-circle me-1"></i> Submit
+                            {% if is_revision %}
+                                <i class="bi bi-arrow-repeat me-1"></i> Kirim Ulang Revisi
+                            {% else %}
+                                <i class="bi bi-check2-circle me-1"></i> Submit
+                            {% endif %}
                         </button>
                     </div>
                 </div>

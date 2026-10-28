@@ -180,6 +180,14 @@
                 applyDraftData(candidateDraftData);
                 if (serverDraftMeta && serverDraftMeta.dataset.draftId) {
                     form.dataset.currentDraftId = serverDraftMeta.dataset.draftId;
+                    let draftInput = form.querySelector('input[name="draft_id"]');
+                    if (!draftInput) {
+                        draftInput = document.createElement('input');
+                        draftInput.type = 'hidden';
+                        draftInput.name = 'draft_id';
+                        form.appendChild(draftInput);
+                    }
+                    draftInput.value = serverDraftMeta.dataset.draftId;
                 }
                 refreshAllGridsAndHeaders();
             } else {
@@ -188,6 +196,14 @@
                     applyDraftData(candidateDraftData);
                     if (serverDraftMeta && serverDraftMeta.dataset.draftId) {
                         form.dataset.currentDraftId = serverDraftMeta.dataset.draftId;
+                        let draftInput = form.querySelector('input[name="draft_id"]');
+                        if (!draftInput) {
+                            draftInput = document.createElement('input');
+                            draftInput.type = 'hidden';
+                            draftInput.name = 'draft_id';
+                            form.appendChild(draftInput);
+                        }
+                        draftInput.value = serverDraftMeta.dataset.draftId;
                     }
                     refreshAllGridsAndHeaders();
                 });
@@ -3399,9 +3415,11 @@
             }
         };
 
-        btnDiscard.onclick = function () {
-            bsModal.hide();
-            discardDraft(form, true);
+        btnDiscard.onclick = async function () {
+            btnDiscard.disabled = true;
+            btnContinue.disabled = true;
+            btnDiscard.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Menyiapkan formulir baru...';
+            await discardDraft(form, true);
         };
 
         bsModal.show();
@@ -3424,9 +3442,9 @@
             btnDiscard.id = 'btnLocalDiscardDraft';
             btnDiscard.className = 'btn btn-outline-danger btn-sm btn-discard-draft' + (show ? '' : ' d-none');
             btnDiscard.innerHTML = '<i class="bi bi-trash3 me-1"></i> Discard Draft';
-            btnDiscard.addEventListener('click', function(e) {
+            btnDiscard.addEventListener('click', async function(e) {
                 e.preventDefault();
-                discardDraft(form);
+                await discardDraft(form);
             });
             const btnSaveDraft = footerActions.querySelector('#btnSaveDraft') || footerActions.querySelector('#btnWizardNext');
             if (btnSaveDraft) {
@@ -3443,23 +3461,45 @@
         }
     }
 
-    function discardDraft(form, skipConfirm) {
+    async function discardDraft(form, skipConfirm) {
         if (skipConfirm || confirm('Apakah Anda yakin ingin membuang draft dan mengosongkan seluruh formulir?')) {
             try {
                 localStorage.removeItem(STORAGE_KEY);
             } catch (e) {}
 
-            const serverDraftId = form.dataset.currentDraftId || form.querySelector('input[name="draft_id"]')?.value;
+            const serverDraftMeta = document.getElementById('activeServerDraftMeta');
+            const serverDraftId = form.dataset.currentDraftId 
+                || form.querySelector('input[name="draft_id"]')?.value
+                || serverDraftMeta?.dataset?.draftId;
+
             if (serverDraftId) {
                 const tokenInput = form.querySelector('[name="csrfmiddlewaretoken"]');
-                const csrfToken = tokenInput ? tokenInput.value : '';
-                fetch(`/forms/submissions/${serverDraftId}/discard/`, {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRFToken': csrfToken,
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                }).catch(e => console.warn('[KontrakDraft] Failed to discard server draft:', e));
+                let csrfToken = tokenInput ? tokenInput.value : '';
+                if (!csrfToken) {
+                    csrfToken = document.cookie
+                        .split('; ')
+                        .find(row => row.startsWith('csrftoken='))
+                        ?.split('=')[1] || '';
+                }
+                try {
+                    await fetch(`/forms/submissions/${serverDraftId}/discard/`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+                } catch (e) {
+                    console.warn('[KontrakDraft] Failed to discard server draft:', e);
+                }
+            }
+
+            if (serverDraftMeta) {
+                serverDraftMeta.remove();
+            }
+            const scriptData = document.getElementById('active_server_draft_data');
+            if (scriptData) {
+                scriptData.remove();
             }
 
             window.location.href = window.location.pathname;
@@ -3551,10 +3591,25 @@
 
         // Clear on successful form submission
         form.addEventListener('submit', function (e) {
+            const submitter = e.submitter || document.activeElement;
+            const isDraftAction = submitter && (
+                submitter.value === 'draft' || 
+                submitter.name === 'save_draft' || 
+                submitter.id === 'btnSaveDraft' ||
+                submitter.classList.contains('btn-save-draft')
+            );
+
+            // If user is explicitly saving a draft, do NOT run mandatory field validation
+            if (isDraftAction) {
+                return true;
+            }
+
             if (typeof form._validateNomorIdentitas === 'function') {
                 const isIdValid = form._validateNomorIdentitas(true);
                 if (!isIdValid) {
                     e.preventDefault();
+                    const overlay = document.getElementById('loadingOverlay');
+                    if (overlay) overlay.classList.remove('active');
                     if (window.switchWizardStep) {
                         window.switchWizardStep(0, false);
                     }

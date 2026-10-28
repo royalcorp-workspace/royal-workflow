@@ -4,16 +4,29 @@
 document.addEventListener('DOMContentLoaded', function() {
     // Form submission loading overlay handler
     document.querySelectorAll('form[method="post"]').forEach(function(form) {
-        form.addEventListener('submit', function() {
+        form.addEventListener('submit', function(e) {
             if (form.hasAttribute('data-no-spinner')) return;
             var overlay = document.getElementById('loadingOverlay');
             var msg = document.getElementById('loadingMessage');
             if (overlay) {
+                var submitter = e.submitter || document.activeElement;
+                var isDraft = submitter && (submitter.value === 'draft' || submitter.id === 'btnSaveDraft' || submitter.classList.contains('btn-save-draft'));
                 overlay.classList.add('active');
-                if (msg && form.dataset.loadingMessage) {
-                    msg.textContent = form.dataset.loadingMessage;
+                if (msg) {
+                    if (isDraft) {
+                        msg.textContent = 'Menyimpan draf pengajuan...';
+                    } else if (form.dataset.loadingMessage) {
+                        msg.textContent = form.dataset.loadingMessage;
+                    } else {
+                        msg.textContent = 'Processing...';
+                    }
                 }
             }
+            setTimeout(function() {
+                if (e.defaultPrevented && overlay) {
+                    overlay.classList.remove('active');
+                }
+            }, 0);
         });
     });
 

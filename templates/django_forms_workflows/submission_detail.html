@@ -64,6 +64,8 @@
                 <span class="badge-status-pill badge-status-submitted">Submitted</span>
             {% elif submission.status == 'pending_approval' or submission.status == 'pending' %}
                 <span class="badge-status-pill badge-status-pending"><i class="bi bi-clock me-1"></i>Pending Approval</span>
+            {% elif submission.status == 'needs_revision' %}
+                <span class="badge-status-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle"><i class="bi bi-arrow-repeat me-1"></i>Perlu Revisi</span>
             {% elif submission.status == 'approved' %}
                 <span class="badge-status-pill badge-status-approved"><i class="bi bi-check-circle me-1"></i>Approved</span>
             {% elif submission.status == 'rejected' %}
@@ -141,6 +143,52 @@
     </div>
   </div>
 
+  {# ── High-Visibility Revision Notice Alert ── #}
+  {% if submission.status == 'needs_revision' %}
+    <div class="alert alert-warning border border-warning shadow-sm mb-3 p-3 p-md-4 rounded-3" role="alert">
+      <div class="d-flex flex-column flex-md-row align-items-start justify-content-between gap-3">
+        <div class="d-flex align-items-start gap-3">
+          <div class="p-2 bg-warning bg-opacity-25 rounded-circle text-warning-emphasis flex-shrink-0">
+            <i class="bi bi-exclamation-triangle-fill fs-4 text-warning"></i>
+          </div>
+          <div>
+            <h5 class="fw-bold text-dark mb-1 d-flex align-items-center gap-2 flex-wrap">
+              <span>Pengajuan Memerlukan Revisi</span>
+              <span class="badge bg-warning text-dark font-monospace" style="font-size: 11px;">needs_revision</span>
+            </h5>
+            <p class="text-secondary small mb-2">
+              Peninjau meminta Anda untuk memperbaiki data pada pengajuan ini sebelum dapat diproses kembali ke Tahap 1 (ASM).
+            </p>
+
+            {% with last_revision_task=submission.approval_tasks.all|dictsortreversed:"completed_at"|first %}
+              {% if last_revision_task and last_revision_task.comments %}
+                <div class="p-3 bg-white rounded border border-warning-subtle my-2">
+                  <div class="d-flex align-items-center gap-2 small text-muted mb-1">
+                    <i class="bi bi-chat-quote-fill text-warning"></i>
+                    <strong>Catatan dari {% if last_revision_task.completed_by %}{{ last_revision_task.completed_by.get_full_name|default:last_revision_task.completed_by.username }}{% else %}Approver{% endif %}{% if last_revision_task.workflow_stage %} ({{ last_revision_task.workflow_stage.name }}){% endif %}:</strong>
+                    <span>{{ last_revision_task.completed_at|date:"d M Y H:i" }}</span>
+                  </div>
+                  <div class="fst-italic text-dark ps-3 border-start border-3 border-warning" style="font-size: 0.95rem;">
+                    &#8220;{{ last_revision_task.comments }}&#8221;
+                  </div>
+                </div>
+              {% endif %}
+            {% endwith %}
+          </div>
+        </div>
+
+        {% if submission.submitter == user %}
+          <div class="flex-shrink-0 w-100 w-md-auto text-end">
+            <a href="{% url 'forms_workflows:form_submit' submission.form_definition.slug %}?revision={{ submission.id }}" class="btn btn-warning btn-lg fw-bold px-3 py-2 text-dark shadow-sm d-inline-flex align-items-center justify-content-center gap-2 w-100 w-md-auto">
+              <i class="bi bi-pencil-square fs-5"></i>
+              <span>Perbaiki Pengajuan Sekarang</span>
+            </a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
   {# ── Form Metadata Overview ── #}
   <div class="doc-card mb-3">
     <div class="doc-card-header">
@@ -173,6 +221,8 @@
             <div class="kv-value">
               {% if submission.status == 'approved' %}
                 <span class="badge-status-pill badge-status-approved">{{ submission.get_status_display }}</span>
+            {% elif submission.status == 'needs_revision' %}
+                <span class="badge-status-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle">{{ submission.get_status_display }}</span>
               {% elif submission.status == 'rejected' %}
                 <span class="badge-status-pill badge-status-rejected">{{ submission.get_status_display }}</span>
               {% elif submission.status == 'pending_approval' or submission.status == 'pending' %}
@@ -419,13 +469,20 @@
           </a>
         {% endif %}
 
-        {% if submission.status == 'submitted' or submission.status == 'pending_approval' %}
+        {% if submission.status == 'submitted' or submission.status == 'pending_approval' or submission.status == 'needs_revision' %}
           {% if submission.form_definition.allow_withdrawal and submission.submitter == user %}
-            <a href="{% url 'forms_workflows:withdraw_submission' submission.id %}" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1">
+            <button type="button" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1" data-bs-toggle="modal" data-bs-target="#withdrawModal">
               <i class="bi bi-x-circle"></i>
               <span>Withdraw Submission</span>
-            </a>
+            </button>
           {% endif %}
+        {% endif %}
+
+        {% if submission.status == 'needs_revision' and submission.submitter == user %}
+          <a href="{% url 'forms_workflows:form_submit' submission.form_definition.slug %}?revision={{ submission.id }}" class="btn btn-sm btn-warning fw-semibold text-dark d-inline-flex align-items-center gap-1 shadow-sm">
+            <i class="bi bi-pencil-square"></i>
+            <span>Perbaiki Pengajuan</span>
+          </a>
         {% endif %}
 
         {% if submission.status == 'rejected' or submission.status == 'withdrawn' %}
@@ -439,6 +496,50 @@
       </div>
     </div>
   </div>
+
+  {# ── Modal Konfirmasi Withdraw (Pemohon) ── #}
+  {% if submission.form_definition.allow_withdrawal and submission.submitter == user %}
+    <div class="modal fade" id="withdrawModal" tabindex="-1" aria-labelledby="withdrawModalLabel" aria-hidden="true" data-bs-backdrop="static">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border shadow">
+          <div class="modal-header bg-danger bg-opacity-10 text-danger border-bottom border-danger-subtle py-3">
+            <h5 class="modal-title h6 fw-bold text-danger mb-0 d-flex align-items-center gap-2" id="withdrawModalLabel">
+              <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+              <span>Konfirmasi Penarikan Pengajuan</span>
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+          </div>
+
+          <form method="post" action="{% url 'forms_workflows:withdraw_submission' submission.id %}">
+            {% csrf_token %}
+            <div class="modal-body p-3 p-md-4">
+              <p class="mb-2 text-dark" style="font-size: 0.95rem;">
+                Apakah Anda yakin ingin menarik / membatalkan pengajuan <strong>{{ submission.form_definition.name }} #{{ submission.id }}</strong>?
+              </p>
+              
+              <div class="alert alert-danger bg-danger bg-opacity-10 border border-danger-subtle p-2.5 small text-danger mb-3 rounded-2">
+                <i class="bi bi-info-circle-fill me-1"></i>
+                Tindakan ini akan <strong>menghentikan seluruh proses persetujuan</strong> yang sedang aktif dan menandai tiket sebagai <em>Withdrawn</em>. Tindakan ini tidak dapat dibatalkan.
+              </div>
+
+              <div class="mb-1">
+                <label for="withdrawModalReason" class="form-label text-secondary small fw-semibold">Catatan / Alasan Penarikan (Opsional)</label>
+                <textarea id="withdrawModalReason" name="reason" rows="2" class="form-control form-control-sm" placeholder="Contoh: Salah mengisi data toko, diajukan ulang nanti..."></textarea>
+              </div>
+            </div>
+
+            <div class="modal-footer bg-light border-top py-2.5 px-3 d-flex justify-content-between">
+              <button type="button" class="btn btn-sm btn-outline-secondary px-3" data-bs-dismiss="modal">Batal</button>
+              <button type="submit" class="btn btn-sm btn-danger px-3.5 fw-semibold d-inline-flex align-items-center gap-1.5">
+                <i class="bi bi-x-circle"></i>
+                <span>Ya, Tarik Pengajuan</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  {% endif %}
 
 </div>
 {% endblock %}
