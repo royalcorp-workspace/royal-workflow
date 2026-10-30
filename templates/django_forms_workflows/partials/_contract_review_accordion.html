@@ -1,0 +1,419 @@
+{% load forms_workflows_tags %}
+
+<div class="accordion review-contract-accordion border rounded-2 bg-white" id="reviewContractAccordion">
+
+  <!-- ==================== 1. INFORMASI PENGAJUAN & CABANG ==================== -->
+  <div class="accordion-item review-accordion-item border-0 border-bottom">
+    <h2 class="accordion-header" id="headingGrupPengajuan">
+      <button class="accordion-button collapsed review-accordion-btn py-2 px-3" type="button"
+              data-bs-toggle="collapse" data-bs-target="#collapseGrupPengajuan"
+              aria-expanded="false" aria-controls="collapseGrupPengajuan">
+        <div class="d-flex align-items-center justify-content-between w-100 pe-3 flex-wrap gap-2">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-building text-secondary" style="font-size: 14px;"></i>
+            <span class="review-section-title">1. Informasi Pengajuan &amp; Cabang</span>
+          </div>
+          <span class="review-section-meta text-muted small font-monospace">
+            {{ form_data.brand|default:"Brand" }} &middot; {{ form_data.cabang|default:"Cabang" }}
+          </span>
+        </div>
+      </button>
+    </h2>
+    <div id="collapseGrupPengajuan" class="accordion-collapse collapse" aria-labelledby="headingGrupPengajuan">
+      <div class="accordion-body px-3.5 py-3 bg-white border-top">
+        <div class="row g-3">
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Nomor SPK Resmi</span>
+              <span class="review-kv-value font-monospace fw-semibold">{{ form_data.nomor_spk|default:"(Otomatis Diterbitkan)" }}</span>
+            </div>
+          </div>
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Cabang / Area Operasional</span>
+              <span class="review-kv-value">{{ form_data.cabang|default:"—" }}</span>
+            </div>
+          </div>
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Brand Produk Springbed</span>
+              <span class="review-kv-value">{{ form_data.brand|default:"—" }}</span>
+            </div>
+          </div>
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Perusahaan (Pihak Pertama)</span>
+              <span class="review-kv-value">{{ form_data.perusahaan|default:"PT. ROYAL ABADI SEJAHTERA" }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 2. PROFIL TOKO / PIHAK KEDUA ==================== -->
+  <div class="accordion-item review-accordion-item border-0 border-bottom">
+    <h2 class="accordion-header" id="headingGrupToko">
+      <button class="accordion-button collapsed review-accordion-btn py-2 px-3" type="button"
+              data-bs-toggle="collapse" data-bs-target="#collapseGrupToko"
+              aria-expanded="false" aria-controls="collapseGrupToko">
+        <div class="d-flex align-items-center justify-content-between w-100 pe-3 flex-wrap gap-2">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-shop text-secondary" style="font-size: 14px;"></i>
+            <span class="review-section-title">2. Profil Toko / Pihak Kedua</span>
+          </div>
+          <span class="review-section-meta text-muted small font-monospace">
+            {{ form_data.nama_toko|default:"Toko Mitra" }}{% if form_data.kode_customer_jde %} ({{ form_data.kode_customer_jde }}){% endif %}
+          </span>
+        </div>
+      </button>
+    </h2>
+    <div id="collapseGrupToko" class="accordion-collapse collapse" aria-labelledby="headingGrupToko">
+      <div class="accordion-body px-3.5 py-3 bg-white border-top">
+        <!-- Baris 1: Identitas Toko & Domisili (4 Kolom Simetris) -->
+        <div class="row g-3">
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Kode Customer JDE</span>
+              <span class="review-kv-value font-monospace fw-semibold">{{ form_data.kode_customer_jde|default:"—" }}</span>
+            </div>
+          </div>
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Nama Toko / Dealer</span>
+              <span class="review-kv-value fw-semibold">{{ form_data.nama_toko|default:"—" }}</span>
+            </div>
+          </div>
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Nama Pemilik / PIC</span>
+              <span class="review-kv-value">{{ form_data.nama_pemilik|default:"—" }}</span>
+            </div>
+          </div>
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Kota / Kabupaten</span>
+              <span class="review-kv-value">{{ form_data.kota|default:"—" }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="border-top my-3"></div>
+
+        <!-- Baris 2: Komunikasi & Legalitas (4 Kolom Simetris) -->
+        <div class="row g-3">
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">No. Telepon / HP</span>
+              <span class="review-kv-value">{{ form_data.no_telepon|default:"—" }}</span>
+            </div>
+          </div>
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Email Toko / Pemilik</span>
+              <span class="review-kv-value font-monospace text-dark">{{ form_data.email|default:"—" }}</span>
+            </div>
+          </div>
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">NPWP (15 / 16 Digit)</span>
+              <span class="review-kv-value font-monospace">{{ form_data.nomor_npwp|default:"—" }}</span>
+            </div>
+          </div>
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">NIK (KTP Pemilik)</span>
+              <span class="review-kv-value font-monospace">{{ form_data.nomor_nik|default:"—" }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="border-top my-3"></div>
+
+        <!-- Baris 3: Alamat Lengkap Toko (Full Width) -->
+        <div class="row g-3">
+          <div class="col-12">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Alamat Lengkap Toko</span>
+              <span class="review-kv-value text-break">{{ form_data.alamat_toko|default:"—" }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dynamic Grid: Asset Toko & Market Share -->
+        {% with has_asset=form_data.asset_toko has_market=form_data.market_share %}
+          {% if has_asset and has_asset != '[]' and has_asset != '""' and has_asset != 'null' and has_asset != '—' or has_market and has_market != '[]' and has_market != '""' and has_market != 'null' and has_market != '—' %}
+            {% if has_asset and has_asset != '[]' and has_asset != '""' and has_asset != 'null' and has_asset != '—' %}
+            <div class="review-table-section">
+              <div class="review-table-title"><i class="bi bi-box-seam text-secondary"></i>Data Asset Toko</div>
+              <div class="table-responsive w-100">
+                {{ form_data.asset_toko|render_grid_table }}
+              </div>
+            </div>
+            {% endif %}
+
+            {% if has_market and has_market != '[]' and has_market != '""' and has_market != 'null' and has_market != '—' %}
+            <div class="review-table-section">
+              <div class="review-table-title"><i class="bi bi-pie-chart text-secondary"></i>Data Market Share Kompetitor</div>
+              <div class="table-responsive w-100">
+                {{ form_data.market_share|render_grid_table:form_data.brand }}
+              </div>
+            </div>
+            {% endif %}
+          {% else %}
+            <div class="pt-2.5 mt-2.5 border-top">
+              <span class="text-muted small fst-italic"><i class="bi bi-info-circle me-1"></i>Tidak ada data asset / market share</span>
+            </div>
+          {% endif %}
+        {% endwith %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 3. KETENTUAN KONTRAK & KOMERSIAL ==================== -->
+  <div class="accordion-item review-accordion-item border-0 border-bottom">
+    <h2 class="accordion-header" id="headingGrupKomersial">
+      <button class="accordion-button collapsed review-accordion-btn py-2 px-3" type="button"
+              data-bs-toggle="collapse" data-bs-target="#collapseGrupKomersial"
+              aria-expanded="false" aria-controls="collapseGrupKomersial">
+        <div class="d-flex align-items-center justify-content-between w-100 pe-3 flex-wrap gap-2">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-file-earmark-ruled text-secondary" style="font-size: 14px;"></i>
+            <span class="review-section-title">3. Ketentuan Kontrak &amp; Komersial</span>
+          </div>
+          <span class="review-section-meta text-muted small font-monospace">
+            {% if 'Bulan' in form_data.durasi %}{{ form_data.durasi }}{% elif form_data.durasi %}{{ form_data.durasi }} Bulan{% else %}12 Bulan{% endif %} &middot; TOP {{ form_data.top|default:"30" }} Hari
+          </span>
+        </div>
+      </button>
+    </h2>
+    <div id="collapseGrupKomersial" class="accordion-collapse collapse" aria-labelledby="headingGrupKomersial">
+      <div class="accordion-body px-3.5 py-3 bg-white border-top">
+        <!-- Baris 1: Periode & Durasi (4 Kolom Simetris) -->
+        <div class="row g-3">
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Tanggal Mulai</span>
+              <span class="review-kv-value fw-semibold">{{ form_data.tanggal_mulai|format_date_indonesia|default:"—" }}</span>
+            </div>
+          </div>
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Tanggal Berakhir</span>
+              <span class="review-kv-value fw-semibold">{{ form_data.tanggal_berakhir|format_date_indonesia|default:"—" }}</span>
+            </div>
+          </div>
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Durasi Kontrak</span>
+              <span class="review-kv-value fw-semibold">
+                {% if 'Bulan' in form_data.durasi %}{{ form_data.durasi }}{% elif form_data.durasi %}{{ form_data.durasi }} Bulan{% else %}12 Bulan{% endif %}
+              </span>
+            </div>
+          </div>
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Grace Period</span>
+              <span class="review-kv-value">
+                {% if 'Bulan' in form_data.grace_period %}{{ form_data.grace_period }}{% elif form_data.grace_period %}{{ form_data.grace_period }} Bulan{% else %}1 Bulan{% endif %}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="border-top my-3"></div>
+
+        <!-- Baris 2: Pembayaran & Diskon DO (4 Kolom Simetris) -->
+        <div class="row g-3">
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">TOP (Hari Kerja)</span>
+              <span class="review-kv-value fw-semibold">{{ form_data.top|default:"30" }} Hari</span>
+            </div>
+          </div>
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Metode Pembayaran</span>
+              <span class="review-kv-value">Transfer / Cek / Giro</span>
+            </div>
+          </div>
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Diskon DO (%)</span>
+              <span class="review-kv-value font-monospace fw-semibold">{{ form_data.discount_do|default:"0" }}%</span>
+            </div>
+          </div>
+          <div class="col-sm-6 col-md-3">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Ketentuan DO</span>
+              <span class="review-kv-value">{{ form_data.ketentuan_do|default:"Jatuh tempo sebelum pengambilan barang DO" }}</span>
+            </div>
+          </div>
+        </div>
+
+        {% if form_data.info_kontrak_lama %}
+        <div class="review-table-section">
+          <div class="review-table-title"><i class="bi bi-clock-history text-secondary"></i>Informasi Kontrak Sebelumnya</div>
+          <div class="text-secondary small">{{ form_data.info_kontrak_lama|render_markdown }}</div>
+        </div>
+        {% endif %}
+
+        <!-- Dynamic Grid 3: Target & Insentif -->
+        {% if form_data.target_incentive and form_data.target_incentive != '[]' and form_data.target_incentive != '""' and form_data.target_incentive != 'null' and form_data.target_incentive != '—' %}
+        <div class="review-table-section">
+          <div class="review-table-title"><i class="bi bi-graph-up-arrow text-secondary"></i>Tabel Target Penjualan &amp; Skema Insentif (Pasal 3 - Exclude Ppn)</div>
+          <div class="table-responsive w-100">
+            {{ form_data.target_incentive|render_grid_table }}
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Dynamic Grid 4: Skema Diskon Produk -->
+        {% if form_data.discount_scheme and form_data.discount_scheme != '[]' and form_data.discount_scheme != '""' and form_data.discount_scheme != 'null' and form_data.discount_scheme != '—' %}
+        <div class="review-table-section">
+          <div class="review-table-title"><i class="bi bi-tags text-secondary"></i>Tabel Skema Diskon Produk (Pasal 5 / 6)</div>
+          <div class="table-responsive w-100">
+            {{ form_data.discount_scheme|render_grid_table }}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 4. FASILITAS DUKUNGAN PROMOSI ==================== -->
+  <div class="accordion-item review-accordion-item border-0 border-bottom">
+    <h2 class="accordion-header" id="headingGrupSupport">
+      <button class="accordion-button collapsed review-accordion-btn py-2 px-3" type="button"
+              data-bs-toggle="collapse" data-bs-target="#collapseGrupSupport"
+              aria-expanded="false" aria-controls="collapseGrupSupport">
+        <div class="d-flex align-items-center justify-content-between w-100 pe-3 flex-wrap gap-2">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-megaphone text-secondary" style="font-size: 14px;"></i>
+            <span class="review-section-title">4. Fasilitas Dukungan Promosi</span>
+          </div>
+          <span class="review-section-meta text-muted small font-monospace">
+            {% if form_data.is_support_provided in 'True,true,1,on' or form_data.is_support_provided is True %}
+              Support Promosi {{ form_data.pct_support_promo|default:"5" }}%
+            {% else %}
+              Kontrak Reguler (Tanpa Support)
+            {% endif %}
+          </span>
+        </div>
+      </button>
+    </h2>
+    <div id="collapseGrupSupport" class="accordion-collapse collapse" aria-labelledby="headingGrupSupport">
+      <div class="accordion-body px-3.5 py-3 bg-white border-top">
+        {% if form_data.is_support_provided in 'True,true,1,on' or form_data.is_support_provided is True %}
+          <!-- Baris 1: Komersial Support (4 Kolom Simetris) -->
+          <div class="row g-3">
+            <div class="col-sm-6 col-md-3">
+              <div class="review-kv-item">
+                <span class="review-kv-label">Status Support</span>
+                <span class="review-kv-value fw-semibold">Diberikan Fasilitas Support</span>
+              </div>
+            </div>
+            <div class="col-sm-6 col-md-3">
+              <div class="review-kv-item">
+                <span class="review-kv-label">Persentase Support %</span>
+                <span class="review-kv-value font-monospace fw-semibold">{{ form_data.pct_support_promo|default:"5.0" }}%</span>
+              </div>
+            </div>
+            <div class="col-sm-6 col-md-3">
+              <div class="review-kv-item">
+                <span class="review-kv-label">Frekuensi Pencairan</span>
+                <span class="review-kv-value">{{ form_data.frekuensi_pencairan|default:"Per Kuartal" }}</span>
+              </div>
+            </div>
+            <div class="col-sm-6 col-md-3">
+              <div class="review-kv-item">
+                <span class="review-kv-label">Syarat Pencairan</span>
+                <span class="review-kv-value fw-semibold">Setelah pembayaran LUNAS</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="border-top my-3"></div>
+
+          <!-- Baris 2: Komponen Biaya Support (Full Width) -->
+          <div class="row g-3">
+            <div class="col-12">
+              <div class="review-kv-item">
+                <span class="review-kv-label">Komponen Biaya Support</span>
+                <div class="review-kv-value">{{ form_data.komponen_biaya|render_komponen_biaya_badges }}</div>
+                <span class="text-muted mt-1 small" style="font-size: 11.5px;">
+                  * Sesuai ketentuan Pasal 4, support promosi tidak mencakup biaya Billboard, Pajak Billboard, dan Backdrop toko baru.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dynamic Grid 5: Tier Support Tahunan -->
+          {% if form_data.tier_support and form_data.tier_support != '[]' and form_data.tier_support != '""' and form_data.tier_support != 'null' and form_data.tier_support != '—' %}
+          <div class="review-table-section">
+            <div class="review-table-title"><i class="bi bi-layers text-secondary"></i>Tabel Tier Support Tahunan / Biaya Sewa (Pasal 7 Support)</div>
+            <div class="table-responsive w-100">
+              {{ form_data.tier_support|render_grid_table }}
+            </div>
+          </div>
+          {% endif %}
+        {% else %}
+          <div class="text-muted small fst-italic">
+            <i class="bi bi-info-circle me-1"></i>Kontrak Reguler: Pengajuan ini tidak menyertakan fasilitas tambahan dukungan promosi atau biaya sewa (SPK Standard 11 Pasal).
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 5. KETENTUAN PENGESAHAN & REKENING ==================== -->
+  <div class="accordion-item review-accordion-item border-0">
+    <h2 class="accordion-header" id="headingGrupPengesahan">
+      <button class="accordion-button collapsed review-accordion-btn py-2 px-3" type="button"
+              data-bs-toggle="collapse" data-bs-target="#collapseGrupPengesahan"
+              aria-expanded="false" aria-controls="collapseGrupPengesahan">
+        <div class="d-flex align-items-center justify-content-between w-100 pe-3 flex-wrap gap-2">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-pen text-secondary" style="font-size: 14px;"></i>
+            <span class="review-section-title">5. Ketentuan Pengesahan &amp; Rekening</span>
+          </div>
+          <span class="review-section-meta text-muted small font-monospace">
+            {{ form_data.kota_penandatanganan|default:"Bandung" }} &middot; {{ form_data.tanggal_penandatanganan|format_date_indonesia }}
+          </span>
+        </div>
+      </button>
+    </h2>
+    <div id="collapseGrupPengesahan" class="accordion-collapse collapse" aria-labelledby="headingGrupPengesahan">
+      <div class="accordion-body px-3.5 py-3 bg-white border-top">
+        <!-- Baris 1: Pengesahan & Rekening Resmi (3 Kolom Seimbang) -->
+        <div class="row g-3">
+          <div class="col-sm-6 col-md-4">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Kota Penandatanganan</span>
+              <span class="review-kv-value fw-semibold">{{ form_data.kota_penandatanganan|default:"Bandung" }}</span>
+            </div>
+          </div>
+          <div class="col-sm-6 col-md-4">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Tanggal Penandatanganan</span>
+              <span class="review-kv-value fw-semibold">{{ form_data.tanggal_penandatanganan|format_date_indonesia|default:"—" }}</span>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="review-kv-item">
+              <span class="review-kv-label">Rekening Resmi Perusahaan</span>
+              <span class="review-kv-value font-monospace fw-semibold">{{ form_data.rekening_perusahaan|default:"BCA 084-3012899 a/n PT Bestari Mulia" }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-2.5 pt-2.5 border-top">
+          <span class="text-muted" style="font-size: 11.5px;">
+            * Seluruh pembayaran mitra toko wajib ditransfer langsung ke rekening resmi di atas (Transfer / Cek / Giro). Pembayaran tunai kepada sales/karyawan tidak diperkenankan.
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>

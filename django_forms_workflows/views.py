@@ -633,6 +633,38 @@ def form_submit(request, slug):
                 existing_file_data=_existing_files or None,
             )
             if form_def.slug == "permohonan-kontrak":
+                from .company_profiles import (
+                    format_official_spk_number,
+                    get_next_branch_spk_sequence,
+                    resolve_company_profile,
+                )
+                cabang = submission.form_data.get("cabang") or "Bandung"
+                brand = submission.form_data.get("brand") or "LADY"
+                perusahaan = submission.form_data.get("perusahaan")
+                current_spk = str(submission.form_data.get("nomor_spk") or "").strip()
+
+                already_taken = False
+                if current_spk and not ("OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-") or "____" in current_spk):
+                    already_taken = FormSubmission.objects.filter(
+                        form_definition=form_def,
+                        form_data__nomor_spk=current_spk,
+                    ).exclude(id=submission.id).exclude(status="draft").exists()
+
+                if not current_spk or already_taken or "OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-") or "____" in current_spk:
+                    from django.db import transaction
+                    with transaction.atomic():
+                        FormDefinition.objects.select_for_update().get(pk=form_def.pk)
+                        seq = get_next_branch_spk_sequence(cabang, timezone.now().year, form_slug=form_def.slug)
+                        comp_prof = resolve_company_profile(form_data=submission.form_data, user=request.user)
+                        submission.form_data["nomor_spk"] = format_official_spk_number(
+                            nomor=seq,
+                            brand=brand,
+                            cabang=cabang,
+                            date_val=timezone.now(),
+                            company_profile=comp_prof,
+                            perusahaan=perusahaan,
+                        )
+
                 if not submission.form_data.get("kota_penandatanganan"):
                     submission.form_data["kota_penandatanganan"] = resolve_default_signing_city(
                         user=user_or_none,
@@ -1046,6 +1078,19 @@ def form_auto_save(request, slug):
             status="draft",
         ).order_by("-id").first()
         if not draft:
+            # Lazy creation guard: Only persist if user has entered substantive data
+            substantive_keys = [
+                "kode_customer_jde", "nama_toko", "nama_pemilik",
+                "nomor_nik", "nomor_npwp", "nomor_identitas", "no_telepon", "alamat_toko"
+            ]
+            has_substantive = any(bool(str(data.get(k, "")).strip()) for k in substantive_keys)
+            if not has_substantive:
+                return JsonResponse({
+                    "success": True,
+                    "draft_id": None,
+                    "ignored": True,
+                    "message": "Form empty or only defaults, draft creation skipped."
+                })
             draft = FormSubmission(
                 form_definition=form_def,
                 submitter=request.user,
@@ -1053,14 +1098,27 @@ def form_auto_save(request, slug):
             )
 
         if form_def.slug == "permohonan-kontrak":
-            brand = (data.get("brand") or "LADY").upper().replace(" ", "")
-            cabang = (data.get("cabang") or "Tangerang").title().replace(" ", "")
-            import datetime
-            today = datetime.date.today()
+            from .company_profiles import (
+                format_official_spk_number,
+                get_next_branch_spk_sequence,
+                resolve_company_profile,
+            )
+            brand = data.get("brand") or "LADY"
+            cabang = data.get("cabang") or "Tangerang"
+            perusahaan = data.get("perusahaan")
+            today = timezone.now().date()
             current_spk = str(data.get("nomor_spk", "")).strip()
-            if not current_spk or "OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-"):
-                seq = FormSubmission.objects.filter(form_definition=form_def).count() + 1
-                data["nomor_spk"] = f"No. {seq:04d}/{brand}/{cabang}/{today.month}/{today.year}"
+            if not current_spk or "OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-") or "____" in current_spk:
+                seq = get_next_branch_spk_sequence(cabang, today.year, form_slug=form_def.slug)
+                comp_prof = resolve_company_profile(form_data=data, user=request.user)
+                data["nomor_spk"] = format_official_spk_number(
+                    nomor=seq,
+                    brand=brand,
+                    cabang=cabang,
+                    date_val=today,
+                    company_profile=comp_prof,
+                    perusahaan=perusahaan,
+                )
 
         draft.form_data = data
         draft.submission_ip = get_client_ip(request)
@@ -2956,6 +3014,8 @@ def discard_draft(request, submission_id):
             return JsonResponse({"success": True, "message": "Draft discarded successfully."})
 
         messages.success(request, "Draft discarded.")
+        if submission.form_definition:
+            return redirect("forms_workflows:form_submission_hub", slug=submission.form_definition.slug)
         return redirect("forms_workflows:my_submissions")
 
     return render(

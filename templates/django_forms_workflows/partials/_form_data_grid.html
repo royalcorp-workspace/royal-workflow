@@ -1,6 +1,8 @@
 {% load forms_workflows_tags %}
 
-{% if form_data_ordered %}
+{% if submission.form_definition.slug == 'permohonan-kontrak' %}
+  {% include 'django_forms_workflows/partials/_contract_review_accordion.html' %}
+{% elif form_data_ordered %}
   <div class="row g-3">
     {% for row in form_data_ordered %}
       {% if row.type == 'section' %}

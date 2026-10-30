@@ -899,3 +899,171 @@
   box-shadow: none !important;
 }
 
+/* ── Review Contract Accordion (Clean Enterprise / Linear-Style) ── */
+.review-contract-accordion {
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background-color: #ffffff;
+  overflow: hidden;
+}
+
+.review-accordion-item {
+  background-color: #ffffff;
+  border-color: #e2e8f0 !important;
+}
+
+.review-accordion-btn {
+  background-color: #ffffff;
+  color: #1e293b;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 0 !important;
+  padding: 0.65rem 0.85rem;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  box-shadow: none !important;
+}
+
+.review-accordion-btn:hover {
+  background-color: #f8fafc;
+}
+
+.review-accordion-btn:not(.collapsed) {
+  background-color: #f8fafc;
+  color: #0f172a;
+  box-shadow: none !important;
+}
+
+.review-accordion-btn::after {
+  background-size: 11px 11px;
+  width: 11px;
+  height: 11px;
+  opacity: 0.4;
+  transition: transform 0.15s ease-in-out, opacity 0.15s ease-in-out;
+}
+
+.review-accordion-btn:hover::after,
+.review-accordion-btn:not(.collapsed)::after {
+  opacity: 0.85;
+}
+
+.review-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  letter-spacing: -0.01em;
+}
+
+.review-section-meta {
+  font-size: 11.5px;
+  color: #64748b;
+  letter-spacing: 0.01em;
+}
+
+/* Minimalist Action / Toggle Buttons */
+.btn-review-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #64748b;
+  text-decoration: none;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all 0.15s ease-in-out;
+  cursor: pointer;
+}
+
+.btn-review-toggle:hover {
+  color: #0f172a;
+  background-color: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.btn-review-toggle:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.2);
+}
+
+/* Compact utility button */
+.btn-xs {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.25;
+  border-radius: 0.25rem;
+  font-weight: 500;
+}
+
+/* ── Clean Key-Value Definition Grid (B2B Enterprise) ── */
+.review-kv-item {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  min-height: 100%;
+}
+
+.review-kv-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  margin-bottom: 2px;
+  line-height: 1.25;
+}
+
+.review-kv-value {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #0f172a;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.review-table-section {
+  border-top: 1px solid #f1f5f9;
+  padding-top: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.review-table-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+/* Polished compact table styling inside review accordion */
+.review-contract-accordion .table {
+  font-size: 12.5px;
+  margin-bottom: 0;
+  border-color: #e2e8f0;
+}
+
+.review-contract-accordion .table thead th {
+  background-color: #f8fafc;
+  color: #475569;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.review-contract-accordion .table tbody td {
+  padding: 0.45rem 0.75rem;
+  color: #1e293b;
+  vertical-align: middle;
+}
+
+
+
+

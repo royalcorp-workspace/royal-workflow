@@ -33,11 +33,12 @@
         let hasRestoredDraft = false;
 
         // Clean initial state for fresh new submissions
-        const storeFields = ['kode_customer_jde', 'nama_toko', 'nama_pemilik', 'alamat_toko', 'no_telepon', 'kota', 'nomor_identitas', 'komponen_biaya', 'nomor_spk'];
+        const storeFields = ['kode_customer_jde', 'nama_toko', 'nama_pemilik', 'alamat_toko', 'no_telepon', 'email', 'kota', 'nomor_nik', 'nomor_npwp', 'nomor_identitas', 'komponen_biaya', 'nomor_spk'];
         storeFields.forEach(name => {
             const el = form.querySelector(`[name="${name}"]`);
             if (el) el.value = '';
         });
+        form.querySelectorAll('input[name="komponen_biaya"]').forEach(chk => { chk.checked = false; });
 
         // Ensure grid fields start empty
         ['asset_toko', 'market_share', 'target_incentive', 'discount_scheme', 'tier_support'].forEach(name => {
@@ -52,7 +53,45 @@
         }
 
         function applyDraftData(draftData) {
+            // Backward compatibility for nomor_identitas -> nomor_nik / nomor_npwp
+            if (draftData.nomor_identitas && (!draftData.nomor_nik || !draftData.nomor_npwp)) {
+                const digitsOnly = String(draftData.nomor_identitas).replace(/\D/g, '');
+                if (digitsOnly.length === 15) {
+                    if (!draftData.nomor_npwp) draftData.nomor_npwp = digitsOnly;
+                } else if (digitsOnly.length === 16) {
+                    const jenis = String(draftData.jenis_identitas || '').toUpperCase();
+                    if (jenis.includes('NPWP')) {
+                        if (!draftData.nomor_npwp) draftData.nomor_npwp = digitsOnly;
+                    } else {
+                        if (!draftData.nomor_nik) draftData.nomor_nik = digitsOnly;
+                    }
+                } else {
+                    if (!draftData.nomor_nik) draftData.nomor_nik = digitsOnly;
+                }
+            }
+
+            // Handle komponen_biaya checkboxes restoration
+            if (draftData.komponen_biaya !== undefined) {
+                let items = [];
+                if (Array.isArray(draftData.komponen_biaya)) {
+                    items = draftData.komponen_biaya;
+                } else if (typeof draftData.komponen_biaya === 'string') {
+                    try {
+                        const parsed = JSON.parse(draftData.komponen_biaya);
+                        if (Array.isArray(parsed)) items = parsed;
+                        else items = draftData.komponen_biaya.split(',').map(s => s.trim());
+                    } catch (e) {
+                        items = draftData.komponen_biaya.split(',').map(s => s.trim());
+                    }
+                }
+                const chks = form.querySelectorAll('input[name="komponen_biaya"]');
+                chks.forEach(chk => {
+                    chk.checked = items.some(item => String(item).trim().toLowerCase() === chk.value.toLowerCase());
+                });
+            }
+
             Object.keys(draftData).forEach(name => {
+                if (name === 'komponen_biaya') return;
                 const val = draftData[name];
                 const el = form.querySelector(`[name="${name}"]`);
                 if (!el) return;
@@ -64,14 +103,7 @@
                     if (radio) radio.checked = true;
                 } else {
                     if (val !== undefined && val !== null) {
-                        let finalVal = val;
-                        if (name === 'metode_pembayaran') {
-                            const u = String(val).trim().toUpperCase();
-                            if (u.includes('TRANSFER')) finalVal = 'Transfer';
-                            else if (u.includes('GIRO')) finalVal = 'Giro';
-                            else if (u.includes('CEK')) finalVal = 'Cek';
-                        }
-                        el.value = finalVal;
+                        el.value = val;
                     }
                 }
             });
@@ -90,11 +122,11 @@
         // 2. Setup JDE Lookup
         setupJDELookup(form);
 
-        // 2b. Setup Jenis Identitas & Nomor Identitas Validation
+        // 2b. Setup NIK & NPWP Validation
         setupIdentitasValidation(form);
 
-        // 2c. Setup Metode Pembayaran (Transfer, Cek, Giro)
-        setupMetodePembayaran(form);
+        // 2c. Setup Email Validation (Revisi Poin 16)
+        setupEmailValidation(form);
 
         // 3. Setup Durasi Calculation
         setupDurasiCalculation(form);
@@ -111,6 +143,9 @@
 
         // 5b. Setup Support Facility Conditional Logic (Toggle Show/Hide)
         setupSupportConditionalLogic(form);
+
+        // 5c. Setup Step 2 SPK Legal Clause Section Cards
+        setupStep2ClauseCards(form);
 
         // 6. Setup Step 3 Preview & Tabs
         setupStep3Preview(form);
@@ -136,13 +171,16 @@
                 cabangSelect.dispatchEvent(new Event('change', { bubbles: true }));
                 cabangSelect.dispatchEvent(new Event('input', { bubbles: true }));
             }
-            const jpSelect = form.querySelector('[name="jenis_pajak"]');
-            if (jpSelect && jpSelect.value) {
-                jpSelect.dispatchEvent(new Event('change', { bubbles: true }));
-            }
 
             if (typeof form._validateNomorIdentitas === 'function') {
                 form._validateNomorIdentitas(false);
+            }
+            if (typeof form._validateEmail === 'function') {
+                const emVal = (form.querySelector('[name="email"]')?.value || '').trim();
+                const EMAIL_RX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+                if (emVal && EMAIL_RX.test(emVal)) {
+                    form._validateEmail(false);
+                }
             }
 
             updateAutoSaveStatus('saved_server');
@@ -214,7 +252,7 @@
         }
 
         // 9. Setup Client-side Draft Persistence & Auto-save
-        setupFormPersistence(form);
+        setupFormPersistence(form, hasRestoredDraft);
     }
 
     /* --------------------------------------------------------------------------
@@ -268,17 +306,17 @@
         const STEP1_FIELDS = new Set([
             'nomor_spk', 'cabang', 'brand', 'perusahaan',
             'kode_customer_jde', 'nama_toko', 'nama_pemilik', 'alamat_toko',
-            'no_telepon', 'kota', 'jenis_identitas', 'nomor_identitas',
+            'no_telepon', 'email', 'kota', 'nomor_nik', 'nomor_npwp', 'jenis_identitas', 'nomor_identitas',
             'asset_toko', 'market_share'
         ]);
 
         const STEP2_FIELDS = new Set([
             'info_kontrak_lama', 'tanggal_mulai', 'tanggal_berakhir', 'durasi', 'grace_period',
-            'jenis_pajak', 'top', 'is_support_provided', 'support_promosi',
-            'target_incentive', 'pct_support_promo', 'frekuensi_pencairan', 'syarat_pencairan',
-            'komponen_biaya', 'pengecualian_ketentuan_support', 'discount_scheme',
-            'tier_support', 'metode_pembayaran', 'discount_do', 'ketentuan_do',
-            'kota_penandatanganan', 'tanggal_penandatanganan', 'rekening_perusahaan', 'catatan_lain'
+            'top', 'is_support_provided', 'support_promosi',
+            'target_incentive', 'pct_support_promo', 'frekuensi_pencairan',
+            'komponen_biaya', 'discount_scheme',
+            'tier_support', 'discount_do', 'ketentuan_do',
+            'kota_penandatanganan', 'tanggal_penandatanganan', 'rekening_perusahaan'
         ]);
 
         const STEP3_FIELDS = new Set([
@@ -473,8 +511,8 @@
         // Enforce readonly lock & styling on target fields
         lockReadonlyFields(form);
 
-        // Ensure jenis_identitas & nomor_identitas are strictly editable
-        const editableFieldNames = ['jenis_identitas', 'nomor_identitas'];
+        // Ensure nomor_nik, nomor_npwp, email, and legacy identity fields are strictly editable
+        const editableFieldNames = ['nomor_nik', 'nomor_npwp', 'email', 'jenis_identitas', 'nomor_identitas'];
         editableFieldNames.forEach(fieldName => {
             const el = form.querySelector(`[name="${fieldName}"]`);
             if (el) {
@@ -506,6 +544,21 @@
                     setFieldValue(form, 'alamat_toko', c.alamat_toko);
                     setFieldValue(form, 'no_telepon', c.no_telepon);
                     setFieldValue(form, 'kota', c.kota);
+                    if (c.nomor_nik || c.nik) {
+                        setFieldValue(form, 'nomor_nik', c.nomor_nik || c.nik);
+                    } else if (c.nomor_identitas || c.no_identitas) {
+                        const rawId = String(c.nomor_identitas || c.no_identitas).replace(/\D/g, '');
+                        if (rawId.length === 16) {
+                            setFieldValue(form, 'nomor_nik', rawId);
+                        } else if (rawId.length === 15) {
+                            setFieldValue(form, 'nomor_npwp', rawId);
+                        } else {
+                            setFieldValue(form, 'nomor_nik', rawId);
+                        }
+                    }
+                    if (c.nomor_npwp || c.npwp) {
+                        setFieldValue(form, 'nomor_npwp', c.nomor_npwp || c.npwp);
+                    }
                     if (c.nomor_identitas || c.no_identitas) {
                         setFieldValue(form, 'nomor_identitas', c.nomor_identitas || c.no_identitas);
                     }
@@ -516,8 +569,18 @@
                         }
                         setFieldValue(form, 'jenis_identitas', cleanJenis);
                     }
+                    if (typeof form._validateNomorNik === 'function') {
+                        form._validateNomorNik(false);
+                    }
+                    if (typeof form._validateNomorNpwp === 'function') {
+                        form._validateNomorNpwp(false);
+                    }
                     if (typeof form._validateNomorIdentitas === 'function') {
                         form._validateNomorIdentitas(false);
+                    }
+                    if (c.email) {
+                        setFieldValue(form, 'email', c.email);
+                        if (typeof form._validateEmail === 'function') form._validateEmail(false);
                     }
                     if (c.cabang) setFieldValue(form, 'cabang', c.cabang);
                     lockReadonlyFields(form);
@@ -595,227 +658,371 @@
     }
 
     /* --------------------------------------------------------------------------
-     * 1b. Setup Jenis Identitas & Nomor Identitas Validation
+     * 1b. Setup NIK (16 digit) & NPWP Validation (Dedicated Step 1 Fields)
      * -------------------------------------------------------------------------- */
     function setupIdentitasValidation(form) {
-        const jenisSelect = form.querySelector('[name="jenis_identitas"]');
-        const nomorInput = form.querySelector('[name="nomor_identitas"]');
-        if (!jenisSelect && !nomorInput) return;
+        const nikInput = form.querySelector('[name="nomor_nik"]');
+        const npwpInput = form.querySelector('[name="nomor_npwp"]');
+        const legacyNomorInput = form.querySelector('[name="nomor_identitas"]');
+        const legacyJenisSelect = form.querySelector('[name="jenis_identitas"]');
 
-        // 1. Bersihkan pilihan dropdown: hanya sediakan NIK dan NPWP (hapus NIK / NPWP)
-        if (jenisSelect) {
-            const options = Array.from(jenisSelect.options);
-            let hasNIK = false;
-            let hasNPWP = false;
-
-            options.forEach(opt => {
-                const val = (opt.value || '').trim();
-                const text = (opt.text || '').trim();
-
-                // Hapus opsi kombinasi "NIK / NPWP"
-                if (val.includes('/') || text.includes('/')) {
-                    opt.remove();
-                } else if (val.toUpperCase().includes('NIK') || text.toUpperCase().includes('NIK')) {
-                    opt.value = 'NIK';
-                    opt.textContent = 'NIK';
-                    hasNIK = true;
-                } else if (val.toUpperCase().includes('NPWP') || text.toUpperCase().includes('NPWP')) {
-                    opt.value = 'NPWP';
-                    opt.textContent = 'NPWP';
-                    hasNPWP = true;
-                }
-            });
-
-            if (!hasNIK) {
-                const optNIK = document.createElement('option');
-                optNIK.value = 'NIK';
-                optNIK.textContent = 'NIK';
-                jenisSelect.appendChild(optNIK);
-            }
-            if (!hasNPWP) {
-                const optNPWP = document.createElement('option');
-                optNPWP.value = 'NPWP';
-                optNPWP.textContent = 'NPWP';
-                jenisSelect.appendChild(optNPWP);
-            }
-        }
-
-        if (!nomorInput) return;
-
-        // 2. Setup atribut input
-        nomorInput.setAttribute('inputmode', 'numeric');
-        nomorInput.setAttribute('autocomplete', 'off');
-        nomorInput.setAttribute('maxlength', '16');
-
-        // Wrapper label dinamis
-        const wrapper = nomorInput.closest('.field-wrapper') || nomorInput.closest('.mb-3') || nomorInput.parentElement;
-        const labelEl = wrapper ? wrapper.querySelector('label.form-label, label') : null;
-
-        function updateLabel(jenis) {
-            if (!labelEl) return;
-            if (jenis === 'NIK') {
-                labelEl.innerHTML = 'Nomor NIK <span class="text-danger">*</span>';
-                nomorInput.placeholder = '16 digit NIK (KTP)';
-            } else if (jenis === 'NPWP') {
-                labelEl.innerHTML = 'Nomor NPWP <span class="text-danger">*</span>';
-                nomorInput.placeholder = '15 atau 16 digit NPWP';
-            } else {
-                labelEl.innerHTML = 'Nomor Identitas (NIK / NPWP) <span class="text-danger">*</span>';
-                nomorInput.placeholder = 'Nomor NIK atau NPWP';
-            }
-        }
-
-        // Feedback container
-        let feedbackEl = wrapper ? wrapper.querySelector('.nomor-identitas-feedback') : null;
-        if (!feedbackEl) {
-            feedbackEl = document.createElement('div');
-            feedbackEl.className = 'nomor-identitas-feedback mt-1 small';
-            if (nomorInput.nextSibling) {
-                nomorInput.parentNode.insertBefore(feedbackEl, nomorInput.nextSibling);
-            } else {
-                nomorInput.parentNode.appendChild(feedbackEl);
-            }
-        }
-
-        function validateNomorIdentitas(showErrorIfEmpty = false) {
-            const rawVal = nomorInput.value || '';
-            const digits = rawVal.replace(/\D/g, '');
-            if (rawVal !== digits) {
-                nomorInput.value = digits.slice(0, 16);
-            }
-
-            const val = nomorInput.value.trim();
-            const jenis = (jenisSelect ? jenisSelect.value : '').trim().toUpperCase();
-            updateLabel(jenis);
-
-            nomorInput.classList.remove('is-valid', 'is-invalid');
-            feedbackEl.className = 'nomor-identitas-feedback mt-1 small';
-            feedbackEl.innerHTML = '';
-
-            if (!val) {
-                if (showErrorIfEmpty) {
-                    nomorInput.classList.add('is-invalid');
-                    feedbackEl.className = 'nomor-identitas-feedback mt-1 small text-danger';
-                    feedbackEl.innerHTML = '<i class="bi bi-exclamation-circle me-1"></i> Nomor Identitas wajib diisi.';
-                    return false;
-                }
-                return false;
-            }
-
-            if (jenis === 'NIK') {
-                if (val.length === 16) {
-                    nomorInput.classList.add('is-valid');
-                    feedbackEl.className = 'nomor-identitas-feedback mt-1 small text-success';
-                    feedbackEl.innerHTML = '<i class="bi bi-check-circle me-1"></i> Format NIK 16 digit valid.';
-                    return true;
+        function setupFieldFeedback(inputEl, className) {
+            if (!inputEl) return null;
+            const wrapper = inputEl.closest('.field-wrapper') || inputEl.closest('.mb-3') || inputEl.parentElement;
+            let feedback = wrapper ? wrapper.querySelector(`.${className}`) : null;
+            if (!feedback && wrapper) {
+                feedback = document.createElement('div');
+                feedback.className = `${className} mt-1 small`;
+                if (inputEl.nextSibling) {
+                    inputEl.parentNode.insertBefore(feedback, inputEl.nextSibling);
                 } else {
-                    nomorInput.classList.add('is-invalid');
-                    feedbackEl.className = 'nomor-identitas-feedback mt-1 small text-danger';
-                    feedbackEl.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i> Nomor NIK harus tepat 16 digit angka (saat ini: ${val.length} digit).`;
+                    inputEl.parentNode.appendChild(feedback);
+                }
+            }
+            return feedback;
+        }
+
+        // --- 1. SETUP NOMOR NPWP (Wajib 15 atau 16 digit angka) ---
+        let validateNomorNpwp = function (showErrorIfEmpty = false) { return true; };
+        if (npwpInput) {
+            npwpInput.setAttribute('inputmode', 'numeric');
+            npwpInput.setAttribute('autocomplete', 'off');
+            npwpInput.setAttribute('maxlength', '16');
+            const npwpFeedback = setupFieldFeedback(npwpInput, 'nomor-npwp-feedback');
+
+            // Visual Label synchronization for NPWP (Wajib *)
+            const npwpWrapper = npwpInput.closest('.field-wrapper') || npwpInput.closest('.mb-3') || npwpInput.parentElement;
+            if (npwpWrapper) {
+                const npwpLabel = npwpWrapper.querySelector('label');
+                if (npwpLabel && !npwpLabel.querySelector('.text-danger')) {
+                    npwpLabel.innerHTML = 'Nomor NPWP Toko / Pemilik <span class="text-danger">*</span>';
+                }
+            }
+
+            validateNomorNpwp = function (showErrorIfEmpty = false) {
+                const raw = npwpInput.value || '';
+                const digits = raw.replace(/\D/g, '').slice(0, 16);
+                if (raw !== digits) npwpInput.value = digits;
+
+                const val = npwpInput.value.trim();
+                npwpInput.classList.remove('is-valid', 'is-invalid');
+                if (npwpFeedback) {
+                    npwpFeedback.className = 'nomor-npwp-feedback mt-1 small';
+                    npwpFeedback.innerHTML = '';
+                }
+
+                if (!val) {
+                    if (showErrorIfEmpty) {
+                        npwpInput.classList.add('is-invalid');
+                        if (npwpFeedback) {
+                            npwpFeedback.className = 'nomor-npwp-feedback mt-1 small text-danger';
+                            npwpFeedback.innerHTML = '<i class="bi bi-exclamation-circle me-1"></i> Nomor NPWP Toko / Pemilik wajib 15 atau 16 digit angka.';
+                        }
+                        return false;
+                    }
                     return false;
                 }
-            } else if (jenis === 'NPWP') {
+
                 if (val.length === 15 || val.length === 16) {
-                    nomorInput.classList.add('is-valid');
-                    feedbackEl.className = 'nomor-identitas-feedback mt-1 small text-success';
-                    feedbackEl.innerHTML = `<i class="bi bi-check-circle me-1"></i> Format NPWP ${val.length} digit valid.`;
+                    npwpInput.classList.add('is-valid');
+                    if (npwpFeedback) {
+                        npwpFeedback.className = 'nomor-npwp-feedback mt-1 small text-success';
+                        npwpFeedback.innerHTML = `<i class="bi bi-check-circle me-1"></i> Format NPWP ${val.length} digit valid.`;
+                    }
                     return true;
                 } else {
-                    nomorInput.classList.add('is-invalid');
-                    feedbackEl.className = 'nomor-identitas-feedback mt-1 small text-danger';
-                    feedbackEl.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i> Nomor NPWP harus 15 atau 16 digit angka (saat ini: ${val.length} digit).`;
+                    npwpInput.classList.add('is-invalid');
+                    if (npwpFeedback) {
+                        npwpFeedback.className = 'nomor-npwp-feedback mt-1 small text-danger';
+                        npwpFeedback.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i> NPWP harus 15 atau 16 digit angka (saat ini: ${val.length} digit).`;
+                    }
                     return false;
                 }
-            } else {
-                nomorInput.classList.add('is-invalid');
-                feedbackEl.className = 'nomor-identitas-feedback mt-1 small text-warning';
-                feedbackEl.innerHTML = '<i class="bi bi-info-circle me-1"></i> Silakan pilih Jenis Identitas (NIK atau NPWP) terlebih dahulu.';
-                return false;
-            }
-        }
+            };
 
-        form._validateNomorIdentitas = validateNomorIdentitas;
-
-        // Keydown filter
-        nomorInput.addEventListener('keydown', function (e) {
-            const allowedKeys = ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home', 'End'];
-            if (allowedKeys.includes(e.key)) return;
-            if (e.ctrlKey || e.metaKey) return;
-
-            if (!/^[0-9]$/.test(e.key)) {
-                e.preventDefault();
-                return;
-            }
-
-            const selStart = this.selectionStart;
-            const selEnd = this.selectionEnd;
-            if (selStart === selEnd && this.value.length >= 16) {
-                e.preventDefault();
-            }
-        });
-
-        nomorInput.addEventListener('input', function () {
-            validateNomorIdentitas(false);
-        });
-
-        nomorInput.addEventListener('blur', function () {
-            validateNomorIdentitas(true);
-        });
-
-        if (jenisSelect) {
-            jenisSelect.addEventListener('change', function () {
-                validateNomorIdentitas(nomorInput.value.length > 0);
+            npwpInput.addEventListener('keydown', function (e) {
+                const allowedKeys = ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home', 'End'];
+                if (allowedKeys.includes(e.key) || e.ctrlKey || e.metaKey) return;
+                if (!/^[0-9]$/.test(e.key)) {
+                    e.preventDefault();
+                    return;
+                }
+                const selStart = this.selectionStart;
+                const selEnd = this.selectionEnd;
+                if (selStart === selEnd && this.value.length >= 16) {
+                    e.preventDefault();
+                }
             });
+            npwpInput.addEventListener('input', () => validateNomorNpwp(false));
+            npwpInput.addEventListener('blur', () => validateNomorNpwp(true));
+            if (npwpInput.value) validateNomorNpwp(false);
         }
 
-        if (nomorInput.value) {
-            validateNomorIdentitas(false);
+        // --- 2. SETUP NOMOR NIK (Opsional, jika diisi wajib 16 digit angka) ---
+        let validateNomorNik = function (showErrorIfEmpty = false) { return true; };
+        if (nikInput) {
+            nikInput.setAttribute('inputmode', 'numeric');
+            nikInput.setAttribute('autocomplete', 'off');
+            nikInput.setAttribute('maxlength', '16');
+            const nikFeedback = setupFieldFeedback(nikInput, 'nomor-nik-feedback');
+
+            // Visual Label synchronization for NIK (Opsional, remove red *)
+            const nikWrapper = nikInput.closest('.field-wrapper') || nikInput.closest('.mb-3') || nikInput.parentElement;
+            if (nikWrapper) {
+                const nikLabel = nikWrapper.querySelector('label');
+                if (nikLabel) {
+                    nikLabel.innerHTML = 'Nomor NIK (KTP) <span class="text-muted small fw-normal">(Opsional)</span>';
+                }
+            }
+
+            validateNomorNik = function (showErrorIfEmpty = false) {
+                const raw = nikInput.value || '';
+                const digits = raw.replace(/\D/g, '').slice(0, 16);
+                if (raw !== digits) nikInput.value = digits;
+
+                const val = nikInput.value.trim();
+                nikInput.classList.remove('is-valid', 'is-invalid');
+                if (nikFeedback) {
+                    nikFeedback.className = 'nomor-nik-feedback mt-1 small';
+                    nikFeedback.innerHTML = '';
+                }
+
+                if (!val) {
+                    // NIK is optional, valid when empty
+                    return true;
+                }
+
+                if (val.length === 16) {
+                    nikInput.classList.add('is-valid');
+                    if (nikFeedback) {
+                        nikFeedback.className = 'nomor-nik-feedback mt-1 small text-success';
+                        nikFeedback.innerHTML = '<i class="bi bi-check-circle me-1"></i> Format NIK 16 digit valid.';
+                    }
+                    return true;
+                } else {
+                    nikInput.classList.add('is-invalid');
+                    if (nikFeedback) {
+                        nikFeedback.className = 'nomor-nik-feedback mt-1 small text-danger';
+                        nikFeedback.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i> NIK harus tepat 16 digit angka (saat ini: ${val.length} digit).`;
+                    }
+                    return false;
+                }
+            };
+
+            nikInput.addEventListener('keydown', function (e) {
+                const allowedKeys = ['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home', 'End'];
+                if (allowedKeys.includes(e.key) || e.ctrlKey || e.metaKey) return;
+                if (!/^[0-9]$/.test(e.key)) {
+                    e.preventDefault();
+                    return;
+                }
+                const selStart = this.selectionStart;
+                const selEnd = this.selectionEnd;
+                if (selStart === selEnd && this.value.length >= 16) {
+                    e.preventDefault();
+                }
+            });
+            nikInput.addEventListener('input', () => validateNomorNik(false));
+            nikInput.addEventListener('blur', () => validateNomorNik(false));
+            if (nikInput.value) validateNomorNik(false);
         }
+
+        // --- 3. LEGACY BACKWARD COMPATIBILITY (nomor_identitas fallback) ---
+        if (!nikInput && legacyNomorInput) {
+            legacyNomorInput.setAttribute('inputmode', 'numeric');
+            legacyNomorInput.setAttribute('autocomplete', 'off');
+            legacyNomorInput.setAttribute('maxlength', '16');
+            const legFeedback = setupFieldFeedback(legacyNomorInput, 'nomor-identitas-feedback');
+
+            validateNomorNik = function (showErrorIfEmpty = false) {
+                const raw = legacyNomorInput.value || '';
+                const digits = raw.replace(/\D/g, '').slice(0, 16);
+                if (raw !== digits) legacyNomorInput.value = digits;
+
+                const val = legacyNomorInput.value.trim();
+                legacyNomorInput.classList.remove('is-valid', 'is-invalid');
+                if (legFeedback) {
+                    legFeedback.className = 'nomor-identitas-feedback mt-1 small';
+                    legFeedback.innerHTML = '';
+                }
+
+                if (!val) {
+                    if (showErrorIfEmpty) {
+                        legacyNomorInput.classList.add('is-invalid');
+                        if (legFeedback) {
+                            legFeedback.className = 'nomor-identitas-feedback mt-1 small text-danger';
+                            legFeedback.innerHTML = '<i class="bi bi-exclamation-circle me-1"></i> Nomor Identitas wajib diisi.';
+                        }
+                        return false;
+                    }
+                    return false;
+                }
+
+                if (val.length === 15 || val.length === 16) {
+                    legacyNomorInput.classList.add('is-valid');
+                    if (legFeedback) {
+                        legFeedback.className = 'nomor-identitas-feedback mt-1 small text-success';
+                        legFeedback.innerHTML = `<i class="bi bi-check-circle me-1"></i> Format identitas ${val.length} digit valid.`;
+                    }
+                    return true;
+                } else {
+                    legacyNomorInput.classList.add('is-invalid');
+                    if (legFeedback) {
+                        legFeedback.className = 'nomor-identitas-feedback mt-1 small text-danger';
+                        legFeedback.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i> Harus 15 atau 16 digit angka (saat ini: ${val.length} digit).`;
+                    }
+                    return false;
+                }
+            };
+
+            legacyNomorInput.addEventListener('input', () => validateNomorNik(false));
+            legacyNomorInput.addEventListener('blur', () => validateNomorNik(true));
+        }
+
+        form._validateNomorNik = validateNomorNik;
+        form._validateNomorNpwp = validateNomorNpwp;
+        form._validateNomorIdentitas = validateNomorNik;
     }
 
     /* --------------------------------------------------------------------------
-     * 1c. Setup Metode Pembayaran Dropdown & Migration
+     * 1c. Setup Email Validation (Wajib & Format RFC) - Revisi Poin 16
      * -------------------------------------------------------------------------- */
-    function setupMetodePembayaran(form) {
-        const select = form.querySelector('[name="metode_pembayaran"]');
-        if (!select) return;
+    function setupEmailValidation(form) {
+        const emailInput = form.querySelector('[name="email"]');
+        if (!emailInput) return;
 
-        const STANDAR_OPSI = ['Transfer', 'Cek', 'Giro'];
-
-        function normalizeMetode(val) {
-            if (!val) return '';
-            const u = String(val).trim().toUpperCase();
-            if (u.includes('TRANSFER')) return 'Transfer';
-            if (u.includes('GIRO')) return 'Giro';
-            if (u.includes('CEK')) return 'Cek';
-            return val;
+        // 1. Nonaktifkan validasi bubble HTML5 bawaan browser yang bertabrakan dengan layout custom
+        if (form) {
+            form.setAttribute('novalidate', 'novalidate');
         }
-
-        const currentVal = normalizeMetode(select.value);
-
-        const existingOptions = Array.from(select.options);
-        const placeholderOpt = existingOptions.find(o => !o.value || o.value === '');
-        const placeholderText = placeholderOpt ? placeholderOpt.textContent : '-- Pilih Metode Pembayaran --';
-
-        select.innerHTML = '';
-        const emptyOpt = document.createElement('option');
-        emptyOpt.value = '';
-        emptyOpt.textContent = placeholderText;
-        select.appendChild(emptyOpt);
-
-        STANDAR_OPSI.forEach(item => {
-            const opt = document.createElement('option');
-            opt.value = item;
-            opt.textContent = item;
-            if (currentVal === item) {
-                opt.selected = true;
-            }
-            select.appendChild(opt);
+        emailInput.setAttribute('novalidate', 'novalidate');
+        emailInput.setAttribute('type', 'email');
+        emailInput.setAttribute('autocomplete', 'email');
+        emailInput.addEventListener('invalid', function (e) {
+            e.preventDefault();
         });
 
-        if (currentVal && STANDAR_OPSI.includes(currentVal)) {
-            select.value = currentVal;
+        // 2. Setup feedback container rapi (tepat setelah input dan sebelum .form-text / help_text)
+        const wrapper = emailInput.closest('.field-wrapper') || emailInput.closest('.mb-3') || emailInput.parentElement;
+        let feedback = wrapper ? (wrapper.querySelector('.email-feedback') || wrapper.querySelector('.invalid-feedback')) : null;
+        if (!feedback && wrapper) {
+            feedback = document.createElement('div');
+            feedback.className = 'email-feedback invalid-feedback mt-1 mb-1 small';
+            feedback.style.display = 'none';
+            feedback.style.position = 'static';
+            feedback.style.clear = 'both';
+
+            const helpText = wrapper.querySelector('.form-text, .help-block, small');
+            if (helpText && helpText.parentNode === emailInput.parentNode) {
+                emailInput.parentNode.insertBefore(feedback, helpText);
+            } else if (emailInput.nextSibling) {
+                emailInput.parentNode.insertBefore(feedback, emailInput.nextSibling);
+            } else {
+                emailInput.parentNode.appendChild(feedback);
+            }
         }
+        if (feedback) {
+            feedback.classList.add('email-feedback');
+            feedback.style.position = 'static';
+            feedback.style.clear = 'both';
+            feedback.style.display = 'none';
+        }
+
+        // 3. Visual Label synchronization for Email (Wajib *)
+        if (wrapper) {
+            const emailLabel = wrapper.querySelector('label');
+            if (emailLabel && !emailLabel.querySelector('.text-danger')) {
+                emailLabel.innerHTML = 'Email Toko / Pemilik <span class="text-danger">*</span>';
+            }
+        }
+
+        const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+
+        const clearError = function () {
+            emailInput.classList.remove('is-invalid');
+            if (feedback) {
+                feedback.innerHTML = '';
+                feedback.style.display = 'none';
+                feedback.classList.add('d-none');
+            }
+        };
+
+        const validateEmail = function (showErrorIfEmpty = false) {
+            const rawVal = emailInput.value || '';
+            const val = rawVal.trim();
+            if (rawVal !== val) {
+                emailInput.value = val;
+            }
+            emailInput.classList.remove('is-valid', 'is-invalid');
+            if (feedback) {
+                feedback.innerHTML = '';
+                feedback.style.display = 'none';
+                feedback.classList.add('d-none');
+            }
+
+            if (!val) {
+                if (showErrorIfEmpty) {
+                    emailInput.classList.add('is-invalid');
+                    if (feedback) {
+                        feedback.className = 'invalid-feedback email-feedback mt-1 mb-1 small text-danger d-block';
+                        feedback.innerHTML = '<i class="bi bi-exclamation-circle me-1"></i> Email Toko / Pemilik wajib diisi untuk korespondensi resmi kontrak.';
+                        feedback.style.display = 'block';
+                    }
+                    return false;
+                }
+                return false;
+            }
+
+            const isFormatValid = EMAIL_REGEX.test(val) || (typeof emailInput.checkValidity === 'function' ? emailInput.checkValidity() : true);
+            if (isFormatValid) {
+                emailInput.classList.add('is-valid');
+                if (feedback) {
+                    feedback.className = 'valid-feedback email-feedback mt-1 mb-1 small text-success d-block';
+                    feedback.innerHTML = '<i class="bi bi-check-circle me-1"></i> Format email valid.';
+                    feedback.style.display = 'block';
+                }
+                return true;
+            } else {
+                emailInput.classList.add('is-invalid');
+                if (feedback) {
+                    feedback.className = 'invalid-feedback email-feedback mt-1 mb-1 small text-danger d-block';
+                    feedback.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i> Format email tidak valid (contoh: toko@gmail.com).';
+                    feedback.style.display = 'block';
+                }
+                return false;
+            }
+        };
+
+        // 4. Saat pengguna mengetik: HANYA bersihkan status error lama, JANGAN evaluasi regex error baru
+        emailInput.addEventListener('input', function () {
+            if (emailInput.classList.contains('is-invalid') || (feedback && feedback.style.display !== 'none')) {
+                clearError();
+            }
+        });
+
+        // 5. Evaluasi format email HANYA saat kehilangan fokus (blur)
+        emailInput.addEventListener('blur', function () {
+            const val = (emailInput.value || '').trim();
+            if (val) {
+                validateEmail(false);
+            } else {
+                clearError();
+            }
+        });
+
+        // 6. Jika sudah ada email valid dari server draf / JDE lookup, tandai is-valid halus
+        if (emailInput.value && EMAIL_REGEX.test(emailInput.value.trim())) {
+            emailInput.classList.add('is-valid');
+        }
+
+        form._validateEmail = validateEmail;
+    }
+
+    /* --------------------------------------------------------------------------
+     * 1c. Setup Metode Pembayaran (No-Op: Static standard clause)
+     * -------------------------------------------------------------------------- */
+    function setupMetodePembayaran(form) {
+        // Metode Pembayaran is now standardized and static in SPK contract clauses (Transfer / Cek / Giro)
     }
 
     /* --------------------------------------------------------------------------
@@ -828,6 +1035,9 @@
 
         if (!startInput || !endInput || !durasiInput) return;
 
+        durasiInput.readOnly = true;
+        durasiInput.classList.add('field-readonly', 'bg-light');
+
         function calc() {
             const startVal = startInput.value;
             const endVal = endInput.value;
@@ -837,33 +1047,36 @@
             const end = new Date(endVal);
             if (isNaN(start) || isNaN(end) || end < start) {
                 durasiInput.value = '0 Bulan';
+                durasiInput.dispatchEvent(new Event('change', { bubbles: true }));
+                durasiInput.dispatchEvent(new Event('input', { bubbles: true }));
                 return;
             }
 
+            // Formula Selisih Bulan Kalender:
             let months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
-            // Add 1 month if ends at end of month or days cover whole month
-            if (end.getDate() >= start.getDate()) {
+
+            // Penyesuaian Hari (Inklusif Periode Kontrak):
+            // - Jika tanggal awal = hari ke-1 dan tanggal akhir = akhir bulan (misal 01/01 s/d 31/12) -> +1 bulan
+            // - Jika tanggal akhir >= tanggal awal (misal 01/01 s/d 31/01) -> +1 bulan
+            const isStartFirstDay = (start.getDate() === 1);
+            const isEndLastDay = (new Date(end.getFullYear(), end.getMonth() + 1, 0).getDate() === end.getDate());
+
+            if (isStartFirstDay && isEndLastDay) {
+                months += 1;
+            } else if (end.getDate() >= start.getDate()) {
                 months += 1;
             }
 
-            const years = Math.floor(months / 12);
-            const remMonths = months % 12;
-
-            let result = '';
-            if (years > 0 && remMonths > 0) {
-                result = `${years} Tahun ${remMonths} Bulan`;
-            } else if (years > 0) {
-                result = `${years} Tahun`;
-            } else {
-                result = `${months} Bulan`;
-            }
-
-            durasiInput.value = result;
+            const totalMonths = Math.max(1, months);
+            durasiInput.value = `${totalMonths} Bulan`;
             durasiInput.dispatchEvent(new Event('change', { bubbles: true }));
+            durasiInput.dispatchEvent(new Event('input', { bubbles: true }));
         }
 
         startInput.addEventListener('change', calc);
+        startInput.addEventListener('input', calc);
         endInput.addEventListener('change', calc);
+        endInput.addEventListener('input', calc);
         calc();
     }
 
@@ -899,7 +1112,7 @@
             const bUpper = brandVal.toUpperCase();
             const cUpper = compVal.toUpperCase();
             
-            // Clean Brand Code (LADY, ROYAL, SERENITY, ELITE, GRAND)
+            // Clean Brand Code (4 Official Brands: LADY, ROYAL, SERENITY, ELITE)
             let brandCode = 'LADY';
             if (bUpper.includes('LADY')) {
                 brandCode = 'LADY';
@@ -909,8 +1122,6 @@
                 brandCode = 'SERENITY';
             } else if (bUpper.includes('ELITE')) {
                 brandCode = 'ELITE';
-            } else if (bUpper.includes('GRAND')) {
-                brandCode = 'GRAND';
             } else {
                 brandCode = brandVal.split(' ')[0].toUpperCase().replace(/[^A-Z0-9]/g, '') || 'LADY';
             }
@@ -929,17 +1140,18 @@
                 ptCode = 'ACA';
             }
 
-            const monthStr = month < 10 ? `0${month}` : String(month);
+            const ROMAN_MONTHS = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
+            const monthRoman = ROMAN_MONTHS[month] || String(month);
 
             // Extract existing sequence if present, otherwise default to 001
             let seq = '001';
-            const match = (spkInput.value || '').match(/No\.\s*(\d+)/i) || (spkInput.value || '').match(/-(\d+)$/);
+            const match = (spkInput.value || '').match(/^(?:No\.\s*)?(\d{1,4})\//i) || (spkInput.value || '').match(/No\.\s*(\d+)/i) || (spkInput.value || '').match(/-(\d+)$/);
             if (match) {
                 const n = parseInt(match[1], 10);
                 seq = String(n).padStart(3, '0');
             }
 
-            spkInput.value = `No. ${seq}/${brandCode}/${ptCode}/${monthStr}/${year}`;
+            spkInput.value = `${seq}/${brandCode}/${ptCode}/${monthRoman}/${year}`;
             spkInput.dispatchEvent(new Event('input', { bubbles: true }));
             spkInput.dispatchEvent(new Event('change', { bubbles: true }));
         }
@@ -956,32 +1168,108 @@
             perusahaanSelect.addEventListener('change', updateSPK);
             perusahaanSelect.addEventListener('input', updateSPK);
         }
-        if (perusahaanSelect) {
-            perusahaanSelect.addEventListener('change', updateSPK);
-            perusahaanSelect.addEventListener('input', updateSPK);
-        }
 
         const kotaTtdInput = form.querySelector('[name="kota_penandatanganan"]');
+        if (kotaTtdInput) {
+            kotaTtdInput.readOnly = true;
+            kotaTtdInput.classList.add('field-readonly', 'bg-light');
+            kotaTtdInput.style.cursor = 'not-allowed';
+            kotaTtdInput.setAttribute('title', 'Kota penandatanganan terisi otomatis sesuai cabang pengaju (readonly)');
+            const wrapper = kotaTtdInput.closest('.field-wrapper') || kotaTtdInput.closest('.mb-3') || kotaTtdInput.parentElement;
+            if (wrapper) {
+                let helpText = wrapper.querySelector('.form-text');
+                if (!helpText) {
+                    helpText = document.createElement('div');
+                    helpText.className = 'form-text text-muted small mt-1';
+                    kotaTtdInput.parentNode.appendChild(helpText);
+                }
+                helpText.textContent = 'Terisi otomatis mengikuti cabang pengaju (readonly).';
+            }
+        }
+
         function syncKotaPenandatanganan() {
             if (!cabangSelect || !kotaTtdInput) return;
             const currentCab = (cabangSelect.value || '').trim();
-            if (currentCab && currentCab.toLowerCase() !== 'pusat') {
-                if (!kotaTtdInput.value || kotaTtdInput.dataset.autoFilled === 'true') {
-                    kotaTtdInput.value = currentCab;
-                    kotaTtdInput.dataset.autoFilled = 'true';
-                    kotaTtdInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    kotaTtdInput.dispatchEvent(new Event('change', { bubbles: true }));
+            if (currentCab) {
+                let targetCity = currentCab;
+                if (currentCab.toLowerCase() === 'pusat') {
+                    targetCity = 'Tangerang';
                 }
+                kotaTtdInput.value = targetCity;
+                kotaTtdInput.dataset.autoFilled = 'true';
+                kotaTtdInput.dispatchEvent(new Event('input', { bubbles: true }));
+                kotaTtdInput.dispatchEvent(new Event('change', { bubbles: true }));
             }
         }
         if (cabangSelect && kotaTtdInput) {
             cabangSelect.addEventListener('change', syncKotaPenandatanganan);
-            kotaTtdInput.addEventListener('input', function () {
-                kotaTtdInput.dataset.autoFilled = 'false';
-            });
-            if (!kotaTtdInput.value && cabangSelect.value) {
+            cabangSelect.addEventListener('input', syncKotaPenandatanganan);
+            if (cabangSelect.value) {
                 syncKotaPenandatanganan();
             }
+        }
+
+        // --- Rekening Perusahaan: Readonly & Autofill Master Profil Perusahaan ---
+        const rekeningInput = form.querySelector('[name="rekening_perusahaan"]');
+        if (rekeningInput) {
+            rekeningInput.readOnly = true;
+            rekeningInput.classList.add('field-readonly', 'bg-light');
+            rekeningInput.style.cursor = 'not-allowed';
+            rekeningInput.setAttribute('title', 'Nomor rekening resmi perusahaan terisi otomatis sesuai profil perusahaan (readonly)');
+            const wrapper = rekeningInput.closest('.field-wrapper') || rekeningInput.closest('.mb-3') || rekeningInput.parentElement;
+            if (wrapper) {
+                let helpText = wrapper.querySelector('.form-text');
+                if (!helpText) {
+                    helpText = document.createElement('div');
+                    helpText.className = 'form-text text-muted small mt-1';
+                    rekeningInput.parentNode.appendChild(helpText);
+                }
+                helpText.textContent = 'Terisi otomatis dari master profil perusahaan (readonly).';
+            }
+        }
+
+        function resolveRekeningPerusahaan(compName, brandName) {
+            const c = (compName || '').toUpperCase();
+            const b = (brandName || '').toUpperCase();
+            if (c.includes('PRIMATARA') || c.includes('BANGUN CIPTA') || c === 'BCP') {
+                return 'BCA KCU CIMAHI 139.9888.777 (IDR) a/n PT. BANGUN CIPTA PRIMATARA';
+            }
+            if (c.includes('BESTARI') || c === 'BM') {
+                return 'BCA KCU CIMAHI 139.9888.777 (IDR) a/n PT. BESTARI MULIA';
+            }
+            if (c.includes('CEMERLANG ABADI MULIA') || c.includes('ABADI MULIA') || c === 'CAM') {
+                return 'BCA CIMAHI – BANDUNG 139.9183.888 (IDR) a/n PT. CEMERLANG ABADI MULIA';
+            }
+            if (c.includes('ANUGRAH') || c === 'ACA') {
+                return 'BCA CIMAHI – BANDUNG 139.9183.888 (IDR) a/n PT. ANUGRAH CEMERLANG ABADI';
+            }
+            if (c.includes('SEJAHTERA') || c.includes('RAS') || c.includes('ROYAL') || b.includes('ROYAL') || b.includes('FOAM')) {
+                return 'BCA KCU CIMAHI 139.9888.777 (IDR) a/n PT. ROYAL ABADI SEJAHTERA';
+            }
+            return 'BCA KCU CIMAHI 139.9888.777 (IDR) a/n PT. ROYAL ABADI SEJAHTERA';
+        }
+
+        function syncRekeningPerusahaan() {
+            if (!rekeningInput) return;
+            const compVal = (perusahaanSelect && perusahaanSelect.value) ? perusahaanSelect.value.trim() : '';
+            const brandVal = (brandSelect && brandSelect.value) ? brandSelect.value.trim() : '';
+            const targetRek = resolveRekeningPerusahaan(compVal, brandVal);
+            rekeningInput.value = targetRek;
+            rekeningInput.dataset.autoFilled = 'true';
+            rekeningInput.dispatchEvent(new Event('input', { bubbles: true }));
+            rekeningInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        if (perusahaanSelect) {
+            perusahaanSelect.addEventListener('change', syncRekeningPerusahaan);
+            perusahaanSelect.addEventListener('input', syncRekeningPerusahaan);
+        }
+        if (brandSelect) {
+            brandSelect.addEventListener('change', syncRekeningPerusahaan);
+            brandSelect.addEventListener('input', syncRekeningPerusahaan);
+        }
+        if (rekeningInput) {
+            syncRekeningPerusahaan();
         }
 
         // Run immediately to generate official SPK number
@@ -1114,25 +1402,22 @@
 
         function getMarketShareBrandHeader(brandName) {
             if (!brandName || typeof brandName !== 'string') {
-                return 'ROYAL / SERENITY (RP)';
+                return 'LADY (RP)';
             }
             const b = brandName.trim().toUpperCase();
 
-            // Aturan Khusus: LADY AMERICANA -> LADY (RP)
+            // 4 Brand Resmi SPK:
             if (b.includes('LADY')) {
                 return 'LADY (RP)';
             }
-            if (b.includes('ROYAL') || b.includes('FOAM')) {
-                return 'ROYAL FOAM (RP)';
+            if (b.includes('ELITE')) {
+                return 'ELITE (RP)';
             }
             if (b.includes('SERENITY')) {
                 return 'SERENITY (RP)';
             }
-            if (b.includes('GRAND')) {
-                return 'GRAND EXCLUSIVE (RP)';
-            }
-            if (b.includes('ELITE')) {
-                return 'ELITE (RP)';
+            if (b.includes('ROYAL') || b.includes('FOAM')) {
+                return 'ROYAL FOAM (RP)';
             }
 
             return `${b} (RP)`;
@@ -1284,6 +1569,13 @@
         const field = form.querySelector('[name="target_incentive"]');
         if (!field) return;
 
+        // Clean obsolete jenis_pajak dropdown wrapper from DOM if still present
+        const oldJenisPajak = form.querySelector('[name="jenis_pajak"]');
+        if (oldJenisPajak) {
+            const wrap = oldJenisPajak.closest('.field-wrapper') || oldJenisPajak.closest('.mb-3') || oldJenisPajak.parentElement;
+            if (wrap) wrap.style.display = 'none';
+        }
+
         field.style.display = 'none';
         const container = createGridContainer(field, 'Target & Incentive Scheme (Pasal 3)', 'Skema tier target penjualan bulanan dan reward insentif.', 'target_incentive');
 
@@ -1296,39 +1588,42 @@
         }
 
         function saveRows(rows) {
+            // Strictly enforce exclude_ppn: true on every row before JSON serialization
+            if (Array.isArray(rows)) {
+                rows.forEach(r => {
+                    r.exclude_ppn = true;
+                });
+            }
             field.value = JSON.stringify(rows);
             field.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
-        function isExcludePPNSelected() {
-            const jpInput = form.querySelector('[name="jenis_pajak"]');
-            const val = (jpInput ? jpInput.value : '').trim().toLowerCase();
-            return val.includes('exclude');
-        }
-
         function render() {
             let rows = getRows();
-            const currentExclude = isExcludePPNSelected();
 
             if (!rows.length) {
                 rows = [
-                    { target_bulanan: 0, exclude_ppn: currentExclude, incentive_pct: 0, keterangan: '' }
+                    { target_bulanan: 0, exclude_ppn: true, incentive_pct: 0, keterangan: '' }
                 ];
                 saveRows(rows);
             } else {
                 rows.forEach(r => {
-                    r.exclude_ppn = currentExclude;
+                    r.exclude_ppn = true;
                 });
                 saveRows(rows);
             }
 
             let html = `
+                <div class="alert alert-light border border-info-subtle py-2 px-3 small mb-2 d-flex align-items-center text-muted">
+                    <i class="bi bi-info-circle-fill text-info me-2 fs-6"></i>
+                    <span><strong>Ketentuan Pajak Standar SPK:</strong> Seluruh tier target penjualan bulanan mengacu pada ketentuan <strong>Exclude PPN</strong>.</span>
+                </div>
                 <div class="table-responsive">
                     <table class="table table-bordered kontrak-grid-table" data-grid="target_incentive">
                         <thead>
                             <tr>
                                 <th>Target Bulanan (Rp)</th>
-                                <th style="width: 120px;" class="text-center">Exclude PPN</th>
+                                <th style="width: 130px;" class="text-center">Exclude PPN</th>
                                 <th style="width: 130px;">Incentive (%)</th>
                                 <th>Keterangan</th>
                                 <th style="width: 50px;" class="text-center">Aksi</th>
@@ -1342,7 +1637,7 @@
                     <tr data-index="${idx}">
                         <td><input type="text" inputmode="numeric" class="cell-input cell-num" data-key="target_bulanan" value="${formatRupiah(r.target_bulanan)}"></td>
                         <td class="text-center">
-                            <input type="checkbox" class="form-check-input" data-key="exclude_ppn" ${currentExclude ? 'checked' : ''} disabled title="Mengikuti pilihan Jenis Pajak (${currentExclude ? 'Exclude PPN' : 'Include PPN'})">
+                            <input type="checkbox" class="form-check-input" data-key="exclude_ppn" checked disabled style="cursor: not-allowed;" title="Standar baku kontrak SPK: Exclude PPN">
                         </td>
                         <td><input type="text" inputmode="decimal" class="cell-input cell-num" data-key="incentive_pct" value="${r.incentive_pct !== undefined ? r.incentive_pct : 0}" placeholder="0"></td>
                         <td><input type="text" class="cell-input" data-key="keterangan" value="${escapeHtml(r.keterangan || '')}" placeholder="Catatan reward"></td>
@@ -1440,27 +1735,10 @@
             });
 
             container.querySelector('.btn-add-row').addEventListener('click', () => {
-                rows.push({ target_bulanan: 0, exclude_ppn: isExcludePPNSelected(), incentive_pct: 0, keterangan: '' });
+                rows.push({ target_bulanan: 0, exclude_ppn: true, incentive_pct: 0, keterangan: '' });
                 saveRows(rows);
                 render();
             });
-        }
-
-        // Listener for Jenis Pajak change to automatically update all rows
-        const jenisPajakSelect = form.querySelector('[name="jenis_pajak"]');
-        if (jenisPajakSelect && !jenisPajakSelect.dataset.syncTargetIncentive) {
-            jenisPajakSelect.dataset.syncTargetIncentive = 'true';
-            const handleJPChange = () => {
-                const isExclude = isExcludePPNSelected();
-                let currentRows = getRows();
-                currentRows.forEach(r => {
-                    r.exclude_ppn = isExclude;
-                });
-                saveRows(currentRows);
-                render();
-            };
-            jenisPajakSelect.addEventListener('change', handleJPChange);
-            jenisPajakSelect.addEventListener('input', handleJPChange);
         }
 
         window.renderTargetGrid = render;
@@ -2005,28 +2283,44 @@
             facilityWrapper.appendChild(row1);
         }
 
-        // Row 2: Input syarat_pencairan
-        const syaratEl = form.querySelector('[name="syarat_pencairan"]');
-        const syaratBlock = syaratEl ? (syaratEl.closest('.field-wrapper') || syaratEl.closest('.mb-3') || syaratEl.parentElement) : null;
-        if (syaratBlock) facilityWrapper.appendChild(syaratBlock);
+        // Row 2: 5 Official Support Checkboxes (komponen_biaya)
+        const biayaWrap = form.querySelector('#id_komponen_biaya') || form.querySelector('.field-komponen_biaya');
+        let biayaBlock = null;
+        if (biayaWrap) {
+            const container = form.querySelector('#id_komponen_biaya');
+            if (container) {
+                container.className = 'd-flex flex-wrap gap-3 align-items-center mt-2 p-2.5 rounded-2 bg-light border border-slate-200';
+                container.querySelectorAll(':scope > div').forEach(div => {
+                    div.className = 'form-check form-check-inline mb-0 d-flex align-items-center gap-2';
+                    const inp = div.querySelector('input[type="checkbox"]');
+                    const lbl = div.querySelector('label');
+                    if (inp) {
+                        inp.className = 'form-check-input mt-0';
+                        inp.style.cursor = 'pointer';
+                        inp.style.width = '1.1em';
+                        inp.style.height = '1.1em';
+                    }
+                    if (lbl) {
+                        lbl.className = 'form-check-label text-dark fw-medium mb-0';
+                        lbl.style.cursor = 'pointer';
+                        lbl.style.fontSize = '13.5px';
+                    }
+                });
+            }
+            biayaBlock = biayaWrap.closest('.field-wrapper') || biayaWrap.closest('.mb-3') || biayaWrap.parentElement;
+            if (biayaBlock) {
+                biayaBlock.classList.add('w-100');
+                facilityWrapper.appendChild(biayaBlock);
+            }
+        }
 
-        // Row 3: Input komponen_biaya
-        const biayaEl = form.querySelector('[name="komponen_biaya"]');
-        const biayaBlock = biayaEl ? (biayaEl.closest('.field-wrapper') || biayaEl.closest('.mb-3') || biayaEl.parentElement) : null;
-        if (biayaBlock) facilityWrapper.appendChild(biayaBlock);
-
-        // Row 4: Textarea pengecualian_ketentuan_support
-        const pengecualianEl = form.querySelector('[name="pengecualian_ketentuan_support"]');
-        const pengecualianBlock = pengecualianEl ? (pengecualianEl.closest('.field-wrapper') || pengecualianEl.closest('.mb-3') || pengecualianEl.parentElement) : null;
-        if (pengecualianBlock) facilityWrapper.appendChild(pengecualianBlock);
-
-        // Row 5: Dynamic Table Tier Support Tahunan / Biaya Sewa (Pasal 7)
+        // Row 3: Dynamic Table Tier Support Tahunan / Biaya Sewa (Pasal 7)
         const tierEl = form.querySelector('[name="tier_support"]');
         const tierBlock = tierEl ? (tierEl.closest('.field-wrapper') || tierEl.closest('.mb-3') || tierEl.parentElement) : null;
         if (tierBlock) facilityWrapper.appendChild(tierBlock);
 
         // Ensure all child blocks and containers inside facilityWrapper have display:none cleared
-        [row1, syaratBlock, biayaBlock, pengecualianBlock, tierBlock].forEach(block => {
+        [row1, biayaBlock, tierBlock].forEach(block => {
             if (block) {
                 block.style.removeProperty('display');
                 block.classList.remove('d-none');
@@ -2107,14 +2401,19 @@
                     tierField.value = '[]';
                     if (window.renderTierGrid) window.renderTierGrid();
                 }
-                ['support_promosi', 'pct_support_promo', 'frekuensi_pencairan', 'syarat_pencairan', 'komponen_biaya', 'pengecualian_ketentuan_support'].forEach(fn => {
+                ['support_promosi', 'pct_support_promo', 'frekuensi_pencairan'].forEach(fn => {
                     const el = form.querySelector(`[name="${fn}"]`);
                     if (el) el.value = '';
                 });
+                form.querySelectorAll('input[name="komponen_biaya"]').forEach(chk => {
+                    chk.checked = false;
+                });
+                const biayaHidden = form.querySelector('input[type="hidden"][name="komponen_biaya"], input[type="text"][name="komponen_biaya"]');
+                if (biayaHidden) biayaHidden.value = '';
             }
         }
 
-        // Setup live validation for Support Tambahan fields (pct_support_promo, syarat_pencairan, komponen_biaya)
+        // Setup live validation for Support Tambahan fields (pct_support_promo, komponen_biaya)
         setupSupportFieldsValidation(form);
 
         window.updateSupportVisibility = updateSupportVisibility;
@@ -2178,29 +2477,198 @@
             });
         }
 
-        // 2. syarat_pencairan: reject disallowed symbols like * and #
-        const syaratInput = form.querySelector('[name="syarat_pencairan"]');
-        if (syaratInput && !syaratInput.dataset.validationAttached) {
-            syaratInput.dataset.validationAttached = 'true';
-            syaratInput.addEventListener('input', function () {
-                const cleaned = this.value.replace(/[^\w\s.,/\-()'"&]/gi, '');
-                if (this.value !== cleaned) {
-                    this.value = cleaned;
-                }
-            });
+        // 2. komponen_biaya: attach change listeners to 5 official checkboxes
+        const biayaChks = form.querySelectorAll('input[name="komponen_biaya"]');
+        biayaChks.forEach(chk => {
+            if (!chk.dataset.validationAttached) {
+                chk.dataset.validationAttached = 'true';
+                chk.addEventListener('change', function () {
+                    if (window.renderSPKTab) window.renderSPKTab(form);
+                    if (window.renderSummaryTab) window.renderSummaryTab(form);
+                });
+            }
+        });
+    }
+
+    /* --------------------------------------------------------------------------
+     * 5c. Setup Step 2 SPK Legal Clause Section Cards
+     * -------------------------------------------------------------------------- */
+    function setupStep2ClauseCards(form) {
+        const pane2 = form.querySelector('#wizardStepPane2');
+        if (!pane2) return;
+        if (pane2.querySelector('.spk-clause-card')) return; // Already partitioned
+
+        console.log('[KontrakGridWidget] Structuring Step 2 into SPK Legal Clause Cards...');
+
+        function createClauseCard(badgeText, badgeClass, titleText, subtitleText) {
+            const card = document.createElement('div');
+            card.className = 'spk-clause-card card mb-4';
+            card.innerHTML = `
+                <div class="spk-clause-header">
+                    <div>
+                        <div class="spk-clause-header-left">
+                            <span class="spk-clause-badge ${badgeClass}">${badgeText}</span>
+                            <h5 class="spk-clause-title">${titleText}</h5>
+                        </div>
+                        <p class="spk-clause-subtitle">${subtitleText}</p>
+                    </div>
+                </div>
+                <div class="spk-clause-body"></div>
+            `;
+            return {
+                card: card,
+                body: card.querySelector('.spk-clause-body')
+            };
         }
 
-        // 3. komponen_biaya: reject disallowed symbols like * and #
-        const biayaInput = form.querySelector('[name="komponen_biaya"]');
-        if (biayaInput && !biayaInput.dataset.validationAttached) {
-            biayaInput.dataset.validationAttached = 'true';
-            biayaInput.addEventListener('input', function () {
-                const cleaned = this.value.replace(/[^\w\s.,/\-()]/gi, '');
-                if (this.value !== cleaned) {
-                    this.value = cleaned;
-                }
-            });
+        function extractFieldElement(name) {
+            const input = pane2.querySelector(`[name="${name}"]`) || form.querySelector(`[name="${name}"]`);
+            if (!input) {
+                const displayEl = pane2.querySelector(`.field-${name}`) || form.querySelector(`.field-${name}`);
+                if (displayEl) return displayEl;
+                return null;
+            }
+            const wrapper = input.closest(`.field-${name}`) || input.closest('.field-wrapper') || input.closest('.mb-3') || input.parentElement;
+            return wrapper;
         }
+
+        // 1. Card 1: Periode & Masa Berlaku Kontrak (Pasal 4 / 5)
+        const card1 = createClauseCard('Pasal 4 / 5', '', 'Periode & Masa Berlaku Kontrak', 'Masa berlaku perjanjian kerjasama dan tenggang waktu pemenuhan target.');
+        
+        const infoBlock = extractFieldElement('info_kontrak_lama');
+        if (infoBlock) card1.body.appendChild(infoBlock);
+
+        const rowDates = document.createElement('div');
+        rowDates.className = 'row g-3 mb-2';
+        ['tanggal_mulai', 'tanggal_berakhir', 'durasi', 'grace_period'].forEach(fn => {
+            const el = extractFieldElement(fn);
+            if (el) {
+                const col = document.createElement('div');
+                col.className = 'col-md-3 col-sm-6';
+                el.classList.remove('col-md-3', 'col-md-4', 'col-md-6', 'col-md-12');
+                col.appendChild(el);
+                rowDates.appendChild(col);
+            }
+        });
+        card1.body.appendChild(rowDates);
+
+        // 2. Card 2: Target Penjualan & Skema Insentif (Pasal 3)
+        const card2 = createClauseCard('Pasal 3', '', 'Target Penjualan & Skema Insentif', 'Komitmen volume penjualan bulanan toko dan skema reward insentif.');
+        
+        const colPajakInfo = document.createElement('div');
+        colPajakInfo.className = 'mb-3';
+        colPajakInfo.innerHTML = `
+            <div class="alert alert-light border border-info-subtle text-muted small p-2.5 mb-0 rounded-2 d-flex align-items-center gap-2">
+                <i class="bi bi-info-circle text-info fs-5 flex-shrink-0"></i>
+                <div>Target volume penjualan bulanan dan skema reward insentif toko dibakukan dengan ketentuan <strong>Exclude PPN</strong> sesuai price list resmi yang berlaku.</div>
+            </div>
+        `;
+        card2.body.appendChild(colPajakInfo);
+
+        const targetGridBlock = pane2.querySelector('.kontrak-target-incentive-wrapper') || extractFieldElement('target_incentive');
+        if (targetGridBlock) card2.body.appendChild(targetGridBlock);
+
+        // 3. Card 3: Skema Diskon Produk & Ketentuan DO (Pasal 5 / 6)
+        const card3 = createClauseCard('Pasal 5 / 6', '', 'Skema Diskon Produk & Ketentuan DO', 'Rincian komponen potongan harga penjualan produk serta ketentuan Delivery Order (DO).');
+        
+        const rowDO = document.createElement('div');
+        rowDO.className = 'row g-3 mb-3';
+        
+        const discDO = extractFieldElement('discount_do');
+        if (discDO) {
+            const col = document.createElement('div');
+            col.className = 'col-md-4';
+            discDO.classList.remove('col-md-3', 'col-md-4', 'col-md-6', 'col-md-12');
+            col.appendChild(discDO);
+            rowDO.appendChild(col);
+        }
+        
+        const ketDO = extractFieldElement('ketentuan_do');
+        if (ketDO) {
+            const col = document.createElement('div');
+            col.className = 'col-md-8';
+            ketDO.classList.remove('col-md-3', 'col-md-4', 'col-md-6', 'col-md-12');
+            col.appendChild(ketDO);
+            rowDO.appendChild(col);
+        }
+        card3.body.appendChild(rowDO);
+
+        const discountGridBlock = pane2.querySelector('.kontrak-discount-scheme-wrapper') || extractFieldElement('discount_scheme');
+        if (discountGridBlock) card3.body.appendChild(discountGridBlock);
+
+        // 4. Card 4: Fasilitas & Dukungan Promosi (Pasal 4 & 7 Promo - Kondisional)
+        const card4 = createClauseCard('Pasal 4 & 7 Promo', 'badge-promo', 'Fasilitas & Dukungan Promosi Tambahan', 'Support promosi instore, pameran, sewa, listrik, dan tier reward tahunan toko.');
+        
+        const toggleEl = extractFieldElement('is_support_provided');
+        if (toggleEl) card4.body.appendChild(toggleEl);
+
+        const facWrapper = pane2.querySelector('.kontrak-support-facility-wrapper') || form.querySelector('.kontrak-support-facility-wrapper');
+        if (facWrapper) card4.body.appendChild(facWrapper);
+
+        // 5. Card 5: Tata Cara & Ketentuan Pembayaran (BAB III - Pasal 7, 8, 9)
+        const card5 = createClauseCard('BAB III', 'badge-bab3', 'Tata Cara & Ketentuan Pembayaran (Pasal 7, 8, 9)', 'Jangka waktu pembayaran (TOP), sistem transaksi resmi, dan rekening bank perusahaan.');
+        
+        const rowBayar = document.createElement('div');
+        rowBayar.className = 'row g-3 mb-2';
+        ['top', 'rekening_perusahaan'].forEach(fn => {
+            const el = extractFieldElement(fn);
+            if (el) {
+                const col = document.createElement('div');
+                col.className = (fn === 'top') ? 'col-md-4' : 'col-md-8';
+                el.classList.remove('col-md-3', 'col-md-4', 'col-md-6', 'col-md-12');
+                col.appendChild(el);
+                rowBayar.appendChild(col);
+                if (fn === 'rekening_perusahaan') {
+                    const inp = el.querySelector('input') || el;
+                    if (inp && inp.tagName === 'INPUT') {
+                        inp.readOnly = true;
+                        inp.classList.add('field-readonly', 'bg-light');
+                        inp.style.cursor = 'not-allowed';
+                    }
+                }
+            }
+        });
+        card5.body.appendChild(rowBayar);
+
+        // 6. Card 6: Ketentuan Akhir & Tempat Pengesahan (BAB IV & Penutup)
+        const card6 = createClauseCard('BAB IV & Penutup', 'badge-bab4', 'Ketentuan Akhir & Tempat Pengesahan', 'Lokasi dan tanggal resmi pengesahan Surat Perjanjian Kerjasama (SPK).');
+        
+        const rowTtd = document.createElement('div');
+        rowTtd.className = 'row g-3 mb-2';
+        ['kota_penandatanganan', 'tanggal_penandatanganan'].forEach(fn => {
+            const el = extractFieldElement(fn);
+            if (el) {
+                const col = document.createElement('div');
+                col.className = 'col-md-6';
+                el.classList.remove('col-md-3', 'col-md-4', 'col-md-6', 'col-md-12');
+                col.appendChild(el);
+                rowTtd.appendChild(col);
+            }
+        });
+        card6.body.appendChild(rowTtd);
+
+        // Append cards to pane2
+        pane2.appendChild(card1.card);
+        pane2.appendChild(card2.card);
+        pane2.appendChild(card3.card);
+        pane2.appendChild(card4.card);
+        pane2.appendChild(card5.card);
+        pane2.appendChild(card6.card);
+
+        // Remove leftover empty containers from pane2
+        Array.from(pane2.children).forEach(child => {
+            if (!child.classList.contains('spk-clause-card') && child.tagName !== 'SCRIPT') {
+                if (!child.querySelector('input, select, textarea') && !child.textContent.trim()) {
+                    child.remove();
+                } else if (!child.classList.contains('spk-clause-card')) {
+                    if (!child.querySelector('input:not([type="hidden"]), select, textarea')) {
+                        child.style.setProperty('display', 'none', 'important');
+                    }
+                }
+            }
+        });
+
+        console.log('[KontrakGridWidget] Step 2 successfully structured into 6 SPK Legal Clause Cards.');
     }
 
     /* --------------------------------------------------------------------------
@@ -2273,6 +2741,75 @@
         renderSummaryTab(form);
     }
 
+    function formatIndonesianDate(dateStr) {
+        if (!dateStr || dateStr === '—' || dateStr === '-' || dateStr === 'None' || dateStr === 'null' || dateStr === 'undefined') return '—';
+        const s = String(dateStr).trim();
+        const months = [
+            'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+            'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+        ];
+
+        // 1. Check ISO format YYYY-MM-DD
+        const mIso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if (mIso) {
+            const y = mIso[1];
+            const m = parseInt(mIso[2], 10);
+            const d = String(parseInt(mIso[3], 10)).padStart(2, '0');
+            if (m >= 1 && m <= 12) {
+                return `${d} ${months[m - 1]} ${y}`;
+            }
+        }
+
+        // 2. Check Slash format DD/MM/YYYY or D/M/YYYY
+        const mSlash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if (mSlash) {
+            const d = String(parseInt(mSlash[1], 10)).padStart(2, '0');
+            const m = parseInt(mSlash[2], 10);
+            const y = mSlash[3];
+            if (m >= 1 && m <= 12) {
+                return `${d} ${months[m - 1]} ${y}`;
+            }
+        }
+
+        // 3. Check Dash format DD-MM-YYYY or D-M-YYYY
+        const mDash = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
+        if (mDash) {
+            const d = String(parseInt(mDash[1], 10)).padStart(2, '0');
+            const m = parseInt(mDash[2], 10);
+            const y = mDash[3];
+            if (m >= 1 && m <= 12) {
+                return `${d} ${months[m - 1]} ${y}`;
+            }
+        }
+
+        // 4. Check Text format: e.g. "1 November 2026" or "01 November 2026"
+        const mText = s.match(/^(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})$/);
+        if (mText) {
+            const d = String(parseInt(mText[1], 10)).padStart(2, '0');
+            const monthInput = mText[2].toLowerCase();
+            const y = mText[3];
+            const enIdMap = {
+                'january': 0, 'jan': 0, 'januari': 0,
+                'february': 1, 'feb': 1, 'februari': 1,
+                'march': 2, 'mar': 2, 'maret': 2,
+                'april': 3, 'apr': 3,
+                'may': 4, 'mei': 4,
+                'june': 5, 'jun': 5, 'juni': 5,
+                'july': 6, 'jul': 6, 'juli': 6,
+                'august': 7, 'aug': 7, 'agustus': 7,
+                'september': 8, 'sep': 8,
+                'october': 9, 'oct': 9, 'oktober': 9,
+                'november': 10, 'nov': 10,
+                'december': 11, 'dec': 11, 'desember': 11
+            };
+            if (enIdMap[monthInput] !== undefined) {
+                return `${d} ${months[enIdMap[monthInput]]} ${y}`;
+            }
+        }
+
+        return s;
+    }
+
     function renderSummaryTab(form) {
         const container = document.getElementById('summaryFieldsContainer');
         if (!container) return;
@@ -2311,18 +2848,19 @@
             <div class="col-md-4">
                 <div class="small text-muted">Kota & Kontak</div>
                 <div class="fw-medium">${getV('kota') || '-'} (${getV('no_telepon') || '-'})</div>
+                <div class="text-muted small font-monospace">${getV('email') || ''}</div>
             </div>
             <div class="col-md-4">
                 <div class="small text-muted">Periode Kontrak</div>
-                <div class="fw-medium">${getV('tanggal_mulai') || '-'} s/d ${getV('tanggal_berakhir') || '-'} (${getV('durasi') || '-'})</div>
+                <div class="fw-medium">${formatIndonesianDate(getV('tanggal_mulai'))} s/d ${formatIndonesianDate(getV('tanggal_berakhir'))} (${getV('durasi') || '-'})</div>
             </div>
             <div class="col-md-4">
-                <div class="small text-muted">Ketentuan Pembayaran & TOP</div>
-                <div class="fw-medium">${getV('metode_pembayaran') || '-'} (TOP: ${getV('top') || '-'} Hari)</div>
+                <div class="small text-muted">Jangka Waktu Pembayaran (TOP)</div>
+                <div class="fw-medium">${getV('top') || '-'} Hari (Transfer / Cek / Giro)</div>
             </div>
             <div class="col-md-4">
-                <div class="small text-muted">Jenis Pajak</div>
-                <div class="fw-medium">${getV('jenis_pajak') || '-'}</div>
+                <div class="small text-muted">Ketentuan Pajak</div>
+                <div class="fw-medium">Exclude PPN</div>
             </div>
         `;
     }
@@ -2355,8 +2893,7 @@
         };
 
         const formatPPN = (val) => {
-            if (val === true || val === 'true' || val === 1 || val === '1') return 'Exclude PPN';
-            return 'Include PPN';
+            return 'Exclude PPN';
         };
 
         const formatDiscountType = (val) => {
@@ -2381,31 +2918,89 @@
         const toko = getV('nama_toko') || '—';
         const pemilik = getV('nama_pemilik') || '—';
         const alamat = getV('alamat_toko') || '—';
-        const identitas = getV('nomor_identitas') || '—';
-        const jenisIdentitas = getV('jenis_identitas') || 'KTP / NPWP';
+        const nikVal = getV('nomor_nik') || getV('nomor_identitas') || '—';
+        const npwpVal = getV('nomor_npwp') || '—';
         const noTelepon = getV('no_telepon') || '—';
-        const brand = getV('brand') || '—';
+        function getCanonicalBrand(b) {
+            if (!b || b === '—') return '—';
+            const bu = b.trim().toUpperCase();
+            if (bu.includes('LADY')) return 'Lady Americana';
+            if (bu.includes('ELITE')) return 'Elite';
+            if (bu.includes('SERENITY')) return 'Serenity';
+            if (bu.includes('ROYAL') || bu.includes('FOAM')) return 'Royal Foam';
+            return b;
+        }
+        const brand = getCanonicalBrand(getV('brand'));
         const cabang = getV('cabang') || '—';
         const perusahaan = getV('perusahaan') || '—';
         const rekening = getV('rekening_perusahaan') || '—';
         const jdeCode = getV('kode_customer_jde') || '—';
-        const tglMulai = getV('tanggal_mulai') || '—';
-        const tglAkhir = getV('tanggal_berakhir') || '—';
-        const durasi = getV('durasi') || '—';
+        const tglMulai = formatIndonesianDate(getV('tanggal_mulai'));
+        const tglAkhir = formatIndonesianDate(getV('tanggal_berakhir'));
+        function getCanonicalDurasi(d) {
+            if (!d || d === '—' || d === '-') return '—';
+            const ds = String(d).trim();
+            const mPure = ds.match(/^(\d+)\s*Bulan$/i);
+            if (mPure) return `${mPure[1]} Bulan`;
+            const mYt = ds.match(/(\d+)\s*Tahun/i);
+            const mBl = ds.match(/(\d+)\s*Bulan/i);
+            if (mYt || mBl) {
+                const y = mYt ? parseInt(mYt[1], 10) : 0;
+                const m = mBl ? parseInt(mBl[1], 10) : 0;
+                const total = (y * 12) + m;
+                if (total > 0) return `${total} Bulan`;
+            }
+            if (/^\d+$/.test(ds)) return `${ds} Bulan`;
+            return ds;
+        }
+        const durasi = getCanonicalDurasi(getV('durasi'));
         const gracePeriod = getV('grace_period') || '—';
         const pctSupportPromo = getV('pct_support_promo') || '0';
         const frekuensiPencairan = getV('frekuensi_pencairan') || '—';
-        const syaratPencairan = getV('syarat_pencairan') || '—';
-        const komponenBiaya = getV('komponen_biaya') || '—';
-        const pengecualianSupport = getV('pengecualian_ketentuan_support') || '—';
+        const syaratPencairan = 'Setelah pembayaran LUNAS';
+
+        const getKomponenBiayaList = () => {
+            const chks = form.querySelectorAll('input[name="komponen_biaya"]:checked');
+            if (chks.length > 0) {
+                return Array.from(chks).map(c => c.value);
+            }
+            const el = form.querySelector('[name="komponen_biaya"]');
+            if (el && el.value) {
+                try {
+                    const parsed = JSON.parse(el.value);
+                    if (Array.isArray(parsed)) return parsed;
+                } catch (e) {}
+                return el.value.split(',').map(s => s.trim()).filter(Boolean);
+            }
+            return [];
+        };
+
+        const formatKomponenBiayaLegalText = (items) => {
+            const OFFICIAL_ORDER = ['Sewa', 'Listrik', 'Instore', 'Pameran', 'Asuransi'];
+            if (!items || !items.length) {
+                return 'sewa, instore, pameran, listrik, dan asuransi';
+            }
+            const normalized = items.map(s => String(s).trim().toLowerCase());
+            const matched = OFFICIAL_ORDER.filter(off => normalized.includes(off.toLowerCase()))
+                                          .map(off => off.toLowerCase());
+            if (!matched.length) {
+                return 'sewa, instore, pameran, listrik, dan asuransi';
+            }
+            if (matched.length === 1) return matched[0];
+            if (matched.length === 2) return `${matched[0]} dan ${matched[1]}`;
+            return `${matched.slice(0, -1).join(', ')}, dan ${matched[matched.length - 1]}`;
+        };
+
+        const komponenBiayaItems = getKomponenBiayaList();
+        const komponenBiayaLegalText = formatKomponenBiayaLegalText(komponenBiayaItems);
+        const komponenBiaya = komponenBiayaLegalText;
         const top = getV('top') || '—';
-        const bayar = getV('metode_pembayaran') || 'Transfer / Cek / Giro';
+        const bayar = 'Transfer / Cek / Giro';
         const discountDO = getV('discount_do') || '0';
         const ketentuanDO = getV('ketentuan_do') || '—';
-        const jenisPajak = getV('jenis_pajak') || 'Exclude PPN';
-        const catatanLain = getV('catatan_lain') || '';
+        const jenisPajak = 'Exclude PPN';
         const kota = getV('kota_penandatanganan') || getV('cabang') || getV('kota') || '—';
-        const tglTtd = getV('tanggal_penandatanganan') || '—';
+        const tglTtd = formatIndonesianDate(getV('tanggal_penandatanganan')) || formatIndonesianDate(new Date().toISOString().slice(0, 10));
 
         const targetRows = getGridRows('target_incentive');
         const discountRows = getGridRows('discount_scheme');
@@ -2589,6 +3184,54 @@
             };
         }
 
+        // Dynamic Court Jurisdiction (Pengadilan Negeri) following Cabang / Kota Pengaju
+        const branchPNMap = {
+            'bali': 'Kantor Panitera Pengadilan Negeri Denpasar',
+            'denpasar': 'Kantor Panitera Pengadilan Negeri Denpasar',
+            'bandung': 'Kantor Panitera Pengadilan Negeri Bale Bandung',
+            'banyumas': 'Kantor Panitera Pengadilan Negeri Banyumas',
+            'cirebon': 'Kantor Panitera Pengadilan Negeri Cirebon',
+            'jakarta': 'Kantor Panitera Pengadilan Negeri Tangerang',
+            'kediri': 'Kantor Panitera Pengadilan Negeri Kediri',
+            'lampung': 'Kantor Panitera Pengadilan Negeri Tanjung Karang',
+            'makassar': 'Kantor Panitera Pengadilan Negeri Makassar',
+            'manado': 'Kantor Panitera Pengadilan Negeri Manado',
+            'medan': 'Kantor Panitera Pengadilan Negeri Medan',
+            'palembang': 'Kantor Panitera Pengadilan Negeri Palembang',
+            'pekanbaru': 'Kantor Panitera Pengadilan Negeri Pekanbaru',
+            'pusat': 'Kantor Panitera Pengadilan Negeri Tangerang',
+            'r1': 'Kantor Panitera Pengadilan Negeri Tangerang',
+            'r2': 'Kantor Panitera Pengadilan Negeri Tangerang',
+            'semarang': 'Kantor Panitera Pengadilan Negeri Semarang',
+            'surabaya': 'Kantor Panitera Pengadilan Negeri Surabaya',
+            'tangerang': 'Kantor Panitera Pengadilan Negeri Tangerang'
+        };
+
+        function resolveBranchPN(cabangVal, kotaVal) {
+            const candidates = [];
+            if (cabangVal) candidates.push(String(cabangVal).trim().toLowerCase());
+            if (kotaVal) candidates.push(String(kotaVal).trim().toLowerCase());
+
+            for (const cand of candidates) {
+                for (const [k, v] of Object.entries(branchPNMap)) {
+                    if (cand.includes(k) || k.includes(cand)) {
+                        return v;
+                    }
+                }
+            }
+            if (cabangVal && cabangVal !== '—') {
+                const titleC = String(cabangVal).trim().charAt(0).toUpperCase() + String(cabangVal).trim().slice(1).toLowerCase();
+                return `Kantor Panitera Pengadilan Negeri ${titleC}`;
+            }
+            if (kotaVal && kotaVal !== '—') {
+                const titleK = String(kotaVal).trim().charAt(0).toUpperCase() + String(kotaVal).trim().slice(1).toLowerCase();
+                return `Kantor Panitera Pengadilan Negeri ${titleK}`;
+            }
+            return 'Kantor Panitera Pengadilan Negeri Tangerang';
+        }
+
+        prof.pn = resolveBranchPN(cabang, getV('kota') || kota);
+
         // Calculate Target per 3 Bulan and Incentives
         let targetNum = 0;
         if (targetRows.length > 0 && targetRows[0].target_bulanan) {
@@ -2635,17 +3278,21 @@
             rewardRateStr = '—';
         }
 
+        const narasiPerhitunganParagraf = targetPer3Bulan > 0
+            ? `Target penjualan sebesar ${targetPer3BulanText} per 3 Bulan mendapatkan insentif reward ${rewardRateStr} dengan estimasi reward sebesar ${insentiveNominalText} dipotong PPh 23 sebesar ${pph23Label} (${pph23NominalText}) sehingga total netto reward yang diterima sebesar ${nettoNominalText}.`
+            : 'Target penjualan per 3 Bulan mendapatkan reward promosi sesuai skema dan tier target yang disepakati.';
+
         let displayNomorSPK = getV('nomor_spk') || '';
         if (!displayNomorSPK || displayNomorSPK === '—' || displayNomorSPK.includes('OTOMATIS') || displayNomorSPK.startsWith('SPK-') || !displayNomorSPK.includes('/')) {
             if (brand && brand !== '—' && cabang && cabang !== '—') {
                 const now = new Date();
-                const mStr = String(now.getMonth() + 1).padStart(2, '0');
+                const ROMAN_MONTHS = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
+                const mRoman = ROMAN_MONTHS[now.getMonth() + 1] || 'X';
                 const yStr = String(now.getFullYear());
-                const cleanBrand = (brandUpper.includes('LADY') ? 'LADY' : (brandUpper.includes('ROYAL') || brandUpper.includes('FOAM') ? 'ROYAL' : (brandUpper.includes('SERENITY') ? 'SERENITY' : (brandUpper.includes('ELITE') ? 'ELITE' : (brandUpper.split(' ')[0] || 'BRAND')))));
-                const cleanCabang = cabang.toUpperCase();
-                displayNomorSPK = `No. [Otomatis]/${cleanBrand}/${prof.shortCode || 'RAS'}/${mStr}/${yStr}`;
+                const cleanBrand = (brandUpper.includes('LADY') ? 'LADY' : (brandUpper.includes('ROYAL') || brandUpper.includes('FOAM') ? 'ROYAL' : (brandUpper.includes('SERENITY') ? 'SERENITY' : (brandUpper.includes('ELITE') ? 'ELITE' : (brandUpper.split(' ')[0] || 'LADY')))));
+                displayNomorSPK = `001/${cleanBrand}/${prof.shortCode || 'RAS'}/${mRoman}/${yStr}`;
             } else {
-                displayNomorSPK = 'No. — / — / — / — / —';
+                displayNomorSPK = '— / — / — / — / —';
             }
         }
 
@@ -2678,7 +3325,8 @@
                         <tr><td style="width: 130px; vertical-align: top;">Nama</td><td style="width: 15px; vertical-align: top;">:</td><td style="font-weight: bold;">${pemilik}</td></tr>
                         <tr><td style="vertical-align: top;">Pemilik Tk.</td><td style="vertical-align: top;">:</td><td style="font-weight: bold;">${toko}</td></tr>
                         <tr><td style="vertical-align: top;">Alamat</td><td style="vertical-align: top;">:</td><td>${alamat}</td></tr>
-                        <tr><td style="vertical-align: top;">NIK / NPWP</td><td style="vertical-align: top;">:</td><td>${identitas}</td></tr>
+                        <tr><td style="vertical-align: top; width: 130px;">NPWP</td><td style="vertical-align: top; width: 15px;">:</td><td>${npwpVal}</td></tr>
+                        <tr><td style="vertical-align: top;">NIK</td><td style="vertical-align: top;">:</td><td>${nikVal}</td></tr>
                     </table>
 
                     <p style="margin-bottom: 12px;">Selanjutnya disebut sebagai <strong>PIHAK KEDUA</strong> Dealer produk Springbed merk <strong>“${brand}”</strong></p>
@@ -2708,7 +3356,7 @@
                     
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 3</div>
                     <div style="margin-top: 0; margin-bottom: 12px;">
-                        <p style="text-align: justify; margin-bottom: 4px; text-indent: -24px; padding-left: 24px;">(1) Para Pihak sepakat bahwa Target Volume Penjualan produk selama jangka waktu perjanjian ini <strong>${targetVolText}</strong> per bulan Exclude Ppn.</p>
+                        <p style="text-align: justify; margin-bottom: 4px; text-indent: -24px; padding-left: 24px;">(1) Para Pihak sepakat bahwa Target Volume Penjualan produk selama jangka waktu perjanjian ini <strong>${targetVolText}</strong> per bulan ${jenisPajak}.</p>
                         <p style="text-align: justify; margin-bottom: 0; text-indent: -24px; padding-left: 24px;">(2) Pihak Kedua wajib memenuhi Volume Penjualan yang telah ditentukan dalam perjanjian ini.</p>
                     </div>
                     ${targetTableHtml || '<p class="text-muted fst-italic">Belum ada tier target bulanan yang ditambahkan.</p>'}
@@ -2717,14 +3365,14 @@
                     <!-- PASAL 4 KHUSUS SUPPORT PROMOSI -->
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 4</div>
                     <ol style="margin-top: 0; margin-bottom: 12px; padding-left: 20px;">
-                        <li style="text-align: justify; margin-bottom: 4px;">Pihak Pertama memberikan support promosi yang meliputi biaya (sewa, instore, pameran, listrik, dan asuransi) kepada Pihak Kedua sebesar <strong>${pctSupportPromo}%</strong>. Support promosi tersebut <strong>TIDAK</strong> meliputi biaya Billboard, Pajak Billboard, dan Backdrop apabila Pihak Kedua membuka cabang baru atau toko baru.</li>
+                        <li style="text-align: justify; margin-bottom: 4px;">Pihak Pertama memberikan support promosi yang meliputi biaya (${komponenBiayaLegalText}) kepada Pihak Kedua sebesar <strong>${pctSupportPromo}%</strong>. Support promosi tersebut <strong>TIDAK</strong> meliputi biaya Billboard, Pajak Billboard, dan Backdrop apabila Pihak Kedua membuka cabang baru atau toko baru.</li>
                         <li style="text-align: justify; margin-bottom: 4px;">Support promosi ini dapat dicairkan setelah pembayaran <strong>LUNAS</strong>.</li>
-                        <li style="text-align: justify;">Grace period selama 1 (satu) bulan dari masa kontrak berakhir, apabila Pihak Kedua belum mencapai target.</li>
+                        <li style="text-align: justify;">Grace period selama ${gracePeriod && gracePeriod !== '—' ? `<strong>${gracePeriod}</strong>` : '1 (satu) bulan'} dari masa kontrak berakhir, apabila Pihak Kedua belum mencapai target.</li>
                     </ol>
 
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 5</div>
                     <p style="text-align: justify; margin-bottom: 12px;">
-                        Perjanjian berlaku untuk Jangka Waktu <strong>${durasi}</strong> terhitung dari sejak tanggal <strong>${tglMulai}</strong> dan akan berakhir pada tanggal <strong>${tglAkhir}</strong>.
+                        Perjanjian berlaku untuk Jangka Waktu <strong>${durasi}</strong> terhitung dari sejak tanggal <strong>${tglMulai}</strong> dan akan berakhir pada tanggal <strong>${tglAkhir}</strong>${gracePeriod && gracePeriod !== '—' ? ` dengan tenggang waktu (grace period) selama <strong>${gracePeriod}</strong>` : ''}.
                     </p>
 
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 6</div>
@@ -2732,11 +3380,12 @@
                         Skema discount untuk penjualan Produk yang berlaku untuk Pihak Kedua dalam Perjanjian ini adalah sebagai berikut :
                     </p>
                     ${discountTableHtml || '<p class="text-muted fst-italic">Belum ada skema diskon yang ditambahkan.</p>'}
+                    ${discountDO && discountDO !== '0' && discountDO !== '—' ? `<p style="text-align: justify; margin-bottom: 8px;">Diskon Delivery Order (DO): <strong>${discountDO}%</strong> ${ketentuanDO && ketentuanDO !== '—' ? `&mdash; Ketentuan: ${escapeHtml(ketentuanDO)}` : ''}</p>` : ''}
                     ` : `
                     <!-- STANDARD REGULER -->
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 4</div>
                     <p style="text-align: justify; margin-bottom: 12px;">
-                        Perjanjian berlaku untuk Jangka Waktu <strong>${durasi}</strong> terhitung dari sejak tanggal <strong>${tglMulai}</strong> dan akan berakhir pada tanggal <strong>${tglAkhir}</strong>.
+                        Perjanjian berlaku untuk Jangka Waktu <strong>${durasi}</strong> terhitung dari sejak tanggal <strong>${tglMulai}</strong> dan akan berakhir pada tanggal <strong>${tglAkhir}</strong>${gracePeriod && gracePeriod !== '—' ? ` dengan tenggang waktu (grace period) selama <strong>${gracePeriod}</strong>` : ''}.
                     </p>
 
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 5</div>
@@ -2744,6 +3393,7 @@
                         Skema discount untuk penjualan Produk yang berlaku untuk Pihak Kedua dalam Perjanjian ini adalah sebagai berikut :
                     </p>
                     ${discountTableHtml || '<p class="text-muted fst-italic">Belum ada skema diskon yang ditambahkan.</p>'}
+                    ${discountDO && discountDO !== '0' && discountDO !== '—' ? `<p style="text-align: justify; margin-bottom: 8px;">Diskon Delivery Order (DO): <strong>${discountDO}%</strong> ${ketentuanDO && ketentuanDO !== '—' ? `&mdash; Ketentuan: ${escapeHtml(ketentuanDO)}` : ''}</p>` : ''}
                     `}
                 </div>
                 <div class="spk-page-footer">Halaman 1 dari 2</div>
@@ -2785,7 +3435,7 @@
 
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 8</div>
                     <p style="text-align: justify; margin-bottom: 12px;">
-                        Sistem pembayaran melalui Transfer atau buka Cek/Giro yang telah di tulis nama <strong>${prof.name}</strong> dengan Nomer Rekening sesuai yang ada pada Faktur dan kontrabon. Serta <strong>TIDAK DIPERKENANKAN</strong> membayar secara TUNAI kepada Salesman/Collector/Kepala Depo/ASM/BM atau menitip pembayaran kepada Supir maupun Karyawan lainnya.
+                        Sistem pembayaran melalui <strong>Transfer / Cek / Giro</strong> yang telah ditulis atas nama <strong>${prof.name}</strong> dengan Nomor Rekening (${rekening || prof.rekNo}) sesuai yang ada pada Faktur dan kontrabon. Serta <strong>TIDAK DIPERKENANKAN</strong> membayar secara TUNAI kepada Salesman/Collector/Kepala Depo/ASM/BM atau menitip pembayaran kepada Supir maupun Karyawan lainnya.
                     </p>
 
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 9</div>
@@ -2811,43 +3461,51 @@
                             </tr>
                         </table>
                     </div>
-                    <p style="text-align: justify; margin-bottom: 16px;">
+                    <p style="text-align: justify; margin-bottom: 12px;">
                         Walaupun nota asli sudah di serahkan / dititipkan oleh salesman maka belum dianggap sebagai pembayaran.
                     </p>
 
-                    <!-- BAB IV (STANDARD: PASAL 10, 11) -->
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 10</div>
+                    <p style="text-align: justify; margin-bottom: 16px;">
+                        Apabila pembayaran tidak sesuai dengan TOP dan jika terjadi backdate, Pihak Pertama dapat mengambil/menyita aset sesuai dengan piutang.
+                    </p>
+
+                    <!-- BAB IV (STANDARD: PASAL 11, 12) -->
                     <div style="text-align: center; font-weight: bold; margin-top: 18px; margin-bottom: 8px;">
                         BAB IV<br>ITIKAD BAIK DAN PERSELISIHAN
                     </div>
                     
-                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 10</div>
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 11</div>
                     <p style="text-align: justify; margin-bottom: 12px;">
                         Para pihak dengan itikad baik dan penuh tanggung jawab menjalankan tugas, hak dan kewajibannya dengan mengindahkan peraturan perundangan yang berlaku.
                     </p>
 
-                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 11</div>
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 12</div>
                     <p style="text-align: justify; margin-bottom: 14px;">
                         Apabila terjadi perselisihan/sengketa diantara Para Pihak terkait dengan isi dan/atau Pelaksanaan Perjanjian ini maka perselisihan tersebut akan di selesaikan terlebih dahulu melalui musyawarah mufakat diantara Para Pihak. Apabila dengan cara musyawarah mufakat tidak dapat dilakukan atau tidak tercapai sesuatu penyelesaian yang baik bagi Para Pihak maka Para Pihak sepakat untuk memilih <strong>${prof.pn}</strong> sebagai satu satunya domisili hukum yang tetap bagi Para Pihak.
                     </p>
                     ` : `
-                    <!-- SUPPORT PROMOSI: 12 PASAL (HALAMAN 2: PASAL 7 S/D 12) -->
+                    <!-- SUPPORT PROMOSI: 13 PASAL (HALAMAN 2: PASAL 7 S/D 13) -->
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 7</div>
                     <p style="text-align: justify; margin-bottom: 6px;">
-                        Pihak Pertama memberikan kompensasi Insentive Reward kepada Pihak Kedua saat perjanjian ini berakhir dan seluruh kewajiban Pihak Kedua kepada Pihak Pertama telah selesai atau LUNAS<br>
-                        Adapun perhitungan insentif adalah sebagai berikut :
+                        Pihak Pertama memberikan kompensasi Insentive Reward kepada Pihak Kedua saat perjanjian ini berakhir dan seluruh kewajiban Pihak Kedua kepada Pihak Pertama telah selesai atau LUNAS.<br>
+                        Adapun rincian perhitungan insentif adalah sebagai berikut :
                     </p>
-                    <div style="margin-left: 15px; margin-bottom: 16px;">
+                    <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 4px; padding: 8px 12px; margin-bottom: 10px; text-align: justify; font-size: 13px; line-height: 1.5;">
+                        ${narasiPerhitunganParagraf}
+                    </div>
+                    <div style="margin-left: 15px; margin-bottom: 14px;">
                         <p style="margin: 3px 0;">• Target ${targetPer3BulanText} per 3 Bulan mendapatkan reward (support promosi) ${pctSupportPromo}%</p>
                         <table style="width: 100%; border-collapse: collapse; margin-top: 4px;">
                             <tr><td style="width: 250px;">Insentive Reward</td><td style="width: 15px;">=</td><td>${insentiveNominalText} &nbsp; &nbsp; ( ${pctSupportPromo}% x Pencapaian Omzet )</td></tr>
-                            <tr><td>Pph 23 Untuk Insentive Kontrak</td><td>=</td><td>${pph23NominalText} &nbsp; &nbsp; ( Reward x 2% )</td></tr>
-                            <tr><td>Netto Reward</td><td>=</td><td>${nettoNominalText} &nbsp; &nbsp; (Total Insentive – Pph 23)</td></tr>
+                            <tr><td>PPh 23 Untuk Insentive Kontrak</td><td>=</td><td>${pph23NominalText} &nbsp; &nbsp; ( Reward x 2% )</td></tr>
+                            <tr><td>Netto Reward</td><td>=</td><td>${nettoNominalText} &nbsp; &nbsp; (Total Insentive – PPh 23)</td></tr>
                         </table>
                         <p style="margin-top: 6px; font-weight: bold;">Maka insentive yang dibayarkan adalah sebesar ${nettoNominalText}.</p>
                     </div>
                     ${tierTableHtml || ''}
 
-                    <!-- BAB III (SUPPORT PROMOSI: PASAL 8, 9, 10) -->
+                    <!-- BAB III (SUPPORT PROMOSI: PASAL 8, 9, 10, 11) -->
                     <div style="text-align: center; font-weight: bold; margin-top: 18px; margin-bottom: 8px;">
                         BAB III<br>TATA CARA PEMBAYARAN
                     </div>
@@ -2859,7 +3517,7 @@
 
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 9</div>
                     <p style="text-align: justify; margin-bottom: 12px;">
-                        Sistem pembayaran melalui Transfer atau buka Cek/Giro yang telah di tulis nama <strong>${prof.name}</strong> dengan Nomer Rekening sesuai yang ada pada Faktur dan kontrabon. Serta <strong>TIDAK DIPERKENANKAN</strong> membayar secara TUNAI kepada Salesman/Collector/Kepala Depo/ASM/BM atau menitip pembayaran kepada Supir maupun Karyawan lainnya.
+                        Sistem pembayaran melalui <strong>Transfer / Cek / Giro</strong> yang telah ditulis atas nama <strong>${prof.name}</strong> dengan Nomor Rekening (${rekening || prof.rekNo}) sesuai yang ada pada Faktur dan kontrabon. Serta <strong>TIDAK DIPERKENANKAN</strong> membayar secara TUNAI kepada Salesman/Collector/Kepala Depo/ASM/BM atau menitip pembayaran kepada Supir maupun Karyawan lainnya.
                     </p>
 
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 10</div>
@@ -2885,21 +3543,26 @@
                             </tr>
                         </table>
                     </div>
-                    <p style="text-align: justify; margin-bottom: 16px;">
+                    <p style="text-align: justify; margin-bottom: 12px;">
                         Walaupun nota asli sudah di serahkan / dititipkan oleh salesman maka belum dianggap sebagai pembayaran.
                     </p>
 
-                    <!-- BAB IV (SUPPORT PROMOSI: PASAL 11, 12) -->
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 11</div>
+                    <p style="text-align: justify; margin-bottom: 16px;">
+                        Apabila pembayaran tidak sesuai dengan TOP dan jika terjadi backdate, Pihak Pertama dapat mengambil/menyita aset sesuai dengan piutang.
+                    </p>
+
+                    <!-- BAB IV (SUPPORT PROMOSI: PASAL 12, 13) -->
                     <div style="text-align: center; font-weight: bold; margin-top: 18px; margin-bottom: 8px;">
                         BAB IV<br>ITIKAD BAIK DAN PERSELISIHAN
                     </div>
                     
-                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 11</div>
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 12</div>
                     <p style="text-align: justify; margin-bottom: 12px;">
                         Para pihak dengan itikad baik dan penuh tanggung jawab menjalankan tugas, hak dan kewajibannya dengan mengindahkan peraturan perundangan yang berlaku.
                     </p>
 
-                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 12</div>
+                    <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 13</div>
                     <p style="text-align: justify; margin-bottom: 14px;">
                         Apabila terjadi perselisihan/sengketa diantara Para Pihak terkait dengan isi dan/atau Pelaksanaan Perjanjian ini maka perselisihan tersebut akan di selesaikan terlebih dahulu melalui musyawarah mufakat diantara Para Pihak. Apabila dengan cara musyawarah mufakat tidak dapat dilakukan atau tidak tercapai sesuatu penyelesaian yang baik bagi Para Pihak maka Para Pihak sepakat untuk memilih <strong>${prof.pn}</strong> sebagai satu satunya domisili hukum yang tetap bagi Para Pihak.
                     </p>
@@ -2915,22 +3578,32 @@
                         </div>
                         <table class="spk-signatures-table" style="width: 100%; border-collapse: collapse; text-align: center; font-size: 14px;">
                             <tr>
-                                <td style="width: 50%; font-weight: bold; vertical-align: top;">
+                                <td style="width: 38%; font-weight: bold; vertical-align: top;">
                                     PIHAK PERTAMA<br>
                                     ${prof.name}
                                 </td>
-                                <td style="width: 50%; font-weight: bold; vertical-align: top;">
+                                <td style="width: 24%; font-weight: bold; vertical-align: top;">
+                                    &nbsp;
+                                </td>
+                                <td style="width: 38%; font-weight: bold; vertical-align: top;">
                                     PIHAK KEDUA<br>
                                     ${toko}
                                 </td>
                             </tr>
                             <tr>
-                                <td style="height: 65px; vertical-align: middle;">
+                                <td style="height: 70px; vertical-align: middle;">
                                     <div style="color: #94a3b8; font-size: 11px; font-style: italic;">
                                         (Tanda Tangan &amp; Pengesahan)
                                     </div>
                                 </td>
-                                <td style="height: 65px; vertical-align: middle;">
+                                <td style="height: 70px; vertical-align: middle; text-align: center;">
+                                    <div style="display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 54pt; height: 52pt; border: 1.5px dashed #0284c7; border-radius: 4px; background: #f0f9ff; margin: 0 auto; padding: 2px; box-sizing: border-box;">
+                                        <span style="font-size: 7pt; font-weight: 700; color: #0369a1; line-height: 1.1;">e-Meterai</span>
+                                        <span style="font-size: 6.5pt; font-weight: 600; color: #0284c7; line-height: 1.1;">Rp 10.000</span>
+                                        <span style="font-size: 5pt; color: #64748b; margin-top: 2px;">[POSISI STEMPEL]</span>
+                                    </div>
+                                </td>
+                                <td style="height: 70px; vertical-align: middle;">
                                     <div style="color: #94a3b8; font-size: 11px; font-style: italic;">
                                         (Tanda Tangan Mitra Toko)
                                     </div>
@@ -2938,11 +3611,14 @@
                             </tr>
                             <tr>
                                 <td style="vertical-align: top;">
-                                    <div style="border-bottom: 1px solid #111; display: inline-block; min-width: 180px; font-weight: bold;">${prof.director}</div><br>
+                                    <div style="border-bottom: 1px solid #111; display: inline-block; min-width: 170px; font-weight: bold;">${prof.director}</div><br>
                                     ${prof.director !== '—' ? (prof.jabatan || 'Direktur') : '—'}
                                 </td>
                                 <td style="vertical-align: top;">
-                                    <div style="border-bottom: 1px solid #111; display: inline-block; min-width: 180px; font-weight: bold;">${pemilik}</div><br>
+                                    &nbsp;
+                                </td>
+                                <td style="vertical-align: top;">
+                                    <div style="border-bottom: 1px solid #111; display: inline-block; min-width: 170px; font-weight: bold;">${pemilik}</div><br>
                                     ${pemilik !== '—' ? 'Pemilik Toko' : '—'}
                                 </td>
                             </tr>
@@ -2959,16 +3635,30 @@
      * 7. Wizard Footer Actions & Interactive Stepper Header Navigation
      * -------------------------------------------------------------------------- */
     function setupWizardFooter(form) {
-        const btnPrev = form.querySelector('#btnWizardPrev');
-        const btnNext = form.querySelector('#btnWizardNext');
-        const btnNextText = form.querySelector('#btnWizardNextText');
-        const btnBackToForms = form.querySelector('#btnBackToForms');
-        const btnPreviewSPK = form.querySelector('#btnPreviewSPK');
-        const btnSubmit = form.querySelector('#btnSubmitApplication');
+        const btnPrev = form.querySelector('#btnWizardPrev') || document.getElementById('btnWizardPrev') || form.querySelector('.btn-wizard-prev') || document.querySelector('.btn-wizard-prev');
+        const btnNext = form.querySelector('#btnWizardNext') || document.getElementById('btnWizardNext') || form.querySelector('.btn-wizard-next') || document.querySelector('.btn-wizard-next');
+        const btnNextText = form.querySelector('#btnWizardNextText') || document.getElementById('btnWizardNextText');
+        const btnBackToForms = form.querySelector('#btnBackToForms') || document.getElementById('btnBackToForms');
+        const btnPreviewSPK = form.querySelector('#btnPreviewSPK') || document.getElementById('btnPreviewSPK');
+        const btnSubmit = form.querySelector('#btnSubmitApplication') || document.getElementById('btnSubmitApplication');
+
+        // Ensure form and buttons have HTML5 native validation disabled to prevent silent aborts
+        if (form) {
+            form.setAttribute('novalidate', 'novalidate');
+            form.noValidate = true;
+        }
+        if (btnNext) {
+            btnNext.setAttribute('type', 'button');
+            btnNext.setAttribute('formnovalidate', 'formnovalidate');
+        }
+        if (btnPrev) {
+            btnPrev.setAttribute('type', 'button');
+            btnPrev.setAttribute('formnovalidate', 'formnovalidate');
+        }
 
         function getCurrentStepIndex() {
             let activeIdx = 0;
-            const activePane = form.querySelector('.wizard-step-pane.active');
+            const activePane = form.querySelector('.wizard-step-pane.active') || document.querySelector('.wizard-step-pane.active');
             if (activePane && activePane.dataset.step !== undefined) {
                 activeIdx = parseInt(activePane.dataset.step, 10);
             } else if (window.formEnhancements && typeof window.formEnhancements.currentStep === 'number') {
@@ -2989,6 +3679,57 @@
                 el.classList.add('d-none');
                 el.style.setProperty('display', 'none', 'important');
             }
+        }
+
+        function showWizardValidationAlert(formElement, errorMessages, targetPane) {
+            // Remove previous validation alerts
+            formElement.querySelectorAll('.wizard-validation-alert, .validation-alert').forEach(el => el.remove());
+            const globalErr = document.getElementById('form-error-summary');
+            if (globalErr) globalErr.style.display = 'none';
+
+            const alert = document.createElement('div');
+            alert.className = 'alert alert-danger alert-dismissible fade show wizard-validation-alert my-3 shadow-sm border-0 border-start border-danger border-4';
+            alert.setAttribute('role', 'alert');
+
+            let listHtml = '';
+            if (Array.isArray(errorMessages) && errorMessages.length > 0) {
+                listHtml = `<ul class="mb-0 mt-2 ps-3 small">${errorMessages.map(m => `<li>${m}</li>`).join('')}</ul>`;
+            }
+
+            alert.innerHTML = `
+                <div class="d-flex align-items-start gap-2">
+                    <i class="bi bi-exclamation-triangle-fill fs-5 text-danger flex-shrink-0 mt-1"></i>
+                    <div class="flex-grow-1">
+                        <strong>Mohon lengkapi field wajib sebelum melanjutkan ke Step 2:</strong>
+                        ${listHtml}
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            `;
+
+            // Insert alert before footer actions so user immediately sees what went wrong
+            const footer = formElement.querySelector('.form-footer-actions') || formElement.querySelector('.footer-right-actions');
+            if (footer && footer.parentNode) {
+                footer.parentNode.insertBefore(alert, footer);
+            } else if (targetPane) {
+                targetPane.appendChild(alert);
+            } else {
+                formElement.prepend(alert);
+            }
+
+            // Also synchronize with window.formEnhancements if available
+            if (window.formEnhancements && typeof window.formEnhancements.showValidationAlert === 'function') {
+                try {
+                    window.formEnhancements.showValidationAlert('Mohon lengkapi seluruh field wajib sebelum melanjutkan.');
+                } catch (e) {}
+            }
+
+            setTimeout(() => {
+                if (alert.parentNode) {
+                    alert.classList.remove('show');
+                    setTimeout(() => alert.remove(), 300);
+                }
+            }, 8000);
         }
 
         // Handle Confirmation Checkboxes in Step 3
@@ -3023,60 +3764,187 @@
 
         // Core Step Switching Function
         function switchWizardStep(targetStep, validate) {
+            console.log(`[Wizard Navigation] switchWizardStep dipanggil: targetStep=${targetStep}, validate=${validate}`);
             if (targetStep < 0 || targetStep > 2) return false;
 
             const panes = form.querySelectorAll('.wizard-step-pane');
             const currentStep = getCurrentStepIndex();
+            console.log(`[Wizard Navigation] Current step: ${currentStep}, Target step: ${targetStep}`);
 
             // Validation if moving forward
             if (validate && targetStep > currentStep) {
-                const currentPane = panes[currentStep] || form.querySelector(`.wizard-step-pane[data-step="${currentStep}"]`) || form.querySelector('.wizard-step-pane.active');
-                if (currentPane) {
-                    const requiredInputs = currentPane.querySelectorAll('input[required], select[required], textarea[required]');
-                    let hasError = false;
-                    let firstInvalid = null;
+                console.log("[Wizard Navigation] ========================================");
+                console.log("[Wizard Navigation] Tombol Lanjut diklik. Evaluasi validasi Step 1...");
+                console.log(`[Wizard Navigation] Current Step Index: ${currentStep} -> Target Step: ${targetStep}`);
 
-                    requiredInputs.forEach(input => {
-                        if (input.type === 'hidden' || input.disabled || input.style.display === 'none') return;
-                        if (input.offsetParent === null && input.type !== 'checkbox' && input.type !== 'radio') return;
+                let hasError = false;
+                let firstInvalid = null;
+                const errorDetails = [];
+                const currentPane = panes[currentStep] || form.querySelector(`.wizard-step-pane[data-step="${currentStep}"]`) || form.querySelector('.wizard-step-pane.active') || document.getElementById(`wizardStepPane${currentStep + 1}`);
 
-                        const val = (input.value || '').trim();
-                        if (!val) {
-                            input.classList.add('is-invalid');
+                if (currentStep === 0) {
+                    console.log("[Wizard Navigation] Memulai evaluasi field wajib Step 1 (Strict Whitelist Mode)...");
+
+                    // 1. Brand validation (Wajib)
+                    const brandSelect = form.querySelector('[name="brand"]');
+                    const brandVal = (brandSelect?.value || '').trim();
+                    if (!brandVal) {
+                        if (brandSelect) brandSelect.classList.add('is-invalid');
+                        hasError = true;
+                        if (!firstInvalid) firstInvalid = brandSelect;
+                        errorDetails.push('<strong>Brand Produk</strong> wajib dipilih.');
+                        console.warn("[Wizard Navigation] Validation: Brand Produk KOSONG");
+                    } else {
+                        if (brandSelect) brandSelect.classList.remove('is-invalid');
+                        console.log(`[Wizard Navigation] Validation: Brand Produk OK ('${brandVal}')`);
+                    }
+
+                    // 2. Cabang validation (Wajib jika dapat dipilih)
+                    const cabangSelect = form.querySelector('[name="cabang"]');
+                    if (cabangSelect && cabangSelect.tagName === 'SELECT' && !cabangSelect.classList.contains('field-readonly')) {
+                        const cabangVal = (cabangSelect.value || '').trim();
+                        if (!cabangVal) {
+                            cabangSelect.classList.add('is-invalid');
                             hasError = true;
-                            if (!firstInvalid) firstInvalid = input;
+                            if (!firstInvalid) firstInvalid = cabangSelect;
+                            errorDetails.push('<strong>Cabang / Area</strong> wajib dipilih.');
+                            console.warn("[Wizard Navigation] Validation: Cabang KOSONG");
                         } else {
-                            input.classList.remove('is-invalid');
-                        }
-                    });
-
-                    // Custom validation for Nomor Identitas when leaving Step 1
-                    if (currentStep === 0 && typeof form._validateNomorIdentitas === 'function') {
-                        const isIdValid = form._validateNomorIdentitas(true);
-                        if (!isIdValid) {
-                            hasError = true;
-                            const nomorInput = form.querySelector('[name="nomor_identitas"]');
-                            if (!firstInvalid && nomorInput) firstInvalid = nomorInput;
+                            cabangSelect.classList.remove('is-invalid');
+                            console.log(`[Wizard Navigation] Validation: Cabang OK ('${cabangVal}')`);
                         }
                     }
 
-                    if (hasError && firstInvalid) {
-                        firstInvalid.focus();
-                        firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        if (window.formEnhancements && typeof window.formEnhancements.showValidationAlert === 'function') {
-                            window.formEnhancements.showValidationAlert('Please fill in all required fields before continuing.');
+                    // 3. Kode Customer JDE validation (Wajib)
+                    const jdeInput = form.querySelector('[name="kode_customer_jde"]');
+                    const jdeVal = (jdeInput?.value || '').trim();
+                    if (!jdeVal) {
+                        if (jdeInput) jdeInput.classList.add('is-invalid');
+                        hasError = true;
+                        if (!firstInvalid) firstInvalid = jdeInput;
+                        errorDetails.push('<strong>Kode Customer JDE</strong> wajib diisi.');
+                        console.warn("[Wizard Navigation] Validation: Kode Customer JDE KOSONG");
+                    } else {
+                        if (jdeInput) jdeInput.classList.remove('is-invalid');
+                        console.log(`[Wizard Navigation] Validation: Kode Customer JDE OK ('${jdeVal}')`);
+                    }
+
+                    // 4. Email validation (Wajib & Format RFC)
+                    const emailInput = form.querySelector('[name="email"]');
+                    const emailVal = (emailInput?.value || '').trim();
+                    if (!emailVal) {
+                        if (emailInput) emailInput.classList.add('is-invalid');
+                        hasError = true;
+                        if (!firstInvalid) firstInvalid = emailInput;
+                        errorDetails.push('<strong>Email Toko / Pemilik</strong> wajib diisi.');
+                        console.warn("[Wizard Navigation] Validation: Email KOSONG");
+                    } else {
+                        let isEmailValid = false;
+                        if (typeof form._validateEmail === 'function') {
+                            isEmailValid = form._validateEmail(true);
+                        } else {
+                            const EMAIL_RX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+                            isEmailValid = EMAIL_RX.test(emailVal);
                         }
-                        return false;
+                        if (!isEmailValid) {
+                            if (emailInput) emailInput.classList.add('is-invalid');
+                            hasError = true;
+                            if (!firstInvalid) firstInvalid = emailInput;
+                            errorDetails.push('<strong>Format Email</strong> tidak valid (contoh: toko@gmail.com).');
+                            console.warn(`[Wizard Navigation] Validation: Format Email '${emailVal}' TIDAK VALID`);
+                        } else {
+                            if (emailInput) {
+                                emailInput.classList.remove('is-invalid');
+                                emailInput.classList.add('is-valid');
+                            }
+                            console.log(`[Wizard Navigation] Validation: Email OK ('${emailVal}')`);
+                        }
+                    }
+
+                    // 5. Nomor NPWP validation (Wajib 15/16 digit)
+                    const npwpInput = form.querySelector('[name="nomor_npwp"]');
+                    const npwpDigits = (npwpInput?.value || '').trim().replace(/\D/g, '');
+                    if (!npwpDigits) {
+                        if (npwpInput) npwpInput.classList.add('is-invalid');
+                        hasError = true;
+                        if (!firstInvalid) firstInvalid = npwpInput;
+                        errorDetails.push('<strong>Nomor NPWP Toko / Pemilik</strong> wajib diisi.');
+                        console.warn("[Wizard Navigation] Validation: Nomor NPWP KOSONG");
+                    } else if (npwpDigits.length !== 15 && npwpDigits.length !== 16) {
+                        if (npwpInput) npwpInput.classList.add('is-invalid');
+                        hasError = true;
+                        if (!firstInvalid) firstInvalid = npwpInput;
+                        errorDetails.push(`<strong>Nomor NPWP</strong> harus 15 atau 16 digit angka (saat ini: ${npwpDigits.length} digit).`);
+                        console.warn(`[Wizard Navigation] Validation: Nomor NPWP '${npwpDigits}' panjang ${npwpDigits.length} bukan 15/16 digit`);
+                    } else {
+                        if (npwpInput) {
+                            npwpInput.classList.remove('is-invalid');
+                            npwpInput.classList.add('is-valid');
+                        }
+                        console.log(`[Wizard Navigation] Validation: Nomor NPWP OK ('${npwpDigits}')`);
+                    }
+
+                    // 6. Nomor NIK validation (Opsional, jika diisi tepat 16 digit)
+                    const nikInput = form.querySelector('[name="nomor_nik"]');
+                    const nikDigits = (nikInput?.value || '').trim().replace(/\D/g, '');
+                    if (nikDigits) {
+                        if (nikDigits.length !== 16) {
+                            if (nikInput) nikInput.classList.add('is-invalid');
+                            hasError = true;
+                            if (!firstInvalid) firstInvalid = nikInput;
+                            errorDetails.push(`<strong>Nomor NIK</strong> harus tepat 16 digit angka (saat ini: ${nikDigits.length} digit).`);
+                            console.warn(`[Wizard Navigation] Validation: Nomor NIK '${nikDigits}' bukan 16 digit`);
+                        } else {
+                            if (nikInput) {
+                                nikInput.classList.remove('is-invalid');
+                                nikInput.classList.add('is-valid');
+                            }
+                            console.log(`[Wizard Navigation] Validation: Nomor NIK OK ('${nikDigits}')`);
+                        }
+                    }
+
+                    // CATATAN: Repeatable grid Asset Toko & Market Share sepenuhnya opsional dan diabaikan dari validasi blocking!
+                    console.log("[Wizard Navigation] Tabel grid Asset Toko & Market Share dilewati (opsional).");
+                } else if (currentStep === 1) {
+                    // Validasi Step 2 jika diperlukan saat maju ke Step 3
+                    const pane2 = panes[1] || document.getElementById('wizardStepPane2');
+                    if (pane2) {
+                        const reqs = pane2.querySelectorAll('input[required], select[required], textarea[required]');
+                        reqs.forEach(input => {
+                            if (input.type === 'hidden' || input.disabled || input.style.display === 'none') return;
+                            if (input.offsetParent === null && input.type !== 'checkbox' && input.type !== 'radio') return;
+                            const val = (input.value || '').trim();
+                            if (!val) {
+                                input.classList.add('is-invalid');
+                                hasError = true;
+                                if (!firstInvalid) firstInvalid = input;
+                                const lbl = input.closest('.field-wrapper, .mb-3')?.querySelector('label');
+                                errorDetails.push(`<strong>${lbl ? lbl.textContent.replace('*', '').trim() : input.name}</strong> wajib diisi.`);
+                            }
+                        });
                     }
                 }
+
+                if (hasError) {
+                    console.warn("[Wizard Navigation] Validasi memblokir navigasi. Field bermasalah:", errorDetails);
+                    if (firstInvalid) {
+                        firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        firstInvalid.focus();
+                    }
+                    showWizardValidationAlert(form, errorDetails, currentPane);
+                    return false;
+                }
+
+                console.log("[Wizard Navigation] Validasi BERHASIL! Mengeksekusi transisi pane...");
             }
 
             // 1. Toggle Panes & Clean Target Pane Error States
             panes.forEach((pane, idx) => {
                 if (idx === targetStep) {
+                    pane.classList.remove('d-none');
                     pane.classList.add('active');
                     pane.style.removeProperty('display');
-                    pane.style.display = 'block';
+                    pane.style.setProperty('display', 'block', 'important');
 
                     // Ensure all field elements inside active pane are visible (except support facility if unchecked)
                     pane.querySelectorAll('.field-wrapper, .fields-aligned-row, .mb-3').forEach(el => {
@@ -3101,12 +3969,31 @@
                     });
                 } else {
                     pane.classList.remove('active');
+                    pane.classList.add('d-none');
                     pane.style.setProperty('display', 'none', 'important');
                 }
             });
 
+            // Explicit Pane Toggle by ID (Guarantee #wizardStepPane2 is displayed and #wizardStepPane1 is hidden)
+            const p1 = document.getElementById('wizardStepPane1');
+            const p2 = document.getElementById('wizardStepPane2');
+            const p3 = document.getElementById('wizardStepPane3');
+            [p1, p2, p3].forEach((p, idx) => {
+                if (!p) return;
+                if (idx === targetStep) {
+                    p.classList.remove('d-none');
+                    p.classList.add('active');
+                    p.style.removeProperty('display');
+                    p.style.setProperty('display', 'block', 'important');
+                } else {
+                    p.classList.remove('active');
+                    p.classList.add('d-none');
+                    p.style.setProperty('display', 'none', 'important');
+                }
+            });
+
             // 2. Remove any global validation alert banners
-            const existingAlert = form.querySelector('.validation-alert');
+            const existingAlert = form.querySelector('.wizard-validation-alert, .validation-alert');
             if (existingAlert) existingAlert.remove();
             const errSummary = document.getElementById('form-error-summary');
             if (errSummary) errSummary.style.display = 'none';
@@ -3163,6 +4050,7 @@
             }
 
             window.switchWizardStep = switchWizardStep;
+            console.log(`[Wizard Navigation] Berhasil berpindah ke Step ${targetStep + 1}.`);
             return true;
         }
 
@@ -3189,26 +4077,64 @@
         }
 
         // Hook Next & Prev buttons
-        if (btnNext && !btnNext.dataset.wizardBound) {
-            btnNext.dataset.wizardBound = 'true';
-            btnNext.addEventListener('click', function(e) {
+        function onNextClicked(e) {
+            if (e) {
                 e.preventDefault();
                 e.stopImmediatePropagation();
-                const current = getCurrentStepIndex();
-                if (current < 2) {
-                    switchWizardStep(current + 1, true);
-                }
-            });
+            }
+            console.log("[Wizard Navigation] Tombol Lanjut diklik. Evaluasi validasi Step 1...");
+            const current = getCurrentStepIndex();
+            console.log(`[Wizard Navigation] onNextClicked triggered, current step index: ${current}`);
+            if (current < 2) {
+                switchWizardStep(current + 1, true);
+            }
         }
 
-        if (btnPrev && !btnPrev.dataset.wizardBound) {
-            btnPrev.dataset.wizardBound = 'true';
-            btnPrev.addEventListener('click', function(e) {
+        function onPrevClicked(e) {
+            if (e) {
                 e.preventDefault();
                 e.stopImmediatePropagation();
-                const current = getCurrentStepIndex();
-                if (current > 0) {
-                    switchWizardStep(current - 1, false);
+            }
+            console.log("[Wizard Navigation] Tombol Kembali diklik.");
+            const current = getCurrentStepIndex();
+            if (current > 0) {
+                switchWizardStep(current - 1, false);
+            }
+        }
+
+        if (btnNext) {
+            btnNext.dataset.wizardBound = 'true';
+            btnNext.addEventListener('click', onNextClicked);
+            console.log("[Wizard Navigation] Event listener direct berhasil terpasang pada btnNext:", btnNext);
+        }
+
+        if (btnPrev) {
+            btnPrev.dataset.wizardBound = 'true';
+            btnPrev.addEventListener('click', onPrevClicked);
+        }
+
+        // Fallback: Event delegation on document to ensure button clicks are NEVER lost even after DOM re-renders
+        if (!document.body.dataset.wizardNavDelegated) {
+            document.body.dataset.wizardNavDelegated = 'true';
+            document.addEventListener('click', function(e) {
+                const targetNext = e.target.closest('#btnWizardNext, .btn-wizard-next');
+                if (targetNext) {
+                    e.preventDefault();
+                    console.log("[Wizard Navigation] Delegated click captured on Next button:", targetNext);
+                    const current = getCurrentStepIndex();
+                    if (current < 2) {
+                        switchWizardStep(current + 1, true);
+                    }
+                    return;
+                }
+                const targetPrev = e.target.closest('#btnWizardPrev, .btn-wizard-prev');
+                if (targetPrev) {
+                    e.preventDefault();
+                    console.log("[Wizard Navigation] Delegated click captured on Prev button:", targetPrev);
+                    const current = getCurrentStepIndex();
+                    if (current > 0) {
+                        switchWizardStep(current - 1, false);
+                    }
                 }
             });
         }
@@ -3263,46 +4189,64 @@
      * -------------------------------------------------------------------------- */
     function hasMeaningfulData(data) {
         if (!data || typeof data !== 'object') return false;
-        return Object.entries(data).some(([k, v]) => {
-            if (k === 'nomor_spk' || k === 'csrfmiddlewaretoken' || k === 'action') return false;
-            if (k === 'cabang' || k === 'perusahaan') return false;
-            if (typeof v === 'boolean') return v;
-            if (typeof v === 'string') {
-                const trimmed = v.trim();
-                if (!trimmed) return false;
-                if (trimmed === '[]') return false;
-                if (trimmed === '[{"no":1,"keterangan":"","alamat":"","status":"Pribadi"}]') return false;
-                if (trimmed.includes('"bulan":""') && trimmed.includes('"serenity":0')) {
-                    try {
-                        const parsed = JSON.parse(trimmed);
-                        const hasVal = parsed.some(r => (r.bulan && r.bulan.trim() !== '') || r.serenity > 0 || r.kompetitor_1 > 0 || r.kompetitor_2 > 0 || r.kompetitor_3 > 0 || r.kompetitor_4 > 0);
-                        if (!hasVal) return false;
-                    } catch (e) {
-                        return false;
-                    }
-                }
-                if (trimmed.includes('"target_bulanan":0') && trimmed.includes('"incentive_pct":0')) {
-                    try {
-                        const parsed = JSON.parse(trimmed);
-                        const hasVal = parsed.some(r => r.target_bulanan > 0 || r.incentive_pct > 0 || (r.keterangan && r.keterangan.trim() !== ''));
-                        if (!hasVal) return false;
-                    } catch (e) {
-                        return false;
-                    }
-                }
-                if (trimmed.includes('"target_tahunan":0') && trimmed.includes('"support_pct":0')) {
-                    try {
-                        const parsed = JSON.parse(trimmed);
-                        const hasVal = parsed.some(r => r.target_tahunan > 0 || r.support_pct > 0 || (r.keterangan && r.keterangan.trim() !== ''));
-                        if (!hasVal) return false;
-                    } catch (e) {
-                        return false;
-                    }
-                }
+
+        // 1. Primary check: Substantive customer identification fields
+        const substantiveKeys = [
+            'kode_customer_jde',
+            'nama_toko',
+            'nama_pemilik',
+            'email',
+            'nomor_nik',
+            'nomor_npwp',
+            'nomor_identitas',
+            'no_telepon',
+            'alamat_toko'
+        ];
+        for (const key of substantiveKeys) {
+            if (data[key] && typeof data[key] === 'string' && data[key].trim().length > 0) {
                 return true;
             }
-            return Boolean(v);
-        });
+        }
+
+        // 2. Secondary check: Grid data with non-zero user inputs
+        if (data.target_omset_toko && typeof data.target_omset_toko === 'string') {
+            try {
+                const rows = JSON.parse(data.target_omset_toko);
+                if (Array.isArray(rows) && rows.some(r => (r.bulan && r.bulan.trim() !== '') || r.serenity > 0 || r.kompetitor_1 > 0 || r.kompetitor_2 > 0 || r.kompetitor_3 > 0 || r.kompetitor_4 > 0)) {
+                    return true;
+                }
+            } catch (e) {}
+        }
+
+        if (data.skema_incentive && typeof data.skema_incentive === 'string') {
+            try {
+                const rows = JSON.parse(data.skema_incentive);
+                if (Array.isArray(rows) && rows.some(r => r.target_bulanan > 0 || r.incentive_pct > 0 || (r.keterangan && r.keterangan.trim() !== ''))) {
+                    return true;
+                }
+            } catch (e) {}
+        }
+
+        if (data.support_facility && typeof data.support_facility === 'string') {
+            try {
+                const rows = JSON.parse(data.support_facility);
+                if (Array.isArray(rows) && rows.some(r => r.target_tahunan > 0 || r.support_pct > 0 || (r.keterangan && r.keterangan.trim() !== ''))) {
+                    return true;
+                }
+            } catch (e) {}
+        }
+
+        if (data.cabang_toko_alamat && typeof data.cabang_toko_alamat === 'string') {
+            try {
+                const rows = JSON.parse(data.cabang_toko_alamat);
+                if (Array.isArray(rows) && rows.length > 0) {
+                    const hasUserContent = rows.some(r => (r.keterangan && r.keterangan.trim() !== '') || (r.alamat && r.alamat.trim() !== ''));
+                    if (hasUserContent) return true;
+                }
+            } catch (e) {}
+        }
+
+        return false;
     }
 
     function collectFormData(form) {
@@ -3311,6 +4255,15 @@
         elements.forEach(el => {
             const name = el.name;
             if (!name || name === 'csrfmiddlewaretoken' || name === 'action') return;
+            if (name === 'komponen_biaya') {
+                if (!Array.isArray(data.komponen_biaya)) {
+                    data.komponen_biaya = [];
+                }
+                if (el.checked) {
+                    data.komponen_biaya.push(el.value);
+                }
+                return;
+            }
             if (el.type === 'checkbox') {
                 data[name] = el.checked;
             } else if (el.type === 'radio') {
@@ -3506,7 +4459,7 @@
         }
     }
 
-    function setupFormPersistence(form) {
+    function setupFormPersistence(form, hasRestoredDraft) {
         let autoSaveTimeout = null;
         let serverSaveTimeout = null;
 
@@ -3536,6 +4489,10 @@
             })
             .then(resData => {
                 if (resData.success) {
+                    if (resData.ignored) {
+                        updateAutoSaveStatus('idle');
+                        return;
+                    }
                     updateAutoSaveStatus('saved_server');
                     if (resData.draft_id) {
                         form.dataset.currentDraftId = resData.draft_id;
@@ -3561,12 +4518,25 @@
         function scheduleSave() {
             clearTimeout(autoSaveTimeout);
             clearTimeout(serverSaveTimeout);
+
+            const hasExistingDraftId = Boolean(form.dataset.currentDraftId || form.querySelector('input[name="draft_id"]')?.value);
+            const currentData = collectFormData(form);
+            const isMeaningful = hasMeaningfulData(currentData);
+
+            if (!isMeaningful && !hasExistingDraftId) {
+                // Completely empty or default-only form without existing draft: don't save
+                updateAutoSaveStatus('idle');
+                showDiscardDraftButton(form, false);
+                return;
+            }
+
             updateAutoSaveStatus('saving');
 
             autoSaveTimeout = setTimeout(() => {
                 try {
                     const data = collectFormData(form);
-                    if (hasMeaningfulData(data)) {
+                    const meaningfulNow = hasMeaningfulData(data);
+                    if (meaningfulNow || hasExistingDraftId) {
                         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
                         updateAutoSaveStatus('saved_local');
                         showDiscardDraftButton(form, true);
@@ -3604,7 +4574,41 @@
                 return true;
             }
 
-            if (typeof form._validateNomorIdentitas === 'function') {
+            if (typeof form._validateEmail === 'function') {
+                const isEmailValid = form._validateEmail(true);
+                if (!isEmailValid) {
+                    e.preventDefault();
+                    const overlay = document.getElementById('loadingOverlay');
+                    if (overlay) overlay.classList.remove('active');
+                    if (window.switchWizardStep) {
+                        window.switchWizardStep(0, false);
+                    }
+                    const emailInput = form.querySelector('[name="email"]');
+                    if (emailInput) {
+                        emailInput.focus();
+                        emailInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                    return false;
+                }
+            }
+
+            if (typeof form._validateNomorNik === 'function') {
+                const isNikValid = form._validateNomorNik(true);
+                if (!isNikValid) {
+                    e.preventDefault();
+                    const overlay = document.getElementById('loadingOverlay');
+                    if (overlay) overlay.classList.remove('active');
+                    if (window.switchWizardStep) {
+                        window.switchWizardStep(0, false);
+                    }
+                    const nikInput = form.querySelector('[name="nomor_nik"]');
+                    if (nikInput) {
+                        nikInput.focus();
+                        nikInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                    return false;
+                }
+            } else if (typeof form._validateNomorIdentitas === 'function') {
                 const isIdValid = form._validateNomorIdentitas(true);
                 if (!isIdValid) {
                     e.preventDefault();
@@ -3617,6 +4621,23 @@
                     if (nomorInput) {
                         nomorInput.focus();
                         nomorInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                    return false;
+                }
+            }
+            if (typeof form._validateNomorNpwp === 'function') {
+                const isNpwpValid = form._validateNomorNpwp(false);
+                if (!isNpwpValid) {
+                    e.preventDefault();
+                    const overlay = document.getElementById('loadingOverlay');
+                    if (overlay) overlay.classList.remove('active');
+                    if (window.switchWizardStep) {
+                        window.switchWizardStep(0, false);
+                    }
+                    const npwpInput = form.querySelector('[name="nomor_npwp"]');
+                    if (npwpInput) {
+                        npwpInput.focus();
+                        npwpInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     }
                     return false;
                 }

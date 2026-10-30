@@ -344,6 +344,25 @@
     background-color: #dbeafe;
     color: #1e40af;
   }
+  .btn-action-discard {
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #fee2e2;
+    color: #ef4444;
+    background-color: #fef2f2;
+    transition: all 0.12s ease;
+    cursor: pointer;
+  }
+  .btn-action-discard:hover {
+    background-color: #fee2e2;
+    border-color: #fca5a5;
+    color: #dc2626;
+  }
+
 
   /* ── Streamlined Empty State (No Duplicate CTA Button) ── */
   .enterprise-empty-state {
@@ -483,18 +502,30 @@
                 </span>
               </td>
               <td style="text-align: right;">
-                <a href="{{ r.action_url }}" 
-                   class="btn-action-view {% if r.action_is_review %}action-review{% elif r.status_raw == 'draft' %}action-draft{% else %}action-detail{% endif %}"
-                   title="{{ r.action_label }}">
-                  {% if r.action_is_review %}
-                    <i class="bi bi-check2-circle"></i>
-                  {% elif r.status_raw == 'draft' %}
-                    <i class="bi bi-pencil-square"></i>
-                  {% else %}
-                    <i class="bi bi-eye"></i>
+                <div class="d-inline-flex align-items-center justify-content-end gap-1">
+                  <a href="{{ r.action_url }}" 
+                     class="btn-action-view {% if r.action_is_review %}action-review{% elif r.status_raw == 'draft' %}action-draft{% else %}action-detail{% endif %}"
+                     title="{{ r.action_label }}">
+                    {% if r.action_is_review %}
+                      <i class="bi bi-check2-circle"></i>
+                    {% elif r.status_raw == 'draft' %}
+                      <i class="bi bi-pencil-square"></i>
+                    {% else %}
+                      <i class="bi bi-eye"></i>
+                    {% endif %}
+                    <span>{{ r.action_label }}</span>
+                  </a>
+                  {% if r.status_raw == 'draft' and r.submission.submitter_id == request.user.id %}
+                  <button type="button" 
+                          class="btn-action-discard js-btn-discard-draft" 
+                          data-submission-id="{{ r.submission.id }}" 
+                          data-spk-no="{{ r.spk_no }}" 
+                          data-toko="{{ r.toko }}"
+                          title="Hapus Draf">
+                    <i class="bi bi-trash3"></i>
+                  </button>
                   {% endif %}
-                  <span>{{ r.action_label }}</span>
-                </a>
+                </div>
               </td>
             </tr>
             {% endfor %}
@@ -538,6 +569,39 @@
 
   </div>
 
+</div>
+
+<!-- Modal Konfirmasi Hapus Draf -->
+<div class="modal fade" id="hubDiscardDraftModal" tabindex="-1" aria-labelledby="hubDiscardDraftModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width: 420px;">
+    <div class="modal-content border-0 shadow-sm" style="border-radius: 8px;">
+      <div class="modal-header border-0 pb-0 pt-4 px-4">
+        <h6 class="modal-title fw-bold text-dark d-flex align-items-center gap-2" id="hubDiscardDraftModalLabel">
+          <i class="bi bi-trash3 text-danger fs-5"></i> Konfirmasi Hapus Draf
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body px-4 py-3">
+        <p class="text-secondary small mb-3">
+          Apakah Anda yakin ingin menghapus draf pengajuan ini secara permanen? Tindakan ini tidak dapat dibatalkan.
+        </p>
+        <div class="p-3 bg-light rounded border mb-1">
+          <div class="text-muted small" style="font-size: 11px;">NOMOR DRAF / SPK</div>
+          <div class="fw-bold text-dark font-monospace small" id="hubModalSpkNo">—</div>
+          <div class="text-muted small mt-2" style="font-size: 11px;">TOKO / DEALER</div>
+          <div class="fw-semibold text-dark small" id="hubModalToko">—</div>
+        </div>
+      </div>
+      <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-end gap-2" style="border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+        <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal">
+          Batal
+        </button>
+        <button type="button" class="btn btn-danger btn-sm px-3 fw-semibold" id="hubBtnConfirmDiscard">
+          <i class="bi bi-trash3 me-1"></i> Hapus Draf
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -595,6 +659,79 @@ document.addEventListener('DOMContentLoaded', function() {
                 e.preventDefault();
                 clearTimeout(debounceTimer);
                 filterForm.submit();
+            }
+        });
+    }
+
+    // 3. Handle Hapus Draf via AJAX Modal
+    let targetDraftId = null;
+    let targetRow = null;
+    const discardModalEl = document.getElementById('hubDiscardDraftModal');
+    const discardModal = discardModalEl ? new bootstrap.Modal(discardModalEl) : null;
+    const confirmDiscardBtn = document.getElementById('hubBtnConfirmDiscard');
+    const modalSpkEl = document.getElementById('hubModalSpkNo');
+    const modalTokoEl = document.getElementById('hubModalToko');
+
+    document.querySelectorAll('.js-btn-discard-draft').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            targetDraftId = this.dataset.submissionId;
+            targetRow = this.closest('tr');
+            if (modalSpkEl) modalSpkEl.textContent = this.dataset.spkNo || 'Draf Otomatis';
+            if (modalTokoEl) modalTokoEl.textContent = this.dataset.toko || 'Toko Belum Diisi';
+            if (discardModal) discardModal.show();
+        });
+    });
+
+    if (confirmDiscardBtn) {
+        confirmDiscardBtn.addEventListener('click', async function() {
+            if (!targetDraftId) return;
+            confirmDiscardBtn.disabled = true;
+            confirmDiscardBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span> Menghapus...';
+
+            let csrfToken = document.querySelector('[name="csrfmiddlewaretoken"]')?.value;
+            if (!csrfToken) {
+                csrfToken = document.cookie
+                    .split('; ')
+                    .find(row => row.startsWith('csrftoken='))
+                    ?.split('=')[1] || '';
+            }
+
+            try {
+                const response = await fetch(`/forms/submissions/${targetDraftId}/discard/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                const resData = await response.json();
+                if (resData.success) {
+                    if (discardModal) discardModal.hide();
+                    if (targetRow) {
+                        targetRow.style.transition = 'all 0.25s ease';
+                        targetRow.style.opacity = '0';
+                        targetRow.style.transform = 'translateX(15px)';
+                        setTimeout(() => {
+                            targetRow.remove();
+                            const remainingRows = table.querySelectorAll('tbody tr:not(.empty-row)');
+                            if (remainingRows.length === 0) {
+                                window.location.reload();
+                            }
+                        }, 250);
+                    } else {
+                        window.location.reload();
+                    }
+                } else {
+                    alert('Gagal menghapus draf: ' + (resData.message || 'Terjadi kesalahan sistem.'));
+                }
+            } catch (err) {
+                console.error('Error discarding draft:', err);
+                alert('Gagal menghubungi server untuk menghapus draf.');
+            } finally {
+                confirmDiscardBtn.disabled = false;
+                confirmDiscardBtn.innerHTML = '<i class="bi bi-trash3 me-1"></i> Hapus Draf';
             }
         });
     }

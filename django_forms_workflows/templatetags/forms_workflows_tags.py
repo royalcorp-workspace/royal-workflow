@@ -517,3 +517,33 @@ def rupiah_format(value):
 def format_rupiah(value):
     """Alias for rupiah_format."""
     return rupiah_format(value)
+
+
+@register.filter(name="format_date_indonesia")
+def format_date_indonesia(value):
+    """Format any date representation into official Indonesian format: 'DD MMMM YYYY'."""
+    from django_forms_workflows.company_profiles import format_date_indonesia as _fmt
+    return _fmt(value)
+
+
+@register.filter(name="render_komponen_biaya_badges", is_safe=True)
+def render_komponen_biaya_badges(value):
+    """
+    Render standardized 5-component support checklist as clean enterprise badges.
+    Supports JSON array, list, or legacy comma-separated text.
+    """
+    from django_forms_workflows.company_profiles import parse_komponen_biaya_list
+    items = parse_komponen_biaya_list(value)
+    if not items:
+        return mark_safe('<span class="text-muted">—</span>')
+
+    badges = []
+    for item in items:
+        badges.append(
+            f'<span class="badge bg-slate-100 text-dark border border-slate-300 fw-medium px-2.5 py-1" '
+            f'style="background-color: #f1f5f9; color: #1e293b; font-size: 12px; border-color: #cbd5e1 !important;">'
+            f'<i class="bi bi-check2 text-primary me-1"></i>{escape(item)}</span>'
+        )
+    return mark_safe(f'<div class="d-flex flex-wrap gap-2 mt-1">{"".join(badges)}</div>')
+
+

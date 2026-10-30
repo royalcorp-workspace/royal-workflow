@@ -878,8 +878,8 @@ class DocumentTemplate(models.Model):
     def __str__(self):
         return f"{self.name} ({self.form_definition.name})"
 
-    def render(self, submission):
-        """Render this template with submission data, returning HTML string."""
+    def get_context_data(self, submission):
+        """Build merge context with system variables, company profile, and form data."""
         import re
 
         form_data = submission.form_data or {}
@@ -917,6 +917,9 @@ class DocumentTemplate(models.Model):
                     context[key] = ", ".join(str(v) for v in parsed_val)
             else:
                 context[key] = str(val) if val is not None else ""
+
+        # Guarantee email context for legal notifications and e-Sign integration
+        context["email"] = form_data.get("email") or context.get("email", "")
 
         # Resolve dynamic kota_penandatanganan fallback if not set or stale 'Tangerang'
         cabang_val = context.get("cabang", "")
@@ -1039,6 +1042,19 @@ class DocumentTemplate(models.Model):
             get_company_logo_html,
             get_company_logo_data_uri,
             format_official_spk_number,
+            format_canonical_brand_name,
+            normalize_contract_duration,
+            format_date_indonesia,
+            format_komponen_biaya_legal_text,
+            calculate_spk_incentive_breakdown,
+        )
+        context["brand"] = format_canonical_brand_name(form_data.get("brand") or context.get("brand", ""))
+        context["durasi"] = normalize_contract_duration(form_data.get("durasi") or context.get("durasi", ""))
+        # Standardisasi seluruh format tanggal kontrak legal ("DD MMMM YYYY")
+        context["tanggal_mulai"] = format_date_indonesia(form_data.get("tanggal_mulai"))
+        context["tanggal_berakhir"] = format_date_indonesia(form_data.get("tanggal_berakhir"))
+        context["tanggal_penandatanganan"] = format_date_indonesia(
+            form_data.get("tanggal_penandatanganan") or timezone.now().date()
         )
         comp_prof = resolve_company_profile(form_data=form_data, submission=submission, user=submission.submitter)
         context["company_header_logo"] = get_company_logo_html(submission=submission, user=submission.submitter, max_height=48)
@@ -1051,24 +1067,47 @@ class DocumentTemplate(models.Model):
         context["bank_account_no"] = comp_prof["bank_account_no"]
         context["bank_account_name"] = comp_prof["bank_account_name"]
         context["pengadilan_negeri"] = comp_prof["court_jurisdiction"]
+        if not context.get("rekening_perusahaan"):
+            context["rekening_perusahaan"] = f"{comp_prof['bank_name']} {comp_prof['bank_account_no']} a/n {comp_prof['bank_account_name']}"
+        # Standardisasi metode pembayaran baku (Non-Tunai Perbankan Resmi)
+        context["metode_pembayaran"] = form_data.get("metode_pembayaran") or "Transfer / Cek / Giro"
+        # Standardisasi syarat pencairan baku (Non-Input, Otomatis LUNAS)
+        context["syarat_pencairan"] = "Setelah pembayaran LUNAS"
+        # Standardisasi komponen biaya support promosi (Poin 10)
+        komp_legal = format_komponen_biaya_legal_text(form_data.get("komponen_biaya"))
+        context["komponen_biaya"] = komp_legal
+        context["komponen_biaya_text"] = komp_legal
+        context["pengecualian_ketentuan_support"] = form_data.get("pengecualian_ketentuan_support") or ""
+        context["catatan_lain"] = form_data.get("catatan_lain") or ""
+        context["jenis_pajak"] = "Exclude Ppn"
+
+        # Separate NIK and NPWP with backward compatibility
+        nik = form_data.get("nomor_nik")
+        npwp = form_data.get("nomor_npwp")
+        if not nik and not npwp and form_data.get("nomor_identitas"):
+            old_id = str(form_data.get("nomor_identitas", "")).strip()
+            old_type = str(form_data.get("jenis_identitas", "NIK")).upper()
+            if "NPWP" in old_type or len(re.sub(r"\D", "", old_id)) == 15:
+                npwp = old_id
+            else:
+                nik = old_id
+        context["nomor_nik"] = nik or "—"
+        context["nomor_npwp"] = npwp or "—"
+        context["nomor_identitas"] = f"{npwp} / {nik}" if (npwp and nik) else (npwp or nik or "—")
 
         # Ensure official SPK number format
         spk_val = form_data.get("nomor_spk") or ""
-        if not spk_val or "OTOMATIS" in spk_val.upper() or spk_val.startswith("SPK-") or "{" in spk_val or not any(r in spk_val for r in ["/I/", "/II/", "/III/", "/IV/", "/V/", "/VI/", "/VII/", "/VIII/", "/IX/", "/X/", "/XI/", "/XII/"]):
+        if not spk_val or "OTOMATIS" in spk_val.upper() or spk_val.startswith("SPK-") or "{" in spk_val or "/" not in spk_val:
             context["nomor_spk"] = format_official_spk_number(
-                submission.id,
-                form_data.get("brand", "LADY"),
-                form_data.get("cabang", "TANGERANG"),
-                submission.submitted_at or timezone.now(),
+                nomor=submission.id,
+                brand=form_data.get("brand", "LADY"),
+                cabang=form_data.get("cabang", "TANGERANG"),
+                date_val=submission.submitted_at or timezone.now(),
                 company_profile=comp_prof,
+                perusahaan=form_data.get("perusahaan"),
             )
         else:
             context["nomor_spk"] = spk_val
-
-        # Target Volume Text & Grid Tables
-        context["target_incentive_table"] = context.get("target_incentive", "")
-        context["discount_scheme_table"] = context.get("discount_scheme", "")
-        context["tier_support_table"] = context.get("tier_support", "")
 
         # Target Volume Text
         target_val = 0.0
@@ -1097,52 +1136,170 @@ class DocumentTemplate(models.Model):
         else:
             context["target_volume_text"] = "Rp —"
 
-        # Incentive calculation variables
-        is_support_tpl = "Support" in self.name or form_data.get("is_support_provided") in (True, "True", "true", "1", 1, "on")
-        durasi_val = form_data.get("durasi") or "12 Bulan"
-        durasi_num = 12
-        m_dur = re.search(r"(\d+)", str(durasi_val))
-        if m_dur:
-            durasi_num = int(m_dur.group(1))
-
-        freq_bulan = 3 if durasi_num >= 3 else 1
-        context["frekuensi_bulan"] = str(freq_bulan)
-        target_periode = target_val * freq_bulan if target_val else 100000000.0
-        context["target_per_periode"] = f"{int(round(target_periode)):,}".replace(",", ".")
-
-        if is_support_tpl:
-            # Support Promosi (Pasal 7): PPh 23 = 2%
-            pct_raw = form_data.get("pct_support_promo") or "5"
-            try:
-                pct_num = float(re.sub(r"[^\d.-]", "", str(pct_raw)))
-            except Exception:
-                pct_num = 5.0
-            context["pct_support_promo"] = f"{pct_num:g}"
-            context["reward_rate"] = f"{pct_num:g}%"
-            insentive_nominal = target_periode * (pct_num / 100.0)
-            pph23_nominal = insentive_nominal * 0.02
-            netto_nominal = insentive_nominal - pph23_nominal
-            context["insentive_reward_nominal"] = f"{int(round(insentive_nominal)):,}".replace(",", ".")
-            context["pph23_nominal"] = f"{int(round(pph23_nominal)):,}".replace(",", ".")
-            context["netto_reward_nominal"] = f"{int(round(netto_nominal)):,}".replace(",", ".")
-            context["pph23_rate"] = "2%"
-        else:
-            # Standard (Pasal 6): PPh 23 = 15%
-            pct_num = 2.5
-            if parsed_target and isinstance(parsed_target, list) and isinstance(parsed_target[0], dict) and parsed_target[0].get("incentive_pct"):
+        # Build clean HTML table for target_incentive_table
+        if isinstance(parsed_target, list) and parsed_target:
+            t_rows_html = ""
+            for r in parsed_target:
+                raw_tb = r.get("target_bulanan", 0)
                 try:
-                    pct_num = float(re.sub(r"[^\d.-]", "", str(parsed_target[0].get("incentive_pct"))))
+                    t_num = float(re.sub(r"[^\d.-]", "", str(raw_tb)) or 0)
+                    t_bln = f"Rp {int(round(t_num)):,}".replace(",", ".")
                 except Exception:
-                    pass
-            context["reward_rate"] = f"{pct_num:g}%"
-            insentive_nominal = target_periode * (pct_num / 100.0)
-            pph23_nominal = insentive_nominal * 0.15
-            netto_nominal = insentive_nominal - pph23_nominal
-            context["insentive_reward_nominal"] = f"{int(round(insentive_nominal)):,}".replace(",", ".")
-            context["pph23_nominal"] = f"{int(round(pph23_nominal)):,}".replace(",", ".")
-            context["netto_reward_nominal"] = f"{int(round(netto_nominal)):,}".replace(",", ".")
-            context["pph23_rate"] = "15%"
+                    t_bln = str(raw_tb)
+                t_pajak = "Exclude PPN"
+                t_inc = f"{r.get('incentive_pct', 0)}%"
+                t_ket = r.get("keterangan") or "—"
+                t_rows_html += f"""
+                    <tr>
+                        <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: center; font-variant-numeric: tabular-nums; font-weight: 500;">{t_bln}</td>
+                        <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: center;">{t_pajak}</td>
+                        <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: center;">{t_inc}</td>
+                        <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: center;">{t_ket}</td>
+                    </tr>
+                """
+            context["target_incentive_table"] = f"""
+                <div style="margin: 8px 0 14px 0; overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; font-size: 13px; margin: 0 auto;">
+                        <thead>
+                            <tr style="background-color: #f1f5f9; color: #1e293b; font-weight: 600;">
+                                <th style="padding: 7px 10px; border: 1px solid #cbd5e1; text-align: center;">Target Bulanan</th>
+                                <th style="padding: 7px 10px; border: 1px solid #cbd5e1; text-align: center; width: 130px;">Ketentuan Pajak</th>
+                                <th style="padding: 7px 10px; border: 1px solid #cbd5e1; text-align: center; width: 110px;">Insentif (%)</th>
+                                <th style="padding: 7px 10px; border: 1px solid #cbd5e1; text-align: center;">Keterangan</th>
+                            </tr>
+                        </thead>
+                        <tbody>{t_rows_html}</tbody>
+                    </table>
+                </div>
+            """
+        else:
+            context["target_incentive_table"] = ""
 
+        # Build clean HTML table for discount_scheme_table
+        parsed_discount = form_data.get("discount_scheme")
+        if isinstance(parsed_discount, str) and parsed_discount.strip().startswith("["):
+            try:
+                import json
+                parsed_discount = json.loads(parsed_discount.strip())
+            except Exception:
+                parsed_discount = []
+        if isinstance(parsed_discount, list) and parsed_discount:
+            d_rows_html = ""
+            for r in parsed_discount:
+                d_komp = r.get("komponen") or "—"
+                d_tipe = r.get("tipe") or "Persentase"
+                d_val_raw = str(r.get("nilai", 0))
+                if "persen" in d_tipe.lower() or "%" in d_val_raw:
+                    d_val = f"{d_val_raw.replace('%', '')}%"
+                else:
+                    try:
+                        d_val = f"Rp {int(round(float(re.sub(r'[^\\d.-]', '', d_val_raw) or 0))):,}".replace(",", ".")
+                    except Exception:
+                        d_val = d_val_raw
+                d_ket = r.get("keterangan") or "—"
+                d_rows_html += f"""
+                    <tr>
+                        <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: left;">{d_komp}</td>
+                        <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: center; font-variant-numeric: tabular-nums;">{d_val}</td>
+                        <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: center;">{d_tipe}</td>
+                        <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: center;">{d_ket}</td>
+                    </tr>
+                """
+            context["discount_scheme_table"] = f"""
+                <div style="margin: 8px 0 14px 0; overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; font-size: 13px; margin: 0 auto;">
+                        <thead>
+                            <tr style="background-color: #f1f5f9; color: #1e293b; font-weight: 600;">
+                                <th style="padding: 7px 10px; border: 1px solid #cbd5e1; text-align: center;">Komponen</th>
+                                <th style="padding: 7px 10px; border: 1px solid #cbd5e1; text-align: center; width: 110px;">Nilai</th>
+                                <th style="padding: 7px 10px; border: 1px solid #cbd5e1; text-align: center; width: 110px;">Tipe</th>
+                                <th style="padding: 7px 10px; border: 1px solid #cbd5e1; text-align: center;">Keterangan</th>
+                            </tr>
+                        </thead>
+                        <tbody>{d_rows_html}</tbody>
+                    </table>
+                </div>
+            """
+        else:
+            context["discount_scheme_table"] = ""
+
+        # Build clean HTML table for tier_support_table (5 Kolom Lengkap Sesuai Poin 11)
+        parsed_tier = form_data.get("tier_support")
+        if isinstance(parsed_tier, str) and parsed_tier.strip().startswith("["):
+            try:
+                import json
+                parsed_tier = json.loads(parsed_tier.strip())
+            except Exception:
+                parsed_tier = []
+        if isinstance(parsed_tier, list) and parsed_tier:
+            tr_rows_html = ""
+            for r in parsed_tier:
+                raw_tt = r.get("target_tahunan", 0)
+                try:
+                    tt_num = float(re.sub(r"[^\d.-]", "", str(raw_tt)) or 0)
+                    tt_bln = f"Rp {int(round(tt_num)):,}".replace(",", ".")
+                except Exception:
+                    tt_bln = str(raw_tt)
+                tt_pct = f"{r.get('support_pct', 0)}%"
+                pph_pct = f"{r.get('pph_pct', 2)}%"
+                raw_netto = r.get("netto", 0)
+                try:
+                    netto_num = float(re.sub(r"[^\d.-]", "", str(raw_netto)) or 0)
+                    netto_str = f"Rp {int(round(netto_num)):,}".replace(",", ".")
+                except Exception:
+                    netto_str = str(raw_netto) if raw_netto else "—"
+                tt_ket = r.get("keterangan") or "—"
+                tr_rows_html += f"""
+                    <tr>
+                        <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: center; font-variant-numeric: tabular-nums; font-weight: 500;">{tt_bln}</td>
+                        <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: center;">{tt_pct}</td>
+                        <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: center;">{pph_pct}</td>
+                        <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: center; font-variant-numeric: tabular-nums; font-weight: 500;">{netto_str}</td>
+                        <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: center;">{tt_ket}</td>
+                    </tr>
+                """
+            context["tier_support_table"] = f"""
+                <div style="margin: 8px 0 14px 0; overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; font-size: 13px; margin: 0 auto;">
+                        <thead>
+                            <tr style="background-color: #f1f5f9; color: #1e293b; font-weight: 600;">
+                                <th style="padding: 7px 10px; border: 1px solid #cbd5e1; text-align: center;">Target Tahunan</th>
+                                <th style="padding: 7px 10px; border: 1px solid #cbd5e1; text-align: center; width: 110px;">Dukungan (%)</th>
+                                <th style="padding: 7px 10px; border: 1px solid #cbd5e1; text-align: center; width: 95px;">PPh 23 (%)</th>
+                                <th style="padding: 7px 10px; border: 1px solid #cbd5e1; text-align: center;">Nilai Netto (Rp)</th>
+                                <th style="padding: 7px 10px; border: 1px solid #cbd5e1; text-align: center;">Keterangan</th>
+                            </tr>
+                        </thead>
+                        <tbody>{tr_rows_html}</tbody>
+                    </table>
+                </div>
+            """
+        else:
+            context["tier_support_table"] = ""
+
+        # Incentive calculation variables and official narrative text (Revisi Poin 11)
+        is_support_tpl = "Support" in self.name or form_data.get("is_support_provided") in (True, "True", "true", "1", 1, "on")
+        durasi_val = context.get("durasi") or normalize_contract_duration(form_data.get("durasi") or "12 Bulan")
+
+        incentive_calc = calculate_spk_incentive_breakdown(form_data, is_support=is_support_tpl)
+        context["frekuensi_bulan"] = incentive_calc["frekuensi_bulan"]
+        context["target_per_periode"] = incentive_calc["target_per_periode"]
+        context["pct_support_promo"] = str(incentive_calc["reward_rate_num"])
+        context["reward_rate"] = incentive_calc["reward_rate"]
+        context["insentive_reward_nominal"] = incentive_calc["reward_nominal"]
+        context["pph23_nominal"] = incentive_calc["pph_nominal"]
+        context["netto_reward_nominal"] = incentive_calc["netto_nominal"]
+        context["pph23_rate"] = incentive_calc["pph_rate"]
+        context["narasi_perhitungan_pasal7"] = incentive_calc["narasi_perhitungan_paragraf"]
+        context["total_perhitungan_support"] = incentive_calc["narasi_perhitungan_paragraf"]
+
+        return context
+
+    def render(self, submission):
+        """Render this template with submission data, returning HTML string."""
+        import re
+
+        context = self.get_context_data(submission)
         html = self.html_content
 
         # Process conditional blocks: {% if field_name %}...{% endif %}

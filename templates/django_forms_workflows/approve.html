@@ -346,13 +346,28 @@
   {% endif %}
 
   {# ── Submitted Form Payload (Key-Value Grid via Partial or Editable Crispy Form) ── #}
-  <div class="doc-card mb-3">
-    <div class="doc-card-header">
-      <span class="doc-card-title">Submitted Form Payload</span>
-      {% if allow_edit_form_data %}
-        <span class="badge bg-warning-subtle text-warning-emphasis small border border-warning-subtle">Editable by Reviewer</span>
-      {% else %}
-        <span class="text-muted small">Read-only Review</span>
+  <div class="doc-card mb-3" id="submittedFormPayloadCard">
+    <div class="doc-card-header d-flex align-items-center justify-content-between flex-wrap gap-2 py-2 px-3">
+      <div class="d-flex align-items-center gap-2">
+        <span class="text-uppercase tracking-wider text-muted fw-bold" style="font-size: 11px; letter-spacing: 0.05em;">Rincian Data Pengajuan (Submission Data)</span>
+        {% if allow_edit_form_data %}
+          <span class="badge bg-warning-subtle text-warning-emphasis small border border-warning-subtle" style="font-size: 10px;">Editable</span>
+        {% else %}
+          <span class="text-muted small font-monospace" style="font-size: 11px;">(Read-only)</span>
+        {% endif %}
+      </div>
+      {% if submission.form_definition.slug == 'permohonan-kontrak' %}
+      <div class="d-flex align-items-center gap-1">
+        <button type="button" class="btn-review-toggle" id="btnExpandAllReview" onclick="toggleAllReviewAccordions(true)" title="Buka seluruh 5 section data">
+          <i class="bi bi-arrows-angle-expand" style="font-size: 11px;"></i>
+          <span>Buka Semua</span>
+        </button>
+        <span class="text-muted" style="font-size: 10px;">&middot;</span>
+        <button type="button" class="btn-review-toggle" id="btnCollapseAllReview" onclick="toggleAllReviewAccordions(false)" title="Tutup seluruh 5 section data">
+          <i class="bi bi-arrows-angle-contract" style="font-size: 11px;"></i>
+          <span>Tutup Semua</span>
+        </button>
+      </div>
       {% endif %}
     </div>
     <div class="doc-card-body">
@@ -1203,5 +1218,38 @@
       });
     }
   })();
+
+  // Utility to expand/collapse all 5 review accordion sections (Revisi Poin 9)
+  window.toggleAllReviewAccordions = function(expand) {
+    const accordionEl = document.getElementById('reviewContractAccordion');
+    if (!accordionEl) return;
+    const collapseEls = accordionEl.querySelectorAll('.accordion-collapse');
+    collapseEls.forEach(el => {
+      if (window.bootstrap && bootstrap.Collapse) {
+        const bsCollapse = bootstrap.Collapse.getOrCreateInstance(el, { toggle: false });
+        if (expand) {
+          bsCollapse.show();
+        } else {
+          bsCollapse.hide();
+        }
+      } else {
+        if (expand) {
+          el.classList.add('show');
+          const btn = accordionEl.querySelector(`button[data-bs-target="#${el.id}"]`);
+          if (btn) {
+            btn.classList.remove('collapsed');
+            btn.setAttribute('aria-expanded', 'true');
+          }
+        } else {
+          el.classList.remove('show');
+          const btn = accordionEl.querySelector(`button[data-bs-target="#${el.id}"]`);
+          if (btn) {
+            btn.classList.add('collapsed');
+            btn.setAttribute('aria-expanded', 'false');
+          }
+        }
+      }
+    });
+  };
 </script>
 {% endblock %}

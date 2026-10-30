@@ -1127,7 +1127,7 @@ class FormEnhancements {
 
         if (indicator) {
             indicator.className = 'auto-save-indicator saving';
-            status.innerHTML = '<i class="bi bi-cloud-upload"></i> Saving...';
+            if (status) status.innerHTML = '<i class="bi bi-cloud-upload"></i> Saving...';
         }
 
         try {
@@ -1168,12 +1168,12 @@ class FormEnhancements {
             if (response.ok) {
                 if (indicator) {
                     indicator.className = 'auto-save-indicator saved';
-                    status.innerHTML = '<i class="bi bi-cloud-check"></i> Saved';
+                    if (status) status.innerHTML = '<i class="bi bi-cloud-check"></i> Saved';
 
                     // Reset to normal after 3 seconds
                     setTimeout(() => {
                         indicator.className = 'auto-save-indicator';
-                        status.innerHTML = '<i class="bi bi-cloud-check"></i> Auto-save enabled';
+                        if (status) status.innerHTML = '<i class="bi bi-cloud-check"></i> Auto-save enabled';
                     }, 3000);
                 }
             } else {
@@ -1183,7 +1183,7 @@ class FormEnhancements {
             console.error('Auto-save error:', error);
             if (indicator) {
                 indicator.className = 'auto-save-indicator error';
-                status.innerHTML = '<i class="bi bi-exclamation-triangle"></i> Save failed';
+                if (status) status.innerHTML = '<i class="bi bi-exclamation-triangle"></i> Save failed';
             }
         }
 

@@ -57,7 +57,12 @@ class Command(BaseCommand):
         sol_brand = self._ensure_shared_option_list(
             slug="brand-list",
             name="Daftar Brand Royal",
-            items=["SERENITY", "ROYAL FOAM", "GRAND EXCLUSIVE", "LADY AMERICANA"],
+            items=[
+                {"value": "Lady Americana", "label": "Lady Americana"},
+                {"value": "Elite", "label": "Elite"},
+                {"value": "Serenity", "label": "Serenity"},
+                {"value": "Royal Foam", "label": "Royal Foam"},
+            ],
         )
         sol_perusahaan = self._ensure_shared_option_list(
             slug="perusahaan-list",
@@ -92,7 +97,7 @@ class Command(BaseCommand):
                 "fields": [
                     "nomor_spk", "cabang", "brand", "perusahaan",
                     "kode_customer_jde", "nama_toko", "nama_pemilik", "alamat_toko",
-                    "no_telepon", "kota", "jenis_identitas", "nomor_identitas",
+                    "no_telepon", "email", "kota", "nomor_nik", "nomor_npwp",
                     "asset_toko", "market_share"
                 ],
             },
@@ -100,12 +105,12 @@ class Command(BaseCommand):
                 "title": "Detail Kontrak",
                 "fields": [
                     "info_kontrak_lama", "tanggal_mulai", "tanggal_berakhir", "durasi", "grace_period",
-                    "jenis_pajak", "top", "metode_pembayaran", "discount_do", "ketentuan_do",
+                    "top", "discount_do", "ketentuan_do",
                     "target_incentive", "discount_scheme",
                     "is_support_provided",
-                    "support_promosi", "pct_support_promo", "frekuensi_pencairan", "syarat_pencairan",
-                    "komponen_biaya", "pengecualian_ketentuan_support", "tier_support",
-                    "kota_penandatanganan", "tanggal_penandatanganan", "rekening_perusahaan", "catatan_lain"
+                    "support_promosi", "pct_support_promo", "frekuensi_pencairan",
+                    "komponen_biaya", "tier_support",
+                    "kota_penandatanganan", "tanggal_penandatanganan", "rekening_perusahaan"
                 ],
             },
             {
@@ -555,7 +560,8 @@ class Command(BaseCommand):
                 <tr><td style="width: 130px; vertical-align: top;">Nama</td><td style="width: 15px; vertical-align: top;">:</td><td style="font-weight: bold;">{nama_pemilik}</td></tr>
                 <tr><td style="vertical-align: top;">Pemilik Tk.</td><td style="vertical-align: top;">:</td><td style="font-weight: bold;">{nama_toko}</td></tr>
                 <tr><td style="vertical-align: top;">Alamat</td><td style="vertical-align: top;">:</td><td>{alamat_toko}</td></tr>
-                <tr><td style="vertical-align: top;">NIK / NPWP</td><td style="vertical-align: top;">:</td><td>{nomor_identitas}</td></tr>
+                <tr><td style="vertical-align: top; width: 130px;">NPWP</td><td style="vertical-align: top; width: 15px;">:</td><td>{nomor_npwp}</td></tr>
+                <tr><td style="vertical-align: top;">NIK</td><td style="vertical-align: top;">:</td><td>{nomor_nik}</td></tr>
             </table>
 
             <p style="margin-bottom: 12px;">Selanjutnya disebut sebagai <strong>PIHAK KEDUA</strong> Dealer produk Springbed merk <strong>“{brand}”</strong></p>
@@ -585,14 +591,14 @@ class Command(BaseCommand):
             
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 3</div>
             <div style="margin-top: 0; margin-bottom: 12px;">
-                <p style="text-align: justify; margin-bottom: 4px; text-indent: -24px; padding-left: 24px;">(1) Para Pihak sepakat bahwa Target Volume Penjualan produk selama jangka waktu perjanjian ini <strong>{target_volume_text}</strong> per bulan Exclude Ppn.</p>
+                <p style="text-align: justify; margin-bottom: 4px; text-indent: -24px; padding-left: 24px;">(1) Para Pihak sepakat bahwa Target Volume Penjualan produk selama jangka waktu perjanjian ini <strong>{target_volume_text}</strong> per bulan {jenis_pajak}.</p>
                 <p style="text-align: justify; margin-bottom: 0; text-indent: -24px; padding-left: 24px;">(2) Pihak Kedua wajib memenuhi Volume Penjualan yang telah ditentukan dalam perjanjian ini.</p>
             </div>
             <div style="margin-bottom: 12px;">{target_incentive_table}</div>
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 4</div>
             <p style="text-align: justify; margin-bottom: 12px;">
-                Perjanjian berlaku untuk Jangka Waktu <strong>{durasi}</strong> terhitung dari sejak tanggal <strong>{tanggal_mulai}</strong> dan akan berakhir pada tanggal <strong>{tanggal_berakhir}</strong>.
+                Perjanjian berlaku untuk Jangka Waktu <strong>{durasi}</strong> terhitung dari sejak tanggal <strong>{tanggal_mulai}</strong> dan akan berakhir pada tanggal <strong>{tanggal_berakhir}</strong>{% if grace_period %} dengan tenggang waktu (grace period) selama <strong>{grace_period}</strong>{% endif %}.
             </p>
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 5</div>
@@ -600,6 +606,11 @@ class Command(BaseCommand):
                 Skema discount untuk penjualan Produk yang berlaku untuk Pihak Kedua dalam Perjanjian ini adalah sebagai berikut :
             </p>
             <div style="margin-bottom: 12px;">{discount_scheme_table}</div>
+            {% if discount_do %}
+            <p style="text-align: justify; margin-bottom: 8px;">
+                Diskon Delivery Order (DO): <strong>{discount_do}%</strong> &mdash; Ketentuan: {ketentuan_do}
+            </p>
+            {% endif %}
         </div>
         <div class="spk-page-footer">Halaman 1 dari 2</div>
     </div>
@@ -638,7 +649,7 @@ class Command(BaseCommand):
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 8</div>
             <p style="text-align: justify; margin-bottom: 12px;">
-                Sistem pembayaran melalui Transfer atau buka Cek/Giro yang telah di tulis nama <strong>{perusahaan}</strong> dengan Nomer Rekening sesuai yang ada pada Faktur dan kontrabon. Serta <strong>TIDAK DIPERKENANKAN</strong> membayar secara TUNAI kepada Salesman/Collector/Kepala Depo/ASM/BM atau menitip pembayaran kepada Supir maupun Karyawan lainnya.
+                Sistem pembayaran melalui <strong>Transfer / Cek / Giro</strong> yang telah di tulis nama <strong>{perusahaan}</strong> dengan Nomer Rekening ({rekening_perusahaan}) sesuai yang ada pada Faktur dan kontrabon. Serta <strong>TIDAK DIPERKENANKAN</strong> membayar secara TUNAI kepada Salesman/Collector/Kepala Depo/ASM/BM atau menitip pembayaran kepada Supir maupun Karyawan lainnya.
             </p>
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 9</div>
@@ -664,8 +675,13 @@ class Command(BaseCommand):
                     </tr>
                 </table>
             </div>
-            <p style="text-align: justify; margin-bottom: 16px;">
+            <p style="text-align: justify; margin-bottom: 12px;">
                 Walaupun nota asli sudah di serahkan / dititipkan oleh salesman maka belum dianggap sebagai pembayaran.
+            </p>
+
+            <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 10</div>
+            <p style="text-align: justify; margin-bottom: 16px;">
+                Apabila pembayaran tidak sesuai dengan TOP dan jika terjadi backdate, Pihak Pertama dapat mengambil/menyita aset sesuai dengan piutang.
             </p>
 
             <!-- BAB IV -->
@@ -673,12 +689,12 @@ class Command(BaseCommand):
                 BAB IV<br>ITIKAD BAIK DAN PERSELISIHAN
             </div>
             
-            <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 10</div>
+            <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 11</div>
             <p style="text-align: justify; margin-bottom: 12px;">
                 Para pihak dengan itikad baik dan penuh tanggung jawab menjalankan tugas, hak dan kewajibannya dengan mengindahkan peraturan perundangan yang berlaku.
             </p>
 
-            <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 11</div>
+            <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 12</div>
             <p style="text-align: justify; margin-bottom: 14px;">
                 Apabila terjadi perselisihan/sengketa diantara Para Pihak terkait dengan isi dan/atau Pelaksanaan Perjanjian ini maka perselisihan tersebut akan di selesaikan terlebih dahulu melalui musyawarah mufakat diantara Para Pihak. Apabila dengan cara musyawarah mufakat tidak dapat dilakukan atau tidak tercapai sesuatu penyelesaian yang baik bagi Para Pihak maka Para Pihak sepakat untuk memilih <strong>{pengadilan_negeri}</strong> sebagai satu satunya domisili hukum yang tetap bagi Para Pihak.
             </p>
@@ -692,32 +708,45 @@ class Command(BaseCommand):
                 <div style="text-align: left; margin-bottom: 15px; font-weight: bold;">
                     {kota_penandatanganan}, {tanggal_penandatanganan}
                 </div>
-                <table style="width: 100%; border-collapse: collapse; text-align: center;">
+                <table class="spk-signatures-table" style="width: 100%; border-collapse: collapse; text-align: center;">
                     <tr>
-                        <td style="width: 50%; font-weight: bold; vertical-align: top;">
+                        <td style="width: 38%; font-weight: bold; vertical-align: top;">
                             PIHAK PERTAMA<br>
                             {perusahaan}
                         </td>
-                        <td style="width: 50%; font-weight: bold; vertical-align: top;">
+                        <td style="width: 24%; font-weight: bold; vertical-align: top;">
+                            &nbsp;
+                        </td>
+                        <td style="width: 38%; font-weight: bold; vertical-align: top;">
                             PIHAK KEDUA<br>
                             {nama_toko}
                         </td>
                     </tr>
                     <tr>
-                        <td style="height: 90px; vertical-align: middle;">
+                        <td style="height: 85px; vertical-align: middle;">
                             {ttd_direksi_image}
                         </td>
-                        <td style="height: 90px; vertical-align: middle;">
+                        <td style="height: 85px; vertical-align: middle; text-align: center;">
+                            <div style="display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 54pt; height: 52pt; border: 1.5px dashed #0284c7; border-radius: 4px; background: #f0f9ff; margin: 0 auto; padding: 2px; box-sizing: border-box;">
+                                <span style="font-size: 7pt; font-weight: 700; color: #0369a1; line-height: 1.1;">e-Meterai</span>
+                                <span style="font-size: 6.5pt; font-weight: 600; color: #0284c7; line-height: 1.1;">Rp 10.000</span>
+                                <span style="font-size: 5pt; color: #64748b; margin-top: 2px;">[POSISI STEMPEL]</span>
+                            </div>
+                        </td>
+                        <td style="height: 85px; vertical-align: middle;">
                             {ttd_toko_image}
                         </td>
                     </tr>
                     <tr>
                         <td style="vertical-align: top;">
-                            <div style="border-bottom: 1px solid #111; display: inline-block; min-width: 180px; font-weight: bold;">{pihak_pertama_nama}</div><br>
+                            <div style="border-bottom: 1px solid #111; display: inline-block; min-width: 170px; font-weight: bold;">{pihak_pertama_nama}</div><br>
                             Direktur
                         </td>
                         <td style="vertical-align: top;">
-                            <div style="border-bottom: 1px solid #111; display: inline-block; min-width: 180px; font-weight: bold;">{nama_pemilik}</div><br>
+                            &nbsp;
+                        </td>
+                        <td style="vertical-align: top;">
+                            <div style="border-bottom: 1px solid #111; display: inline-block; min-width: 170px; font-weight: bold;">{nama_pemilik}</div><br>
                             Pemilik Toko
                         </td>
                     </tr>
@@ -756,7 +785,8 @@ class Command(BaseCommand):
                 <tr><td style="width: 130px; vertical-align: top;">Nama</td><td style="width: 15px; vertical-align: top;">:</td><td style="font-weight: bold;">{nama_pemilik}</td></tr>
                 <tr><td style="vertical-align: top;">Pemilik Tk.</td><td style="vertical-align: top;">:</td><td style="font-weight: bold;">{nama_toko}</td></tr>
                 <tr><td style="vertical-align: top;">Alamat</td><td style="vertical-align: top;">:</td><td>{alamat_toko}</td></tr>
-                <tr><td style="vertical-align: top;">NIK / NPWP</td><td style="vertical-align: top;">:</td><td>{nomor_identitas}</td></tr>
+                <tr><td style="vertical-align: top; width: 130px;">NPWP</td><td style="vertical-align: top; width: 15px;">:</td><td>{nomor_npwp}</td></tr>
+                <tr><td style="vertical-align: top;">NIK</td><td style="vertical-align: top;">:</td><td>{nomor_nik}</td></tr>
             </table>
 
             <p style="margin-bottom: 12px;">Selanjutnya disebut sebagai <strong>PIHAK KEDUA</strong> Dealer produk Springbed merk <strong>“{brand}”</strong></p>
@@ -786,7 +816,7 @@ class Command(BaseCommand):
             
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 3</div>
             <div style="margin-top: 0; margin-bottom: 12px;">
-                <p style="text-align: justify; margin-bottom: 4px; text-indent: -24px; padding-left: 24px;">(1) Para Pihak sepakat bahwa Target Volume Penjualan produk selama jangka waktu perjanjian ini <strong>{target_volume_text}</strong> per bulan Exclude Ppn.</p>
+                <p style="text-align: justify; margin-bottom: 4px; text-indent: -24px; padding-left: 24px;">(1) Para Pihak sepakat bahwa Target Volume Penjualan produk selama jangka waktu perjanjian ini <strong>{target_volume_text}</strong> per bulan {jenis_pajak}.</p>
                 <p style="text-align: justify; margin-bottom: 0; text-indent: -24px; padding-left: 24px;">(2) Pihak Kedua wajib memenuhi Volume Penjualan yang telah ditentukan dalam perjanjian ini.</p>
             </div>
             <div style="margin-bottom: 12px;">{target_incentive_table}</div>
@@ -794,14 +824,14 @@ class Command(BaseCommand):
             <!-- PASAL 4 KHUSUS SUPPORT PROMOSI -->
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 4</div>
             <ol style="margin-top: 0; margin-bottom: 12px; padding-left: 20px;">
-                <li style="text-align: justify; margin-bottom: 4px;">Pihak Pertama memberikan support promosi yang meliputi biaya (sewa, instore, pameran, listrik, dan asuransi) kepada Pihak Kedua sebesar <strong>{pct_support_promo}%</strong>. Support promosi tersebut <strong>TIDAK</strong> meliputi biaya Billboard, Pajak Billboard, dan Backdrop apabila Pihak Kedua membuka cabang baru atau toko baru.</li>
+                <li style="text-align: justify; margin-bottom: 4px;">Pihak Pertama memberikan support promosi yang meliputi biaya ({komponen_biaya}) kepada Pihak Kedua sebesar <strong>{pct_support_promo}%</strong>. Support promosi tersebut <strong>TIDAK</strong> meliputi biaya Billboard, Pajak Billboard, dan Backdrop apabila Pihak Kedua membuka cabang baru atau toko baru.</li>
                 <li style="text-align: justify; margin-bottom: 4px;">Support promosi ini dapat dicairkan setelah pembayaran <strong>LUNAS</strong>.</li>
-                <li style="text-align: justify;">Grace period selama 1 (satu) bulan dari masa kontrak berakhir, apabila Pihak Kedua belum mencapai target.</li>
+                <li style="text-align: justify;">Grace period selama {% if grace_period %}<strong>{grace_period}</strong>{% else %}1 (satu) bulan{% endif %} dari masa kontrak berakhir, apabila Pihak Kedua belum mencapai target.</li>
             </ol>
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 5</div>
             <p style="text-align: justify; margin-bottom: 12px;">
-                Perjanjian berlaku untuk Jangka Waktu <strong>{durasi}</strong> terhitung dari sejak tanggal <strong>{tanggal_mulai}</strong> dan akan berakhir pada tanggal <strong>{tanggal_berakhir}</strong>.
+                Perjanjian berlaku untuk Jangka Waktu <strong>{durasi}</strong> terhitung dari sejak tanggal <strong>{tanggal_mulai}</strong> dan akan berakhir pada tanggal <strong>{tanggal_berakhir}</strong>{% if grace_period %} dengan tenggang waktu (grace period) selama <strong>{grace_period}</strong>{% endif %}.
             </p>
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 6</div>
@@ -809,6 +839,11 @@ class Command(BaseCommand):
                 Skema discount untuk penjualan Produk yang berlaku untuk Pihak Kedua dalam Perjanjian ini adalah sebagai berikut :
             </p>
             <div style="margin-bottom: 12px;">{discount_scheme_table}</div>
+            {% if discount_do %}
+            <p style="text-align: justify; margin-bottom: 8px;">
+                Diskon Delivery Order (DO): <strong>{discount_do}%</strong> &mdash; Ketentuan: {ketentuan_do}
+            </p>
+            {% endif %}
         </div>
         <div class="spk-page-footer">Halaman 1 dari 2</div>
     </div>
@@ -822,15 +857,18 @@ class Command(BaseCommand):
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 7</div>
             <p style="text-align: justify; margin-bottom: 6px;">
-                Pihak Pertama memberikan kompensasi Insentive Reward kepada Pihak Kedua saat perjanjian ini berakhir dan seluruh kewajiban Pihak Kedua kepada Pihak Pertama telah selesai atau LUNAS<br>
-                Adapun perhitungan insentif adalah sebagai berikut :
+                Pihak Pertama memberikan kompensasi Insentive Reward kepada Pihak Kedua saat perjanjian ini berakhir dan seluruh kewajiban Pihak Kedua kepada Pihak Pertama telah selesai atau LUNAS.<br>
+                Adapun rincian perhitungan insentif adalah sebagai berikut :
             </p>
-            <div style="margin-left: 15px; margin-bottom: 16px;">
-                <p style="margin: 3px 0;">• Target Rp. {target_per_periode} per {frekuensi_bulan} Bulan mendapatkan reward (support promosi) {pct_support_promo}%</p>
+            <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 4px; padding: 8px 12px; margin-bottom: 10px; text-align: justify; font-size: 13px; line-height: 1.5;">
+                {narasi_perhitungan_pasal7}
+            </div>
+            <div style="margin-left: 15px; margin-bottom: 14px;">
+                <p style="margin: 3px 0;">• Target Rp. {target_per_periode} per {frekuensi_bulan} Bulan mendapatkan reward (support promosi) {reward_rate}</p>
                 <table style="width: 100%; border-collapse: collapse; margin-top: 4px;">
-                    <tr><td style="width: 250px;">Insentive Reward</td><td style="width: 15px;">=</td><td>Rp. {insentive_reward_nominal} &nbsp; &nbsp; ( {pct_support_promo}% x Pencapaian Omzet )</td></tr>
-                    <tr><td>Pph 23 Untuk Insentive Kontrak</td><td>=</td><td>Rp. {pph23_nominal} &nbsp; &nbsp; ( Reward x 2% )</td></tr>
-                    <tr><td>Netto Reward</td><td>=</td><td>Rp. {netto_reward_nominal} &nbsp; &nbsp; (Total Insentive – Pph 23)</td></tr>
+                    <tr><td style="width: 250px;">Insentive Reward</td><td style="width: 15px;">=</td><td>Rp. {insentive_reward_nominal} &nbsp; &nbsp; ( {reward_rate} x Pencapaian Omzet )</td></tr>
+                    <tr><td>PPh 23 Untuk Insentive Kontrak</td><td>=</td><td>Rp. {pph23_nominal} &nbsp; &nbsp; ( Reward x {pph23_rate} )</td></tr>
+                    <tr><td>Netto Reward</td><td>=</td><td>Rp. {netto_reward_nominal} &nbsp; &nbsp; (Total Insentive – PPh 23)</td></tr>
                 </table>
                 <p style="margin-top: 6px; font-weight: bold;">Maka insentive yang dibayarkan adalah sebesar Rp. {netto_reward_nominal}.</p>
             </div>
@@ -848,7 +886,7 @@ class Command(BaseCommand):
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 9</div>
             <p style="text-align: justify; margin-bottom: 12px;">
-                Sistem pembayaran melalui Transfer atau buka Cek/Giro yang telah di tulis nama <strong>{perusahaan}</strong> dengan Nomer Rekening sesuai yang ada pada Faktur dan kontrabon. Serta <strong>TIDAK DIPERKENANKAN</strong> membayar secara TUNAI kepada Salesman/Collector/Kepala Depo/ASM/BM atau menitip pembayaran kepada Supir maupun Karyawan lainnya.
+                Sistem pembayaran melalui <strong>Transfer / Cek / Giro</strong> yang telah di tulis nama <strong>{perusahaan}</strong> dengan Nomer Rekening ({rekening_perusahaan}) sesuai yang ada pada Faktur dan kontrabon. Serta <strong>TIDAK DIPERKENANKAN</strong> membayar secara TUNAI kepada Salesman/Collector/Kepala Depo/ASM/BM atau menitip pembayaran kepada Supir maupun Karyawan lainnya.
             </p>
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 10</div>
@@ -874,21 +912,26 @@ class Command(BaseCommand):
                     </tr>
                 </table>
             </div>
-            <p style="text-align: justify; margin-bottom: 16px;">
+            <p style="text-align: justify; margin-bottom: 12px;">
                 Walaupun nota asli sudah di serahkan / dititipkan oleh salesman maka belum dianggap sebagai pembayaran.
             </p>
 
-            <!-- BAB IV (PASAL 11 & 12) -->
+            <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 11</div>
+            <p style="text-align: justify; margin-bottom: 16px;">
+                Apabila pembayaran tidak sesuai dengan TOP dan jika terjadi backdate, Pihak Pertama dapat mengambil/menyita aset sesuai dengan piutang.
+            </p>
+
+            <!-- BAB IV (PASAL 12 & 13) -->
             <div style="text-align: center; font-weight: bold; margin-top: 18px; margin-bottom: 8px;">
                 BAB IV<br>ITIKAD BAIK DAN PERSELISIHAN
             </div>
             
-            <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 11</div>
+            <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 12</div>
             <p style="text-align: justify; margin-bottom: 12px;">
                 Para pihak dengan itikad baik dan penuh tanggung jawab menjalankan tugas, hak dan kewajibannya dengan mengindahkan peraturan perundangan yang berlaku.
             </p>
 
-            <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 12</div>
+            <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 13</div>
             <p style="text-align: justify; margin-bottom: 14px;">
                 Apabila terjadi perselisihan/sengketa diantara Para Pihak terkait dengan isi dan/atau Pelaksanaan Perjanjian ini maka perselisihan tersebut akan di selesaikan terlebih dahulu melalui musyawarah mufakat diantara Para Pihak. Apabila dengan cara musyawarah mufakat tidak dapat dilakukan atau tidak tercapai sesuatu penyelesaian yang baik bagi Para Pihak maka Para Pihak sepakat untuk memilih <strong>{pengadilan_negeri}</strong> sebagai satu satunya domisili hukum yang tetap bagi Para Pihak.
             </p>
@@ -902,32 +945,45 @@ class Command(BaseCommand):
                 <div style="text-align: left; margin-bottom: 15px; font-weight: bold;">
                     {kota_penandatanganan}, {tanggal_penandatanganan}
                 </div>
-                <table style="width: 100%; border-collapse: collapse; text-align: center;">
+                <table class="spk-signatures-table" style="width: 100%; border-collapse: collapse; text-align: center;">
                     <tr>
-                        <td style="width: 50%; font-weight: bold; vertical-align: top;">
+                        <td style="width: 38%; font-weight: bold; vertical-align: top;">
                             PIHAK PERTAMA<br>
                             {perusahaan}
                         </td>
-                        <td style="width: 50%; font-weight: bold; vertical-align: top;">
+                        <td style="width: 24%; font-weight: bold; vertical-align: top;">
+                            &nbsp;
+                        </td>
+                        <td style="width: 38%; font-weight: bold; vertical-align: top;">
                             PIHAK KEDUA<br>
                             {nama_toko}
                         </td>
                     </tr>
                     <tr>
-                        <td style="height: 90px; vertical-align: middle;">
+                        <td style="height: 85px; vertical-align: middle;">
                             {ttd_direksi_image}
                         </td>
-                        <td style="height: 90px; vertical-align: middle;">
+                        <td style="height: 85px; vertical-align: middle; text-align: center;">
+                            <div style="display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 54pt; height: 52pt; border: 1.5px dashed #0284c7; border-radius: 4px; background: #f0f9ff; margin: 0 auto; padding: 2px; box-sizing: border-box;">
+                                <span style="font-size: 7pt; font-weight: 700; color: #0369a1; line-height: 1.1;">e-Meterai</span>
+                                <span style="font-size: 6.5pt; font-weight: 600; color: #0284c7; line-height: 1.1;">Rp 10.000</span>
+                                <span style="font-size: 5pt; color: #64748b; margin-top: 2px;">[POSISI STEMPEL]</span>
+                            </div>
+                        </td>
+                        <td style="height: 85px; vertical-align: middle;">
                             {ttd_toko_image}
                         </td>
                     </tr>
                     <tr>
                         <td style="vertical-align: top;">
-                            <div style="border-bottom: 1px solid #111; display: inline-block; min-width: 180px; font-weight: bold;">{pihak_pertama_nama}</div><br>
+                            <div style="border-bottom: 1px solid #111; display: inline-block; min-width: 170px; font-weight: bold;">{pihak_pertama_nama}</div><br>
                             Direktur
                         </td>
                         <td style="vertical-align: top;">
-                            <div style="border-bottom: 1px solid #111; display: inline-block; min-width: 180px; font-weight: bold;">{nama_pemilik}</div><br>
+                            &nbsp;
+                        </td>
+                        <td style="vertical-align: top;">
+                            <div style="border-bottom: 1px solid #111; display: inline-block; min-width: 170px; font-weight: bold;">{nama_pemilik}</div><br>
                             Pemilik Toko
                         </td>
                     </tr>
@@ -1124,45 +1180,56 @@ class Command(BaseCommand):
                 "help_text": "Autofill dari JDE Customer Lookup (readonly).",
             },
             {
+                "field_name": "email",
+                "field_label": "Email Toko / Pemilik",
+                "field_type": "email",
+                "width": "half",
+                "order": 10,
+                "step_number": 1,
+                "required": True,
+                "readonly": False,
+                "placeholder": "contoh: tokomebel@gmail.com",
+                "help_text": "Email aktif toko/pemilik untuk notifikasi kontrak & penandatanganan digital.",
+            },
+            {
                 "field_name": "kota",
                 "field_label": "Kota / Kabupaten",
                 "field_type": "text",
-                "width": "third",
-                "order": 10,
+                "width": "half",
+                "order": 11,
                 "step_number": 1,
                 "required": False,
                 "readonly": True,
                 "help_text": "Autofill dari JDE Customer Lookup (readonly).",
             },
             {
-                "field_name": "jenis_identitas",
-                "field_label": "Jenis Identitas",
-                "field_type": "select",
-                "width": "third",
-                "order": 11,
-                "step_number": 1,
-                "required": True,
-                "readonly": False,
-                "shared_option_list": sol_identitas,
-                "help_text": "Pilih jenis identitas (KTP / NPWP).",
-            },
-            {
-                "field_name": "nomor_identitas",
-                "field_label": "Nomor Identitas (NIK / NPWP)",
+                "field_name": "nomor_npwp",
+                "field_label": "Nomor NPWP Toko / Pemilik",
                 "field_type": "text",
-                "width": "third",
+                "width": "half",
                 "order": 12,
                 "step_number": 1,
                 "required": True,
                 "readonly": False,
-                "help_text": "Nomor KTP/NIK atau NPWP pemilik toko.",
+                "help_text": "15 atau 16 digit NPWP pemilik/toko (wajib diisi).",
+            },
+            {
+                "field_name": "nomor_nik",
+                "field_label": "Nomor NIK (KTP)",
+                "field_type": "text",
+                "width": "half",
+                "order": 13,
+                "step_number": 1,
+                "required": False,
+                "readonly": False,
+                "help_text": "16 digit Nomor Induk Kependudukan (KTP) pemilik toko (opsional).",
             },
             {
                 "field_name": "asset_toko",
                 "field_label": "Data Asset Toko",
                 "field_type": "textarea",
                 "width": "full",
-                "order": 13,
+                "order": 14,
                 "step_number": 1,
                 "required": False,
                 "help_text": "Tabel dinamis aset display, neon box, dan papan nama toko.",
@@ -1172,7 +1239,7 @@ class Command(BaseCommand):
                 "field_label": "Data Market Share",
                 "field_type": "textarea",
                 "width": "full",
-                "order": 14,
+                "order": 15,
                 "step_number": 1,
                 "required": False,
                 "help_text": "Tabel dinamis estimasi omset penjualan produk vs kompetitor per bulan.",
@@ -1217,7 +1284,9 @@ class Command(BaseCommand):
                 "order": 18,
                 "step_number": 2,
                 "required": False,
-                "help_text": "Dihitung otomatis (misal: 1 Tahun atau 6 Bulan).",
+                "readonly": True,
+                "css_class": "field-readonly",
+                "help_text": "Dihitung otomatis dalam satuan bulan murni (misal: 12 Bulan, 13 Bulan, 6 Bulan).",
             },
             {
                 "field_name": "grace_period",
@@ -1229,43 +1298,25 @@ class Command(BaseCommand):
                 "required": False,
                 "placeholder": "Contoh: 5 Bulan",
             },
+            # --- Card 2: Target Penjualan & Skema Insentif (Pasal 3) ---
             {
-                "field_name": "jenis_pajak",
-                "field_label": "Jenis Pajak",
-                "field_type": "select",
-                "width": "third",
-                "order": 20,
-                "step_number": 2,
-                "required": True,
-                "choices": ["Exclude PPN", "Include PPN"],
-            },
-            {
-                "field_name": "top",
-                "field_label": "TOP (Term of Payment)",
-                "field_type": "number",
-                "width": "third",
+                "field_name": "target_incentive",
+                "field_label": "Tabel Target & Insentif",
+                "field_type": "textarea",
+                "width": "full",
                 "order": 21,
                 "step_number": 2,
-                "required": True,
-                "placeholder": "60",
-                "help_text": "Satuan: Hari kerja",
+                "required": False,
+                "help_text": "Tabel dinamis skema target penjualan bulanan dan reward insentif.",
             },
-            {
-                "field_name": "metode_pembayaran",
-                "field_label": "Metode Pembayaran",
-                "field_type": "select",
-                "width": "third",
-                "order": 22,
-                "step_number": 2,
-                "required": True,
-                "choices": ["Transfer", "Cek", "Giro"],
-            },
+
+            # --- Card 3: Skema Diskon Produk & Ketentuan DO (Pasal 5 / 6) ---
             {
                 "field_name": "discount_do",
                 "field_label": "Discount DO (%)",
                 "field_type": "decimal",
-                "width": "third",
-                "order": 23,
+                "width": "half",
+                "order": 22,
                 "step_number": 2,
                 "required": False,
             },
@@ -1273,38 +1324,30 @@ class Command(BaseCommand):
                 "field_name": "ketentuan_do",
                 "field_label": "Ketentuan DO",
                 "field_type": "text",
-                "width": "third",
-                "order": 24,
+                "width": "half",
+                "order": 23,
                 "step_number": 2,
                 "required": False,
                 "placeholder": "Jatuh tempo sebelum pengambilan barang",
             },
             {
-                "field_name": "target_incentive",
-                "field_label": "Target & Incentive Scheme (Pasal 3)",
-                "field_type": "textarea",
-                "width": "full",
-                "order": 25,
-                "step_number": 2,
-                "required": False,
-                "help_text": "Tabel dinamis skema target penjualan bulanan dan reward insentif.",
-            },
-            {
                 "field_name": "discount_scheme",
-                "field_label": "Discount Scheme (Pasal 6)",
+                "field_label": "Tabel Skema Diskon Produk",
                 "field_type": "textarea",
                 "width": "full",
-                "order": 26,
+                "order": 24,
                 "step_number": 2,
                 "required": False,
-                "help_text": "Tabel dinamis komponen potongan harga.",
+                "help_text": "Tabel dinamis rincian komponen potongan harga reguler.",
             },
+
+            # --- Card 4: Fasilitas & Dukungan Promosi (Pasal 4 & 7 Promo) ---
             {
                 "field_name": "is_support_provided",
                 "field_label": "Terdapat Fasilitas / Bentuk Support Tambahan?",
                 "field_type": "checkbox",
                 "width": "full",
-                "order": 27,
+                "order": 25,
                 "step_number": 2,
                 "required": False,
                 "default_value": "",
@@ -1315,7 +1358,7 @@ class Command(BaseCommand):
                 "field_label": "Bentuk Support Promosi",
                 "field_type": "select",
                 "width": "third",
-                "order": 28,
+                "order": 26,
                 "step_number": 2,
                 "required": False,
                 "choices": ["Material Promosi", "Dana Promosi", "Gabungan"],
@@ -1325,7 +1368,7 @@ class Command(BaseCommand):
                 "field_label": "Persentase Support Promo (%)",
                 "field_type": "decimal",
                 "width": "third",
-                "order": 29,
+                "order": 27,
                 "step_number": 2,
                 "required": False,
                 "help_text": "Dari total omzet bulanan (Pasal 4).",
@@ -1335,91 +1378,82 @@ class Command(BaseCommand):
                 "field_label": "Frekuensi Pencairan",
                 "field_type": "select",
                 "width": "third",
-                "order": 30,
+                "order": 28,
                 "step_number": 2,
                 "required": False,
                 "choices": ["Setiap Bulan", "Per Kuartal", "Per Semester"],
             },
             {
-                "field_name": "syarat_pencairan",
-                "field_label": "Syarat Pencairan",
-                "field_type": "text",
-                "width": "full",
-                "order": 31,
-                "step_number": 2,
-                "required": False,
-                "placeholder": "Setelah pembayaran lunas",
-            },
-            {
                 "field_name": "komponen_biaya",
                 "field_label": "Komponen Biaya Support",
-                "field_type": "text",
+                "field_type": "checkboxes",
+                "width": "full",
+                "order": 30,
+                "step_number": 2,
+                "required": False,
+                "default_value": "",
+                "choices": ["Sewa", "Listrik", "Instore", "Pameran", "Asuransi"],
+                "help_text": "Pilih komponen biaya support promosi yang disepakati (maksimal 5 komponen resmi).",
+            },
+            {
+                "field_name": "tier_support",
+                "field_label": "Tabel Tier Support Tahunan / Biaya Sewa",
+                "field_type": "textarea",
                 "width": "full",
                 "order": 32,
                 "step_number": 2,
                 "required": False,
-                "default_value": "",
-                "placeholder": "Contoh: Sewa, Listrik, Asuransi",
-                "help_text": "Pisahkan dengan koma.",
-            },
-            {
-                "field_name": "pengecualian_ketentuan_support",
-                "field_label": "Pengecualian / Ketentuan Khusus Support",
-                "field_type": "textarea",
-                "width": "full",
-                "order": 33,
-                "step_number": 2,
-                "required": False,
-                "placeholder": "Catatan persentase discount/pajak billboard atau batasan biaya lainnya.",
-            },
-            {
-                "field_name": "tier_support",
-                "field_label": "Tier Support Tahunan / Biaya Sewa (Pasal 7)",
-                "field_type": "textarea",
-                "width": "full",
-                "order": 34,
-                "step_number": 2,
-                "required": False,
                 "help_text": "Tabel dinamis target tahunan, support %, PPh %, dan Netto otomatis.",
             },
+
+            # --- Card 5: Tata Cara & Ketentuan Pembayaran (BAB III) ---
             {
-                "field_name": "kota_penandatanganan",
-                "field_label": "Kota Penandatanganan",
-                "field_type": "text",
-                "width": "third",
-                "order": 35,
+                "field_name": "top",
+                "field_label": "TOP (Term of Payment)",
+                "field_type": "number",
+                "width": "half",
+                "order": 33,
                 "step_number": 2,
                 "required": True,
-                "default_value": "",
-            },
-            {
-                "field_name": "tanggal_penandatanganan",
-                "field_label": "Tanggal Penandatanganan",
-                "field_type": "date",
-                "width": "third",
-                "order": 36,
-                "step_number": 2,
-                "required": True,
+                "placeholder": "60",
+                "help_text": "Satuan: Hari kerja",
             },
             {
                 "field_name": "rekening_perusahaan",
                 "field_label": "Rekening Perusahaan",
                 "field_type": "text",
-                "width": "third",
-                "order": 37,
+                "width": "half",
+                "order": 35,
                 "step_number": 2,
                 "required": False,
-                "default_value": "BCA 084-3012899 a/n PT Bestari Mulia",
+                "readonly": True,
+                "css_class": "field-readonly",
+                "default_value": "BCA KCU CIMAHI 139.9888.777 (IDR) a/n PT. ROYAL ABADI SEJAHTERA",
+                "help_text": "Terisi otomatis dari master profil perusahaan (readonly).",
+            },
+
+            # --- Card 6: Ketentuan Akhir & Tempat Pengesahan (BAB IV & Penutup) ---
+            {
+                "field_name": "kota_penandatanganan",
+                "field_label": "Kota Penandatanganan",
+                "field_type": "text",
+                "width": "half",
+                "order": 36,
+                "step_number": 2,
+                "required": True,
+                "readonly": True,
+                "css_class": "field-readonly",
+                "default_value": "",
+                "help_text": "Terisi otomatis mengikuti cabang pengaju (readonly).",
             },
             {
-                "field_name": "catatan_lain",
-                "field_label": "Lain-lain / Catatan Klausul Khusus",
-                "field_type": "textarea",
-                "width": "full",
-                "order": 38,
+                "field_name": "tanggal_penandatanganan",
+                "field_label": "Tanggal Penandatanganan",
+                "field_type": "date",
+                "width": "half",
+                "order": 37,
                 "step_number": 2,
-                "required": False,
-                "placeholder": "Catatan klausul kontrak khusus yang tidak tercakup pada poin-poin di atas.",
+                "required": True,
             },
 
             # -----------------------------------------------------------------
