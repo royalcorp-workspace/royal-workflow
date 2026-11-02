@@ -84,55 +84,142 @@ def resolve_court_jurisdiction(cabang=None, kota=None, default=None) -> str:
 
 OFFICIAL_BRANDS = {
     "LADY": "Lady Americana",
-    "ELITE": "Elite",
+    "ELITE": "Elite Springbed",
     "SERENITY": "Serenity",
     "ROYAL": "Royal Foam",
+    "CLASSIC": "Classic",
 }
 
 
 def format_canonical_brand_name(brand_val: str) -> str:
     """Format any brand input into its canonical official display name:
     - Lady Americana
-    - Elite
+    - Elite Springbed
     - Serenity
     - Royal Foam
+    - Classic
     """
     b = str(brand_val or "").strip().upper()
     if "LADY" in b:
         return "Lady Americana"
     if "ELITE" in b:
-        return "Elite"
+        return "Elite Springbed"
     if "SERENITY" in b:
         return "Serenity"
     if "ROYAL" in b or "FOAM" in b:
         return "Royal Foam"
+    if "CLASSIC" in b:
+        return "Classic"
     return str(brand_val or "").strip()
 
 
-def normalize_contract_duration(durasi_val: str) -> str:
-    """Normalize contract duration into pure month string, e.g. '12 Bulan', '13 Bulan', '6 Bulan'.
-    Converts legacy formats like '1 Tahun' -> '12 Bulan', '1 Tahun 1 Bulan' -> '13 Bulan', '2 Tahun' -> '24 Bulan'.
+def calculate_contract_duration(start_val, end_val) -> str:
+    """Calculate inclusive contract duration between two dates:
+    - 01/01/2025 to 31/12/2025 -> '1 Tahun'
+    - 01/01/2025 to 31/01/2026 -> '1 Tahun 1 Bulan'
+    - 01/01/2025 to 28/02/2026 -> '1 Tahun 2 Bulan'
+    - 01/01/2025 to 31/01/2025 -> '1 Bulan'
     """
+    import datetime
+    if not start_val or not end_val:
+        return ""
+
+    d1 = None
+    d2 = None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        if not d1:
+            try:
+                d1 = datetime.datetime.strptime(str(start_val).strip(), fmt).date()
+            except ValueError:
+                pass
+        if not d2:
+            try:
+                d2 = datetime.datetime.strptime(str(end_val).strip(), fmt).date()
+            except ValueError:
+                pass
+
+    if not d1 or not d2 or d2 < d1:
+        return ""
+
+    # Inclusive end date: add 1 day
+    d2_next = d2 + datetime.timedelta(days=1)
+
+    years = d2_next.year - d1.year
+    months = d2_next.month - d1.month
+    days = d2_next.day - d1.day
+
+    if days < 0:
+        months -= 1
+    if months < 0:
+        years -= 1
+        months += 12
+
+    if years > 0 and months > 0:
+        return f"{years} Tahun {months} Bulan"
+    elif years > 0:
+        return f"{years} Tahun"
+    elif months > 0:
+        return f"{months} Bulan"
+    else:
+        return "1 Bulan"
+
+
+def normalize_contract_duration(durasi_val: str, start_val=None, end_val=None) -> str:
+    """Format and normalize contract duration into standard Indonesian legal text:
+    - '1 Tahun'
+    - '1 Tahun 1 Bulan'
+    - '1 Tahun 2 Bulan'
+    - '1 Bulan', '6 Bulan', etc.
+    """
+    if start_val and end_val:
+        calc = calculate_contract_duration(start_val, end_val)
+        if calc:
+            return calc
+
     d_str = str(durasi_val or "").strip()
-    if not d_str or d_str == "—" or d_str == "-":
-        return "12 Bulan"
+    if not d_str or d_str in ("—", "-", "None", "null"):
+        return "1 Tahun"
 
     import re
-    m_pure = re.match(r"^(\d+)\s*Bulan$", d_str, re.IGNORECASE)
-    if m_pure:
-        return f"{m_pure.group(1)} Bulan"
 
-    m_yt = re.search(r"(\d+)\s*Tahun", d_str, re.IGNORECASE)
-    m_bl = re.search(r"(\d+)\s*Bulan", d_str, re.IGNORECASE)
-    if m_yt or m_bl:
-        years = int(m_yt.group(1)) if m_yt else 0
-        months = int(m_bl.group(1)) if m_bl else 0
-        total = (years * 12) + months
-        if total > 0:
-            return f"{total} Bulan"
+    # Check for 'X Tahun Y Bulan' or 'X Tahun'
+    m_yt_bl = re.match(r"^(\d+)\s*Tahun(?:\s*(\d+)\s*Bulan)?$", d_str, re.IGNORECASE)
+    if m_yt_bl:
+        y = int(m_yt_bl.group(1))
+        b = int(m_yt_bl.group(2)) if m_yt_bl.group(2) else 0
+        if y > 0 and b > 0:
+            return f"{y} Tahun {b} Bulan"
+        elif y > 0:
+            return f"{y} Tahun"
+        elif b > 0:
+            return f"{b} Bulan"
 
+    # Check for pure month 'X Bulan'
+    m_bl = re.match(r"^(\d+)\s*Bulan$", d_str, re.IGNORECASE)
+    if m_bl:
+        total_m = int(m_bl.group(1))
+        y = total_m // 12
+        rem_m = total_m % 12
+        if y > 0 and rem_m > 0:
+            return f"{y} Tahun {rem_m} Bulan"
+        elif y > 0:
+            return f"{y} Tahun"
+        else:
+            return f"{rem_m} Bulan"
+
+    # Numeric only
     if d_str.isdigit():
-        return f"{d_str} Bulan"
+        total_m = int(d_str)
+        y = total_m // 12
+        rem_m = total_m % 12
+        if y > 0 and rem_m > 0:
+            return f"{y} Tahun {rem_m} Bulan"
+        elif y > 0:
+            return f"{y} Tahun"
+        else:
+            return f"{rem_m} Bulan"
+
+    return d_str
 
 OFFICIAL_SUPPORT_COMPONENTS = ["Sewa", "Listrik", "Instore", "Pameran", "Asuransi"]
 
@@ -209,11 +296,18 @@ def calculate_spk_incentive_breakdown(form_data: dict, is_support: bool = False)
         form_data = {}
 
     # 1. Parse duration & frequency
-    durasi_str = str(form_data.get("durasi") or "12 Bulan")
+    durasi_str = str(form_data.get("durasi") or "1 Tahun")
     durasi_num = 12
-    m_dur = re.search(r"(\d+)", durasi_str)
-    if m_dur:
-        durasi_num = int(m_dur.group(1))
+    m_yt = re.search(r"(\d+)\s*Tahun", durasi_str, re.IGNORECASE)
+    m_bl = re.search(r"(\d+)\s*Bulan", durasi_str, re.IGNORECASE)
+    if m_yt or m_bl:
+        years = int(m_yt.group(1)) if m_yt else 0
+        months = int(m_bl.group(1)) if m_bl else 0
+        durasi_num = (years * 12) + months
+    elif durasi_str.isdigit():
+        durasi_num = int(durasi_str)
+    elif re.search(r"(\d+)", durasi_str):
+        durasi_num = int(re.search(r"(\d+)", durasi_str).group(1))
 
     freq_bulan = 3 if durasi_num >= 3 else 1
 
@@ -325,8 +419,8 @@ COMPANY_PROFILES = {
         "director_name": "Alvin Steven",
         "director_title": "Direktur",
         "factory_address": "Jl. Industri Raya No.8 RT.003 RW.004 Budi Mulya Cikupa Kab.Tangerang, Banten",
-        "bank_name": "BCA CIMAHI – BANDUNG",
-        "bank_account_no": "139.9183.888 (IDR)",
+        "bank_name": "BCA Cimahi - Bandung",
+        "bank_account_no": "139 9183 888 (IDR)",
         "bank_account_name": "PT. ANUGRAH CEMERLANG ABADI",
         "court_jurisdiction": "Kantor Panitera Pengadilan Negeri Bale Bandung",
         "logo_filename": "aca.png",
@@ -337,7 +431,7 @@ COMPANY_PROFILES = {
         "director_name": "Alvin Steven",
         "director_title": "Direktur",
         "factory_address": "Kawasan Industri Gandasari, Jl. Raya Industri No. 12, Tangerang",
-        "bank_name": "BCA KCU CIMAHI",
+        "bank_name": "BCA Cimahi - Bandung",
         "bank_account_no": "139.9888.777 (IDR)",
         "bank_account_name": "PT. BANGUN CIPTA PRIMATARA",
         "court_jurisdiction": "Kantor Panitera Pengadilan Negeri Tangerang",
@@ -349,8 +443,8 @@ COMPANY_PROFILES = {
         "director_name": "Alvin Steven",
         "director_title": "Direktur",
         "factory_address": "Kawasan Industri Gandasari, Jl. Raya Industri No. 12, Tangerang",
-        "bank_name": "BCA KCU CIMAHI",
-        "bank_account_no": "139.9888.777 (IDR)",
+        "bank_name": "BCA Cimahi - Bandung",
+        "bank_account_no": "139 8075 888 (IDR)",
         "bank_account_name": "PT. BESTARI MULIA",
         "court_jurisdiction": "Kantor Panitera Pengadilan Negeri Tangerang",
         "logo_filename": "bm.png",
@@ -361,8 +455,8 @@ COMPANY_PROFILES = {
         "director_name": "Alvin Steven",
         "director_title": "Direktur",
         "factory_address": "Jl. Industri Raya No.8 RT.003 RW.004 Budi Mulya Cikupa Kab.Tangerang, Banten",
-        "bank_name": "BCA CIMAHI – BANDUNG",
-        "bank_account_no": "139.9183.888 (IDR)",
+        "bank_name": "BCA Cimahi - Bandung",
+        "bank_account_no": "139 9183 888 (IDR)",
         "bank_account_name": "PT. CEMERLANG ABADI MULIA",
         "court_jurisdiction": "Kantor Panitera Pengadilan Negeri Bale Bandung",
         "logo_filename": "cam.png",
@@ -373,8 +467,8 @@ COMPANY_PROFILES = {
         "director_name": "Alvin Steven",
         "director_title": "Direktur",
         "factory_address": "Kawasan Industri Gandasari, Jl. Raya Industri No. 12, Tangerang",
-        "bank_name": "BCA KCU CIMAHI",
-        "bank_account_no": "139.9888.777 (IDR)",
+        "bank_name": "BCA Cimahi - Bandung",
+        "bank_account_no": "139 8826 999 (IDR)",
         "bank_account_name": "PT. ROYAL ABADI SEJAHTERA",
         "court_jurisdiction": "Kantor Panitera Pengadilan Negeri Tangerang",
         "logo_filename": "ras.png",
@@ -416,8 +510,8 @@ def normalize_company_key(company_name: str, brand: str = "", user=None) -> str:
     if any(k in joined for k in ["ABADI MULIA", "CEMERLANG ABADI MULIA", "CAM"]):
         return "PT CEMERLANG ABADI MULIA"
 
-    # Check RAS / Royal Abadi Sejahtera / Royal Foam
-    if any(k in joined for k in ["SEJAHTERA", "RAS", "ROYAL", "FOAM"]):
+    # Check RAS / Royal Abadi Sejahtera / Royal Foam / Classic
+    if any(k in joined for k in ["SEJAHTERA", "RAS", "ROYAL", "FOAM", "CLASSIC"]):
         return "PT ROYAL ABADI SEJAHTERA"
 
     # Check ACA / Anugrah / Elite / Lady Americana / Serenity
@@ -512,9 +606,11 @@ def format_official_spk_number(
     perusahaan=None,
 ) -> str:
     """
-    Format official SPK number per Revisi Poin 14:
-    {SEQ:3}/{BRAND}/{KODE_PT}/{BULAN_ROMAWI}/{TAHUN}
-    Example: 001/SERENITY/RAS/X/2026 or 002/LADY/RAS/X/2026
+    Format official SPK number per Bagian B Poin 1:
+    {SEQ:3}/SK-{KODE_PT}/{CABANG}/{BRAND}/{BULAN_ROMAWI}/{TAHUN}
+    Examples:
+      001/SK-RAS/TANGERANG/LADY/X/2026
+      001/SK-RAS/PUSAT/LADY/XI/2026
     """
     import datetime
     if not date_val:
@@ -547,7 +643,7 @@ def format_official_spk_number(
 
     pt_code = prof.get("short_code", "RAS") if isinstance(prof, dict) else "RAS"
 
-    # Clean Brand Code (Opsi A: LADY, ROYAL, SERENITY, ELITE)
+    # Clean Brand Code (5 Official Brands: LADY, ROYAL, SERENITY, ELITE, CLASSIC)
     brand_str = str(brand or "").strip().upper()
     if "LADY" in brand_str:
         brand_clean = "LADY"
@@ -557,17 +653,24 @@ def format_official_spk_number(
         brand_clean = "SERENITY"
     elif "ELITE" in brand_str:
         brand_clean = "ELITE"
+    elif "CLASSIC" in brand_str:
+        brand_clean = "CLASSIC"
     elif "GRAND" in brand_str:
         brand_clean = "GRAND"
     else:
         brand_clean = brand_str.split()[0] if brand_str else "LADY"
+
+    # Cabang in UPPERCASE (e.g. TANGERANG, BANDUNG, PUSAT)
+    cabang_str = str(cabang or "PUSAT").strip().upper().replace(" ", "")
+    if not cabang_str or cabang_str == "—" or cabang_str == "-":
+        cabang_str = "PUSAT"
 
     # Month in Roman Numerals (I..XII)
     m_int = date_val.month if 1 <= date_val.month <= 12 else 1
     m_roman = ROMAN_MONTHS[m_int] if m_int < len(ROMAN_MONTHS) else "X"
     y_str = str(date_val.year)
 
-    return f"{nomor_str}/{brand_clean}/{pt_code}/{m_roman}/{y_str}"
+    return f"{nomor_str}/SK-{pt_code}/{cabang_str}/{brand_clean}/{m_roman}/{y_str}"
 
 
 def get_next_branch_spk_sequence(cabang: str, year: Optional[int] = None, form_slug: str = "permohonan-kontrak") -> int:
@@ -605,8 +708,8 @@ def get_next_branch_spk_sequence(cabang: str, year: Optional[int] = None, form_s
     ).exclude(status="draft").order_by("id")
 
     max_seq = 0
-    pattern_new = re.compile(rf"^(?:No\.\s*)?(\d+)/[^/]+/[^/]+/[^/]+/({year})$")
-    pattern_legacy = re.compile(rf"^(?:No\.\s*)?(\d+)/[^/]+/({re.escape(cabang_clean)})/[^/]+/({year})$", re.IGNORECASE)
+    pattern_official = re.compile(rf"^(?:No\.\s*)?(\d+)/SK-[^/]+/({re.escape(cabang_clean)})/[^/]+/[^/]+/({year})$", re.IGNORECASE)
+    pattern_general = re.compile(rf"^(?:No\.\s*)?(\d+)/.+/({year})$")
 
     for sub in submissions:
         data = sub.form_data or {}
@@ -618,20 +721,20 @@ def get_next_branch_spk_sequence(cabang: str, year: Optional[int] = None, form_s
         if not spk_str:
             continue
 
-        m_new = pattern_new.match(spk_str)
-        if m_new:
+        m_off = pattern_official.match(spk_str)
+        if m_off:
             try:
-                seq_num = int(m_new.group(1))
+                seq_num = int(m_off.group(1))
                 if seq_num > max_seq:
                     max_seq = seq_num
             except (ValueError, TypeError):
                 pass
             continue
 
-        m_leg = pattern_legacy.match(spk_str)
-        if m_leg:
+        m_gen = pattern_general.match(spk_str)
+        if m_gen:
             try:
-                seq_num = int(m_leg.group(1))
+                seq_num = int(m_gen.group(1))
                 if seq_num > max_seq:
                     max_seq = seq_num
             except (ValueError, TypeError):
@@ -643,20 +746,20 @@ def get_next_branch_spk_sequence(cabang: str, year: Optional[int] = None, form_s
 def resolve_spk_document_template(form_def, submission=None, form_data=None):
     """
     Select appropriate DocumentTemplate:
-    - If is_support_provided is True -> 'Surat Perjanjian Kerjasama (Support Promosi)' (12 Pasal)
-    - If is_support_provided is False -> 'Surat Perjanjian Kerjasama (Standard)' (11 Pasal)
-    Falls back to is_default=True template.
+    Defaults to 'Surat Perjanjian Kerjasama (Standard)' (11 Pasal) since support
+    promosi facility is eliminated. If historical submission has is_support_provided,
+    maintains fallback compatibility.
     """
     data = form_data or (submission.form_data if submission else {}) or {}
     val = data.get("is_support_provided")
     is_support = val in (True, "True", "true", "1", 1, "on")
     
-    target_name = (
-        "Surat Perjanjian Kerjasama (Support Promosi)"
-        if is_support
-        else "Surat Perjanjian Kerjasama (Standard)"
-    )
-    tpl = form_def.document_templates.filter(name=target_name, is_active=True).first()
+    if is_support:
+        tpl_supp = form_def.document_templates.filter(name="Surat Perjanjian Kerjasama (Support Promosi)", is_active=True).first()
+        if tpl_supp:
+            return tpl_supp
+
+    tpl = form_def.document_templates.filter(name="Surat Perjanjian Kerjasama (Standard)", is_active=True).first()
     if not tpl:
         tpl = form_def.document_templates.filter(is_default=True, is_active=True).first()
     return tpl

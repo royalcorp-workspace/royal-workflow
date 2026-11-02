@@ -54,14 +54,24 @@ class Command(BaseCommand):
                 "Pusat", "R1", "R2", "Semarang", "Surabaya", "Tangerang",
             ],
         )
+        sol_channel = self._ensure_shared_option_list(
+            slug="channel-list",
+            name="Daftar Channel Distribusi",
+            items=[
+                {"value": "Retail Mattress", "label": "Retail Mattress"},
+                {"value": "Retail Foam", "label": "Retail Foam"},
+                {"value": "Industri", "label": "Industri"},
+            ],
+        )
         sol_brand = self._ensure_shared_option_list(
             slug="brand-list",
             name="Daftar Brand Royal",
             items=[
                 {"value": "Lady Americana", "label": "Lady Americana"},
-                {"value": "Elite", "label": "Elite"},
+                {"value": "Elite Springbed", "label": "Elite Springbed"},
                 {"value": "Serenity", "label": "Serenity"},
                 {"value": "Royal Foam", "label": "Royal Foam"},
+                {"value": "Classic", "label": "Classic"},
             ],
         )
         sol_perusahaan = self._ensure_shared_option_list(
@@ -80,6 +90,15 @@ class Command(BaseCommand):
             name="Daftar Jenis Identitas",
             items=["NIK", "NPWP"],
         )
+        sol_pencairan = self._ensure_shared_option_list(
+            slug="jenis-pencairan-insentif-list",
+            name="Daftar Jenis Pencairan Insentif",
+            items=[
+                {"value": "Transfer/Giro", "label": "Transfer/Giro"},
+                {"value": "Konversi Barang", "label": "Konversi Barang"},
+                {"value": "Transfer/Giro atau Konversi Barang", "label": "Transfer/Giro atau Konversi Barang"},
+            ],
+        )
 
         # 3. Category
         category = self._ensure_category(
@@ -95,7 +114,7 @@ class Command(BaseCommand):
             {
                 "title": "Informasi Pengajuan & Toko",
                 "fields": [
-                    "nomor_spk", "cabang", "brand", "perusahaan",
+                    "nomor_spk", "cabang", "channel", "brand", "perusahaan",
                     "kode_customer_jde", "nama_toko", "nama_pemilik", "alamat_toko",
                     "no_telepon", "email", "kota", "nomor_nik", "nomor_npwp",
                     "asset_toko", "market_share"
@@ -105,12 +124,11 @@ class Command(BaseCommand):
                 "title": "Detail Kontrak",
                 "fields": [
                     "info_kontrak_lama", "tanggal_mulai", "tanggal_berakhir", "durasi", "grace_period",
-                    "top", "discount_do", "ketentuan_do",
-                    "target_incentive", "discount_scheme",
-                    "is_support_provided",
-                    "support_promosi", "pct_support_promo", "frekuensi_pencairan",
-                    "komponen_biaya", "tier_support",
-                    "kota_penandatanganan", "tanggal_penandatanganan", "rekening_perusahaan"
+                    "target_incentive", "jenis_pencairan_insentif",
+                    "chk_diskon_mtht", "chk_diskon_mprto", "chk_diskon_mlcd",
+                    "discount_scheme",
+                    "top", "rekening_perusahaan",
+                    "kota_penandatanganan", "tanggal_penandatanganan"
                 ],
             },
             {
@@ -161,7 +179,7 @@ class Command(BaseCommand):
         )
 
         # 5. Form Fields (43 fields)
-        field_definitions = self._get_field_definitions(sol_cabang, sol_brand, sol_perusahaan, sol_identitas)
+        field_definitions = self._get_field_definitions(sol_cabang, sol_channel, sol_brand, sol_perusahaan, sol_identitas, sol_pencairan)
         self._sync_fields(form, field_definitions)
 
         # 6. Workflow Definition & Stages
@@ -598,7 +616,7 @@ class Command(BaseCommand):
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 4</div>
             <p style="text-align: justify; margin-bottom: 12px;">
-                Perjanjian berlaku untuk Jangka Waktu <strong>{durasi}</strong> terhitung dari sejak tanggal <strong>{tanggal_mulai}</strong> dan akan berakhir pada tanggal <strong>{tanggal_berakhir}</strong>{% if grace_period %} dengan tenggang waktu (grace period) selama <strong>{grace_period}</strong>{% endif %}.
+                Perjanjian berlaku untuk Jangka Waktu <strong>{durasi}</strong> terhitung dari sejak tanggal <strong>{tanggal_mulai}</strong> dan akan berakhir pada tanggal <strong>{tanggal_berakhir}</strong>.
             </p>
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 5</div>
@@ -606,11 +624,6 @@ class Command(BaseCommand):
                 Skema discount untuk penjualan Produk yang berlaku untuk Pihak Kedua dalam Perjanjian ini adalah sebagai berikut :
             </p>
             <div style="margin-bottom: 12px;">{discount_scheme_table}</div>
-            {% if discount_do %}
-            <p style="text-align: justify; margin-bottom: 8px;">
-                Diskon Delivery Order (DO): <strong>{discount_do}%</strong> &mdash; Ketentuan: {ketentuan_do}
-            </p>
-            {% endif %}
         </div>
         <div class="spk-page-footer">Halaman 1 dari 2</div>
     </div>
@@ -826,12 +839,11 @@ class Command(BaseCommand):
             <ol style="margin-top: 0; margin-bottom: 12px; padding-left: 20px;">
                 <li style="text-align: justify; margin-bottom: 4px;">Pihak Pertama memberikan support promosi yang meliputi biaya ({komponen_biaya}) kepada Pihak Kedua sebesar <strong>{pct_support_promo}%</strong>. Support promosi tersebut <strong>TIDAK</strong> meliputi biaya Billboard, Pajak Billboard, dan Backdrop apabila Pihak Kedua membuka cabang baru atau toko baru.</li>
                 <li style="text-align: justify; margin-bottom: 4px;">Support promosi ini dapat dicairkan setelah pembayaran <strong>LUNAS</strong>.</li>
-                <li style="text-align: justify;">Grace period selama {% if grace_period %}<strong>{grace_period}</strong>{% else %}1 (satu) bulan{% endif %} dari masa kontrak berakhir, apabila Pihak Kedua belum mencapai target.</li>
             </ol>
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 5</div>
             <p style="text-align: justify; margin-bottom: 12px;">
-                Perjanjian berlaku untuk Jangka Waktu <strong>{durasi}</strong> terhitung dari sejak tanggal <strong>{tanggal_mulai}</strong> dan akan berakhir pada tanggal <strong>{tanggal_berakhir}</strong>{% if grace_period %} dengan tenggang waktu (grace period) selama <strong>{grace_period}</strong>{% endif %}.
+                Perjanjian berlaku untuk Jangka Waktu <strong>{durasi}</strong> terhitung dari sejak tanggal <strong>{tanggal_mulai}</strong> dan akan berakhir pada tanggal <strong>{tanggal_berakhir}</strong>.
             </p>
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 6</div>
@@ -839,11 +851,6 @@ class Command(BaseCommand):
                 Skema discount untuk penjualan Produk yang berlaku untuk Pihak Kedua dalam Perjanjian ini adalah sebagai berikut :
             </p>
             <div style="margin-bottom: 12px;">{discount_scheme_table}</div>
-            {% if discount_do %}
-            <p style="text-align: justify; margin-bottom: 8px;">
-                Diskon Delivery Order (DO): <strong>{discount_do}%</strong> &mdash; Ketentuan: {ketentuan_do}
-            </p>
-            {% endif %}
         </div>
         <div class="spk-page-footer">Halaman 1 dari 2</div>
     </div>
@@ -1069,7 +1076,7 @@ class Command(BaseCommand):
                 defaults=r["defaults"],
             )
 
-    def _get_field_definitions(self, sol_cabang, sol_brand, sol_perusahaan, sol_identitas):
+    def _get_field_definitions(self, sol_cabang, sol_channel, sol_brand, sol_perusahaan, sol_identitas, sol_pencairan):
         fields = [
             # -----------------------------------------------------------------
             # Step 1: Informasi Pengajuan & Toko
@@ -1091,7 +1098,7 @@ class Command(BaseCommand):
                 "field_name": "cabang",
                 "field_label": "Cabang / Area",
                 "field_type": "select",
-                "width": "half",
+                "width": "third",
                 "order": 2,
                 "step_number": 1,
                 "required": False,
@@ -1101,11 +1108,23 @@ class Command(BaseCommand):
                 "help_text": "Terkunci otomatis sesuai kantor cabang pemohon.",
             },
             {
+                "field_name": "channel",
+                "field_label": "Channel Distribusi",
+                "field_type": "select",
+                "width": "third",
+                "order": 3,
+                "step_number": 1,
+                "required": True,
+                "readonly": False,
+                "shared_option_list": sol_channel,
+                "help_text": "Pilih channel distribusi (Retail Mattress, Retail Foam, Industri).",
+            },
+            {
                 "field_name": "brand",
                 "field_label": "Brand Produk",
                 "field_type": "select",
-                "width": "half",
-                "order": 3,
+                "width": "third",
+                "order": 4,
                 "step_number": 1,
                 "required": True,
                 "readonly": False,
@@ -1116,8 +1135,8 @@ class Command(BaseCommand):
                 "field_name": "perusahaan",
                 "field_label": "Perusahaan (Pihak Pertama)",
                 "field_type": "select",
-                "width": "half",
-                "order": 4,
+                "width": "full",
+                "order": 5,
                 "step_number": 1,
                 "required": False,
                 "readonly": True,
@@ -1130,7 +1149,7 @@ class Command(BaseCommand):
                 "field_label": "Kode Customer JDE",
                 "field_type": "text",
                 "width": "full",
-                "order": 5,
+                "order": 6,
                 "step_number": 1,
                 "required": True,
                 "help_text": "Masukkan kode customer JDE (contoh: 150731) lalu klik 'Cari Customer JDE' untuk autofill.",
@@ -1140,7 +1159,7 @@ class Command(BaseCommand):
                 "field_label": "Nama Toko / Dealer",
                 "field_type": "text",
                 "width": "half",
-                "order": 6,
+                "order": 7,
                 "step_number": 1,
                 "required": False,
                 "readonly": True,
@@ -1151,7 +1170,7 @@ class Command(BaseCommand):
                 "field_label": "Nama Pemilik / Penanggung Jawab",
                 "field_type": "text",
                 "width": "half",
-                "order": 7,
+                "order": 8,
                 "step_number": 1,
                 "required": False,
                 "readonly": True,
@@ -1162,7 +1181,7 @@ class Command(BaseCommand):
                 "field_label": "Alamat Lengkap Toko",
                 "field_type": "text",
                 "width": "half",
-                "order": 8,
+                "order": 9,
                 "step_number": 1,
                 "required": False,
                 "readonly": True,
@@ -1173,7 +1192,7 @@ class Command(BaseCommand):
                 "field_label": "No. Telepon / HP",
                 "field_type": "text",
                 "width": "half",
-                "order": 9,
+                "order": 10,
                 "step_number": 1,
                 "required": False,
                 "readonly": True,
@@ -1184,7 +1203,7 @@ class Command(BaseCommand):
                 "field_label": "Email Toko / Pemilik",
                 "field_type": "email",
                 "width": "half",
-                "order": 10,
+                "order": 11,
                 "step_number": 1,
                 "required": True,
                 "readonly": False,
@@ -1196,7 +1215,7 @@ class Command(BaseCommand):
                 "field_label": "Kota / Kabupaten",
                 "field_type": "text",
                 "width": "half",
-                "order": 11,
+                "order": 12,
                 "step_number": 1,
                 "required": False,
                 "readonly": True,
@@ -1207,7 +1226,7 @@ class Command(BaseCommand):
                 "field_label": "Nomor NPWP Toko / Pemilik",
                 "field_type": "text",
                 "width": "half",
-                "order": 12,
+                "order": 13,
                 "step_number": 1,
                 "required": True,
                 "readonly": False,
@@ -1218,7 +1237,7 @@ class Command(BaseCommand):
                 "field_label": "Nomor NIK (KTP)",
                 "field_type": "text",
                 "width": "half",
-                "order": 13,
+                "order": 14,
                 "step_number": 1,
                 "required": False,
                 "readonly": False,
@@ -1229,7 +1248,7 @@ class Command(BaseCommand):
                 "field_label": "Data Asset Toko",
                 "field_type": "textarea",
                 "width": "full",
-                "order": 14,
+                "order": 15,
                 "step_number": 1,
                 "required": False,
                 "help_text": "Tabel dinamis aset display, neon box, dan papan nama toko.",
@@ -1239,7 +1258,7 @@ class Command(BaseCommand):
                 "field_label": "Data Market Share",
                 "field_type": "textarea",
                 "width": "full",
-                "order": 15,
+                "order": 16,
                 "step_number": 1,
                 "required": False,
                 "help_text": "Tabel dinamis estimasi omset penjualan produk vs kompetitor per bulan.",
@@ -1286,7 +1305,8 @@ class Command(BaseCommand):
                 "required": False,
                 "readonly": True,
                 "css_class": "field-readonly",
-                "help_text": "Dihitung otomatis dalam satuan bulan murni (misal: 12 Bulan, 13 Bulan, 6 Bulan).",
+                "placeholder": "Terhitung otomatis...",
+                "help_text": "Dihitung otomatis dari tanggal mulai dan tanggal berakhir kontrak (misal: 1 Tahun, 1 Tahun 1 Bulan).",
             },
             {
                 "field_name": "grace_period",
@@ -1296,7 +1316,10 @@ class Command(BaseCommand):
                 "order": 19,
                 "step_number": 2,
                 "required": False,
-                "placeholder": "Contoh: 5 Bulan",
+                "readonly": False,
+                "default_value": "1 Bulan",
+                "placeholder": "1 Bulan",
+                "help_text": "Masa tenggang pencapaian target setelah masa kontrak berakhir (default: 1 Bulan).",
             },
             # --- Card 2: Target Penjualan & Skema Insentif (Pasal 3) ---
             {
@@ -1304,115 +1327,81 @@ class Command(BaseCommand):
                 "field_label": "Tabel Target & Insentif",
                 "field_type": "textarea",
                 "width": "full",
-                "order": 21,
+                "order": 20,
                 "step_number": 2,
                 "required": False,
                 "help_text": "Tabel dinamis skema target penjualan bulanan dan reward insentif.",
             },
-
-            # --- Card 3: Skema Diskon Produk & Ketentuan DO (Pasal 5 / 6) ---
             {
-                "field_name": "discount_do",
-                "field_label": "Discount DO (%)",
-                "field_type": "decimal",
+                "field_name": "jenis_pencairan_insentif",
+                "field_label": "Jenis Pencairan Insentif",
+                "field_type": "select",
                 "width": "half",
+                "order": 21,
+                "step_number": 2,
+                "required": True,
+                "readonly": False,
+                "shared_option_list": sol_pencairan,
+                "help_text": "Pilih metode pencairan reward insentif toko.",
+            },
+
+            # --- Card 3: Skema Diskon Produk (Pasal 5 / 6) ---
+            {
+                "field_name": "chk_diskon_mtht",
+                "field_label": "Thematic (MTHT)",
+                "field_type": "checkbox",
+                "width": "third",
                 "order": 22,
                 "step_number": 2,
                 "required": False,
+                "default_value": "false",
+                "help_text": "Aktifkan program Thematik yang berlaku (0%).",
             },
             {
-                "field_name": "ketentuan_do",
-                "field_label": "Ketentuan DO",
-                "field_type": "text",
-                "width": "half",
+                "field_name": "chk_diskon_mprto",
+                "field_label": "MPRTO (Pareto)",
+                "field_type": "checkbox",
+                "width": "third",
                 "order": 23,
                 "step_number": 2,
                 "required": False,
-                "placeholder": "Jatuh tempo sebelum pengambilan barang",
+                "default_value": "false",
+                "help_text": "Aktifkan diskon Pareto (5%).",
+            },
+            {
+                "field_name": "chk_diskon_mlcd",
+                "field_label": "MLCD (Tambahan)",
+                "field_type": "checkbox",
+                "width": "third",
+                "order": 24,
+                "step_number": 2,
+                "required": False,
+                "default_value": "false",
+                "help_text": "Aktifkan diskon tambahan MLCD (5%).",
             },
             {
                 "field_name": "discount_scheme",
                 "field_label": "Tabel Skema Diskon Produk",
                 "field_type": "textarea",
                 "width": "full",
-                "order": 24,
-                "step_number": 2,
-                "required": False,
-                "help_text": "Tabel dinamis rincian komponen potongan harga reguler.",
-            },
-
-            # --- Card 4: Fasilitas & Dukungan Promosi (Pasal 4 & 7 Promo) ---
-            {
-                "field_name": "is_support_provided",
-                "field_label": "Terdapat Fasilitas / Bentuk Support Tambahan?",
-                "field_type": "checkbox",
-                "width": "full",
                 "order": 25,
                 "step_number": 2,
                 "required": False,
-                "default_value": "",
-                "help_text": "Aktifkan jika kontrak memiliki fasilitas support promosi atau biaya sewa (Pasal 4 & Pasal 7). Jika tidak, kontrak berlaku reguler.",
-            },
-            {
-                "field_name": "support_promosi",
-                "field_label": "Bentuk Support Promosi",
-                "field_type": "select",
-                "width": "third",
-                "order": 26,
-                "step_number": 2,
-                "required": False,
-                "choices": ["Material Promosi", "Dana Promosi", "Gabungan"],
-            },
-            {
-                "field_name": "pct_support_promo",
-                "field_label": "Persentase Support Promo (%)",
-                "field_type": "decimal",
-                "width": "third",
-                "order": 27,
-                "step_number": 2,
-                "required": False,
-                "help_text": "Dari total omzet bulanan (Pasal 4).",
-            },
-            {
-                "field_name": "frekuensi_pencairan",
-                "field_label": "Frekuensi Pencairan",
-                "field_type": "select",
-                "width": "third",
-                "order": 28,
-                "step_number": 2,
-                "required": False,
-                "choices": ["Setiap Bulan", "Per Kuartal", "Per Semester"],
-            },
-            {
-                "field_name": "komponen_biaya",
-                "field_label": "Komponen Biaya Support",
-                "field_type": "checkboxes",
-                "width": "full",
-                "order": 30,
-                "step_number": 2,
-                "required": False,
-                "default_value": "",
-                "choices": ["Sewa", "Listrik", "Instore", "Pameran", "Asuransi"],
-                "help_text": "Pilih komponen biaya support promosi yang disepakati (maksimal 5 komponen resmi).",
-            },
-            {
-                "field_name": "tier_support",
-                "field_label": "Tabel Tier Support Tahunan / Biaya Sewa",
-                "field_type": "textarea",
-                "width": "full",
-                "order": 32,
-                "step_number": 2,
-                "required": False,
-                "help_text": "Tabel dinamis target tahunan, support %, PPh %, dan Netto otomatis.",
+                "default_value": json.dumps([
+                    {"komponen": "MD1", "nilai": "40%", "tipe": "Persentase", "keterangan": "—"},
+                    {"komponen": "MD2", "nilai": "10%", "tipe": "Persentase", "keterangan": "—"},
+                    {"komponen": "MD3", "nilai": "5%",  "tipe": "Persentase", "keterangan": "—"},
+                ]),
+                "help_text": "Tabel dinamis rincian komponen potongan harga reguler.",
             },
 
-            # --- Card 5: Tata Cara & Ketentuan Pembayaran (BAB III) ---
+            # --- Card 4: Tata Cara & Ketentuan Pembayaran (BAB III) ---
             {
                 "field_name": "top",
                 "field_label": "TOP (Term of Payment)",
                 "field_type": "number",
                 "width": "half",
-                "order": 33,
+                "order": 26,
                 "step_number": 2,
                 "required": True,
                 "placeholder": "60",
@@ -1423,22 +1412,22 @@ class Command(BaseCommand):
                 "field_label": "Rekening Perusahaan",
                 "field_type": "text",
                 "width": "half",
-                "order": 35,
+                "order": 27,
                 "step_number": 2,
                 "required": False,
                 "readonly": True,
                 "css_class": "field-readonly",
-                "default_value": "BCA KCU CIMAHI 139.9888.777 (IDR) a/n PT. ROYAL ABADI SEJAHTERA",
+                "default_value": "BCA Cimahi - Bandung 139 8826 999 (IDR) a/n PT. ROYAL ABADI SEJAHTERA",
                 "help_text": "Terisi otomatis dari master profil perusahaan (readonly).",
             },
 
-            # --- Card 6: Ketentuan Akhir & Tempat Pengesahan (BAB IV & Penutup) ---
+            # --- Card 5: Ketentuan Akhir & Tempat Pengesahan (BAB IV & Penutup) ---
             {
                 "field_name": "kota_penandatanganan",
                 "field_label": "Kota Penandatanganan",
                 "field_type": "text",
                 "width": "half",
-                "order": 36,
+                "order": 28,
                 "step_number": 2,
                 "required": True,
                 "readonly": True,
@@ -1451,7 +1440,7 @@ class Command(BaseCommand):
                 "field_label": "Tanggal Penandatanganan",
                 "field_type": "date",
                 "width": "half",
-                "order": 37,
+                "order": 29,
                 "step_number": 2,
                 "required": True,
             },
@@ -1464,7 +1453,7 @@ class Command(BaseCommand):
                 "field_label": "Preview Surat Perjanjian & Ringkasan",
                 "field_type": "display_text",
                 "width": "full",
-                "order": 39,
+                "order": 30,
                 "step_number": 3,
                 "required": False,
                 "default_value": "",
@@ -1474,7 +1463,7 @@ class Command(BaseCommand):
                 "field_label": "Saya telah memeriksa seluruh data pengajuan permohonan kontrak dengan benar.",
                 "field_type": "checkbox",
                 "width": "full",
-                "order": 40,
+                "order": 31,
                 "step_number": 3,
                 "required": True,
             },
@@ -1483,7 +1472,7 @@ class Command(BaseCommand):
                 "field_label": "Saya telah memeriksa draft klausul Surat Perjanjian Kerjasama (SPK).",
                 "field_type": "checkbox",
                 "width": "full",
-                "order": 41,
+                "order": 32,
                 "step_number": 3,
                 "required": True,
             },

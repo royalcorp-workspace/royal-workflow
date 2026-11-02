@@ -35,7 +35,12 @@ class Command(BaseCommand):
             {"target_bulanan": 250000000, "exclude_ppn": True, "incentive_pct": 2.5, "keterangan": "Tier Platinum"}
         ]
         discount_scheme_data = [
-            {"komponen": "Diskon Reguler Toko", "nilai": "15%", "tipe": "Persentase", "keterangan": "Reguler"}
+            {"komponen": "MD1", "nilai": "40%", "tipe": "Persentase", "keterangan": "—"},
+            {"komponen": "MD2", "nilai": "10%", "tipe": "Persentase", "keterangan": "—"},
+            {"komponen": "MD3", "nilai": "5%",  "tipe": "Persentase", "keterangan": "—"},
+            {"komponen": "Thematic", "nilai": "0%", "tipe": "Persentase", "keterangan": "Program Thematik yang berlaku"},
+            {"komponen": "MPRTO", "nilai": "5%", "tipe": "Persentase", "keterangan": "(Pareto)"},
+            {"komponen": "MLCD", "nilai": "5%", "tipe": "Persentase", "keterangan": "(Tambahan)"},
         ]
         tier_support_data = [
             {"target_tahunan": 3000000000, "support_pct": 5.0, "pph_pct": 2.0, "netto": 147000000, "keterangan": "Tier 3 Milyar"}
@@ -48,8 +53,9 @@ class Command(BaseCommand):
         ]
 
         test_payload = {
-            "nomor_spk": "001/SPK/LA-TGR/X/2026",
+            "nomor_spk": "001/SK-RAS/BANDUNG/LADY/X/2026",
             "cabang": "Bandung",
+            "channel": "Retail Mattress",
             "brand": "Lady Americana",
             "perusahaan": "PT. ROYAL ABADI SEJAHTERA",
             "kode_customer_jde": "150731",
@@ -65,21 +71,15 @@ class Command(BaseCommand):
             "market_share": json.dumps(market_share_data),
             "tanggal_mulai": "2026-11-01",
             "tanggal_berakhir": "2027-10-31",
-            "durasi": "12 Bulan",
+            "durasi": "1 Tahun",
             "grace_period": "1 Bulan",
             "top": 60,
             "target_incentive": json.dumps(target_incentive_data),
-            "discount_do": "2.5",
-            "ketentuan_do": "Jatuh tempo sebelum pengambilan barang DO",
+            "jenis_pencairan_insentif": "Transfer/Giro",
             "discount_scheme": json.dumps(discount_scheme_data),
-            "is_support_provided": True,
-            "pct_support_promo": "5.0",
-            "frekuensi_pencairan": "Per Kuartal",
-            "komponen_biaya": "Instore branding, listrik, dan sewa",
-            "tier_support": json.dumps(tier_support_data),
             "kota_penandatanganan": "Bandung",
             "tanggal_penandatanganan": "2026-10-28",
-            "rekening_perusahaan": "BCA 084-3012899 a/n PT Bestari Mulia",
+            "rekening_perusahaan": "BCA Cimahi - Bandung 139 8826 999 (IDR) a/n PT. ROYAL ABADI SEJAHTERA",
         }
 
         submission = FormSubmission.objects.create(
@@ -129,12 +129,11 @@ class Command(BaseCommand):
                 self.stderr.write(self.style.ERROR("✗ [FAIL] Kontainer '#reviewContractAccordion' tidak ditemukan!"))
                 all_passed = False
 
-            # Check 2: 5 Accordion Sections
+            # Check 2: 4 Accordion Sections
             expected_groups = [
                 ("collapseGrupPengajuan", "Informasi Pengajuan & Cabang"),
                 ("collapseGrupToko", "Profil Pihak Kedua / Toko"),
                 ("collapseGrupKomersial", "Ketentuan Kontrak & Skema Komersial"),
-                ("collapseGrupSupport", "Fasilitas Support Promosi & Sewa"),
                 ("collapseGrupPengesahan", "Ketentuan Pengesahan & Rekening"),
             ]
 
@@ -186,6 +185,13 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS("✓ [PASS] Konten rincian field, field email, dan tabel Dynamic Grid ter-render lengkap di dalam accordion."))
             else:
                 self.stderr.write(self.style.ERROR("✗ [FAIL] Konten rincian field atau email tidak lengkap!"))
+                all_passed = False
+
+            # Check 8: Jenis Pencairan Insentif & DO Elimination (Poin 7, 8, 9)
+            if "Jenis Pencairan Insentif" in html_approve and "Transfer/Giro" in html_approve and "Diskon DO (%)" not in html_approve:
+                self.stdout.write(self.style.SUCCESS("✓ [PASS] Jenis Pencairan Insentif ter-render di accordion dan Diskon DO telah dieliminasi."))
+            else:
+                self.stderr.write(self.style.ERROR("✗ [FAIL] Jenis Pencairan Insentif tidak ter-render atau Diskon DO masih muncul!"))
                 all_passed = False
 
             # -------------------------------------------------------------

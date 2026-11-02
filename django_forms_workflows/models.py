@@ -1188,21 +1188,23 @@ class DocumentTemplate(models.Model):
             for r in parsed_discount:
                 d_komp = r.get("komponen") or "—"
                 d_tipe = r.get("tipe") or "Persentase"
-                d_val_raw = str(r.get("nilai", 0))
+                d_val_raw = str(r.get("nilai") if r.get("nilai") is not None else "0%").strip()
                 if "persen" in d_tipe.lower() or "%" in d_val_raw:
-                    d_val = f"{d_val_raw.replace('%', '')}%"
+                    clean_pct = d_val_raw.replace("%", "").strip()
+                    d_val = f"{clean_pct}%"
                 else:
                     try:
-                        d_val = f"Rp {int(round(float(re.sub(r'[^\\d.-]', '', d_val_raw) or 0))):,}".replace(",", ".")
+                        d_val = f"Rp {int(round(float(re.sub(r'[^\d.-]', '', d_val_raw) or 0))):,}".replace(",", ".")
                     except Exception:
                         d_val = d_val_raw
                 d_ket = r.get("keterangan") or "—"
+                d_align_ket = "text-align: left;" if len(d_ket) > 10 else "text-align: center;"
                 d_rows_html += f"""
                     <tr>
                         <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: left;">{d_komp}</td>
                         <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: center; font-variant-numeric: tabular-nums;">{d_val}</td>
                         <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: center;">{d_tipe}</td>
-                        <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: center;">{d_ket}</td>
+                        <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; {d_align_ket}">{d_ket}</td>
                     </tr>
                 """
             context["discount_scheme_table"] = f"""

@@ -557,14 +557,20 @@ class EMeteraiService:
         if grid_disc:
             for r in grid_disc:
                 komp = r.get("komponen") or "Diskon Khusus"
-                val = str(r.get("nilai") or "-")
+                val_raw = r.get("nilai")
+                if val_raw is not None and str(val_raw).strip() != "":
+                    val = str(val_raw).strip()
+                    if not val.endswith("%") and str(r.get("tipe", "")).lower() == "persentase":
+                        val += "%"
+                else:
+                    val = "-"
                 tip = str(r.get("tipe") or "Persentase")
-                ket = r.get("keterangan") or "-"
+                ket = r.get("keterangan") or "—"
                 disc_table_data.append([
                     Paragraph(komp, cell_style),
                     Paragraph(val, cell_center_style),
                     Paragraph(tip, cell_center_style),
-                    Paragraph(ket, cell_center_style),
+                    Paragraph(ket, cell_style if len(ket) > 10 else cell_center_style),
                 ])
         else:
             disc_table_data.append([

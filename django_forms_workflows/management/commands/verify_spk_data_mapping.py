@@ -42,7 +42,21 @@ class Command(BaseCommand):
 
         # Verify Schema Cleanup: deleted fields should not exist in field definitions
         form_field_names = list(form_def.fields.values_list("field_name", flat=True))
-        deleted_fields = ["metode_pembayaran", "syarat_pencairan", "pengecualian_ketentuan_support", "jenis_pajak", "catatan_lain"]
+        deleted_fields = [
+            "metode_pembayaran",
+            "syarat_pencairan",
+            "pengecualian_ketentuan_support",
+            "jenis_pajak",
+            "catatan_lain",
+            "discount_do",
+            "ketentuan_do",
+            "is_support_provided",
+            "support_promosi",
+            "pct_support_promo",
+            "frekuensi_pencairan",
+            "komponen_biaya",
+            "tier_support",
+        ]
         for df in deleted_fields:
             if df in form_field_names:
                 self.stderr.write(self.style.ERROR(f"❌ Field redundan '{df}' masih ada di FormDefinition.fields!"))
@@ -71,6 +85,87 @@ class Command(BaseCommand):
         else:
             self.stderr.write(self.style.ERROR("❌ Field 'email' belum terdaftar di FormDefinition!"))
 
+        # Verify Channel field schema & status required (Poin 2)
+        if "channel" in form_field_names:
+            channel_f = form_def.fields.filter(field_name="channel").first()
+            if channel_f and channel_f.required and channel_f.field_type == "select":
+                self.stdout.write(self.style.SUCCESS("✅ Field 'channel' BERHASIL TERDAFTAR (type='select', required=True) di FormDefinition."))
+            else:
+                self.stderr.write(self.style.ERROR(f"❌ Field 'channel' konfigurasi tidak sesuai: required={channel_f.required if channel_f else 'None'}, type={channel_f.field_type if channel_f else 'None'}"))
+        else:
+            self.stderr.write(self.style.ERROR("❌ Field 'channel' belum terdaftar di FormDefinition!"))
+
+        # Verify 3-column layout for cabang, channel, and brand (Penyelarasan Step 1)
+        cab_f = form_def.fields.filter(field_name="cabang").first()
+        chan_f = form_def.fields.filter(field_name="channel").first()
+        brand_f = form_def.fields.filter(field_name="brand").first()
+        if cab_f and chan_f and brand_f and cab_f.width == "third" and chan_f.width == "third" and brand_f.width == "third":
+            self.stdout.write(self.style.SUCCESS("✅ Tata Letak Step 1: 'cabang', 'channel', dan 'brand' terkonfigurasi 3 kolom simetris berdampingan (width='third')."))
+        else:
+            self.stderr.write(self.style.ERROR(f"❌ Tata Letak Step 1 tidak sesuai 3 kolom: cab={cab_f.width if cab_f else None}, chan={chan_f.width if chan_f else None}, brand={brand_f.width if brand_f else None}"))
+
+        # Verify SharedOptionList 'channel-list' (Poin 2)
+        sol_channel = SharedOptionList.objects.filter(slug="channel-list").first()
+        if sol_channel:
+            ch_choices = [c[0] for c in sol_channel.get_choices()]
+            expected_ch = ["Retail Mattress", "Retail Foam", "Industri"]
+            if ch_choices == expected_ch:
+                self.stdout.write(self.style.SUCCESS("✅ SharedOptionList 'channel-list' tepat 3 opsi: " + ", ".join(expected_ch)))
+            else:
+                self.stderr.write(self.style.ERROR(f"❌ SharedOptionList 'channel-list' mismatch: got {ch_choices}, expected {expected_ch}"))
+        else:
+            self.stderr.write(self.style.ERROR("❌ SharedOptionList 'channel-list' tidak ditemukan!"))
+
+        # Verify Durasi Kontrak readonly status (Poin 5)
+        durasi_f = form_def.fields.filter(field_name="durasi").first()
+        if durasi_f and durasi_f.readonly:
+            self.stdout.write(self.style.SUCCESS("✅ Field 'durasi' BERHASIL DIKUNCI (readonly=True) di FormDefinition."))
+        else:
+            self.stderr.write(self.style.ERROR("❌ Field 'durasi' belum berstatus readonly di FormDefinition!"))
+
+        # Verify Grace Period default value (Poin 6)
+        gp_f = form_def.fields.filter(field_name="grace_period").first()
+        if gp_f and gp_f.default_value == "1 Bulan":
+            self.stdout.write(self.style.SUCCESS("✅ Field 'grace_period' memiliki default_value='1 Bulan'."))
+        else:
+            self.stderr.write(self.style.ERROR(f"❌ Field 'grace_period' default_value tidak sesuai: got '{gp_f.default_value if gp_f else None}'"))
+
+        # Verify Jenis Pencairan Insentif field (Poin 7)
+        if "jenis_pencairan_insentif" in form_field_names:
+            jpi_f = form_def.fields.filter(field_name="jenis_pencairan_insentif").first()
+            if jpi_f and jpi_f.required and jpi_f.field_type == "select":
+                self.stdout.write(self.style.SUCCESS("✅ Field 'jenis_pencairan_insentif' BERHASIL TERDAFTAR (type='select', required=True) di FormDefinition."))
+            else:
+                self.stderr.write(self.style.ERROR(f"❌ Field 'jenis_pencairan_insentif' konfigurasi tidak sesuai!"))
+        else:
+            self.stderr.write(self.style.ERROR("❌ Field 'jenis_pencairan_insentif' belum terdaftar di FormDefinition!"))
+
+        # Verify SharedOptionList 'jenis-pencairan-insentif-list' (Poin 7)
+        sol_pencairan = SharedOptionList.objects.filter(slug="jenis-pencairan-insentif-list").first()
+        if sol_pencairan:
+            p_choices = [c[0] for c in sol_pencairan.get_choices()]
+            expected_p = ["Transfer/Giro", "Konversi Barang", "Transfer/Giro atau Konversi Barang"]
+            if p_choices == expected_p:
+                self.stdout.write(self.style.SUCCESS("✅ SharedOptionList 'jenis-pencairan-insentif-list' tepat 3 opsi: " + ", ".join(expected_p)))
+            else:
+                self.stderr.write(self.style.ERROR(f"❌ SharedOptionList 'jenis-pencairan-insentif-list' mismatch: got {p_choices}, expected {expected_p}"))
+        else:
+            self.stderr.write(self.style.ERROR("❌ SharedOptionList 'jenis-pencairan-insentif-list' tidak ditemukan!"))
+
+        # Verify Discount Checkbox Fields & Default Value (Poin 10)
+        disc_chk_fields = ["chk_diskon_mtht", "chk_diskon_mprto", "chk_diskon_mlcd"]
+        for dcf in disc_chk_fields:
+            if dcf in form_field_names:
+                self.stdout.write(self.style.SUCCESS(f"✅ Field toggle diskon '{dcf}' BERHASIL TERDAFTAR di FormDefinition."))
+            else:
+                self.stderr.write(self.style.ERROR(f"❌ Field toggle diskon '{dcf}' belum terdaftar di FormDefinition!"))
+
+        ds_f = form_def.fields.filter(field_name="discount_scheme").first()
+        if ds_f and ds_f.default_value and "MD1" in ds_f.default_value and "MD2" in ds_f.default_value and "MD3" in ds_f.default_value:
+            self.stdout.write(self.style.SUCCESS("✅ Field 'discount_scheme' memiliki default_value 3 baris fixed (MD1 40%, MD2 10%, MD3 5%)."))
+        else:
+            self.stderr.write(self.style.ERROR("❌ Field 'discount_scheme' belum memiliki default_value 3 baris fixed baku!"))
+
         # Verify kota_penandatanganan readonly status
         kota_f = form_def.fields.filter(field_name="kota_penandatanganan").first()
         if kota_f and kota_f.readonly:
@@ -97,16 +192,16 @@ class Command(BaseCommand):
             else:
                 self.stderr.write(self.style.ERROR(f"  ❌ Mismatch for {comp_name}: got '{res_rek}', expected '{expected_rek}'"))
 
-        # Verify 4 Official Brands in SharedOptionList 'brand-list'
-        self.stdout.write("\n" + self.style.MIGRATE_HEADING("--- AUDIT 4 BRAND RESMI SPK (SHARED OPTION LIST & NUMBERING) ---"))
+        # Verify 5 Official Brands in SharedOptionList 'brand-list'
+        self.stdout.write("\n" + self.style.MIGRATE_HEADING("--- AUDIT 5 BRAND RESMI SPK (SHARED OPTION LIST & NUMBERING) ---"))
         sol_brand = SharedOptionList.objects.filter(slug="brand-list").first()
         if sol_brand:
             choices = sol_brand.get_choices()
             choice_values = [c[0] for c in choices]
-            expected_brands = ["Lady Americana", "Elite", "Serenity", "Royal Foam"]
+            expected_brands = ["Lady Americana", "Elite Springbed", "Serenity", "Royal Foam", "Classic"]
             self.stdout.write(f"  SharedOptionList 'brand-list' values: {choice_values}")
             if choice_values == expected_brands:
-                self.stdout.write(self.style.SUCCESS("✅ Opsi brand di database tepat 4 brand resmi: " + ", ".join(expected_brands)))
+                self.stdout.write(self.style.SUCCESS("✅ Opsi brand di database tepat 5 brand resmi: " + ", ".join(expected_brands)))
             else:
                 self.stderr.write(self.style.ERROR(f"❌ Opsi brand tidak sesuai! Diharapkan {expected_brands}, didapat {choice_values}"))
         else:
@@ -115,14 +210,17 @@ class Command(BaseCommand):
         # Verify Brand SPK Numbering Code & Canonical Name
         brand_tests = [
             ("Lady Americana", "LADY", "Lady Americana"),
-            ("Elite", "ELITE", "Elite"),
+            ("Elite Springbed", "ELITE", "Elite Springbed"),
             ("Serenity", "SERENITY", "Serenity"),
             ("Royal Foam", "ROYAL", "Royal Foam"),
+            ("Classic", "CLASSIC", "Classic"),
             # Legacy inputs
             ("LADY AMERICANA", "LADY", "Lady Americana"),
-            ("ELITE", "ELITE", "Elite"),
+            ("ELITE", "ELITE", "Elite Springbed"),
+            ("Elite", "ELITE", "Elite Springbed"),
             ("SERENITY", "SERENITY", "Serenity"),
             ("ROYAL FOAM", "ROYAL", "Royal Foam"),
+            ("CLASSIC", "CLASSIC", "Classic"),
         ]
         for brand_input, expected_code, expected_canonical in brand_tests:
             spk_no = format_official_spk_number(1, brand_input, "Tangerang")
@@ -150,17 +248,37 @@ class Command(BaseCommand):
             else:
                 self.stderr.write(self.style.ERROR(f"  [ERR] Cabang '{br.upper()}' -> Diharapkan '{expected_pn}', didapat '{actual_pn}'"))
 
-        # Verify Pure Month Contract Duration (Poin 15)
-        self.stdout.write("\n" + self.style.MIGRATE_HEADING("--- AUDIT KALKULASI & NORMALISASI DURASI KONTRAK (POIN 15) ---"))
+        # Verify Duration Calculation & Normalization (Poin 5)
+        self.stdout.write("\n" + self.style.MIGRATE_HEADING("--- AUDIT KALKULASI & NORMALISASI DURASI KONTRAK (POIN 5) ---"))
+        from django_forms_workflows.company_profiles import calculate_contract_duration
+        # 4 Contoh Kasus Resmi
+        calc_cases = [
+            ("01/01/2025", "31/12/2025", "1 Tahun"),
+            ("01/01/2025", "31/01/2026", "1 Tahun 1 Bulan"),
+            ("01/01/2025", "28/02/2026", "1 Tahun 2 Bulan"),
+            ("01/01/2025", "31/01/2025", "1 Bulan"),
+            ("2025-01-01", "2025-12-31", "1 Tahun"),
+            ("2025-01-01", "2026-01-31", "1 Tahun 1 Bulan"),
+        ]
+        for s_val, e_val, expected_res in calc_cases:
+            res = calculate_contract_duration(s_val, e_val)
+            if res == expected_res:
+                self.stdout.write(self.style.SUCCESS(f"  [OK] Periode {s_val} s.d. {e_val} -> '{res}'"))
+            else:
+                self.stderr.write(self.style.ERROR(f"  [ERR] Periode {s_val} s.d. {e_val} -> Diharapkan '{expected_res}', didapat '{res}'"))
+
+        # Test string normalization
         durasi_tests = [
-            ("1 Tahun", "12 Bulan"),
-            ("1 Tahun 1 Bulan", "13 Bulan"),
-            ("2 Tahun", "24 Bulan"),
-            ("12 Bulan", "12 Bulan"),
-            ("13 Bulan", "13 Bulan"),
+            ("1 Tahun", "1 Tahun"),
+            ("1 Tahun 1 Bulan", "1 Tahun 1 Bulan"),
+            ("1 Tahun 2 Bulan", "1 Tahun 2 Bulan"),
+            ("2 Tahun", "2 Tahun"),
+            ("12 Bulan", "1 Tahun"),
+            ("13 Bulan", "1 Tahun 1 Bulan"),
             ("6 Bulan", "6 Bulan"),
-            ("18 Bulan", "18 Bulan"),
-            ("12", "12 Bulan"),
+            ("18 Bulan", "1 Tahun 6 Bulan"),
+            ("12", "1 Tahun"),
+            ("1", "1 Bulan"),
         ]
         for raw_val, expected_norm in durasi_tests:
             actual_norm = normalize_contract_duration(raw_val)
@@ -169,36 +287,70 @@ class Command(BaseCommand):
             else:
                 self.stderr.write(self.style.ERROR(f"  [ERR] Input durasi '{raw_val}' -> Diharapkan '{expected_norm}', didapat '{actual_norm}'"))
 
-        # Verify Branch-Isolated SPK Numbering & Roman Month Format (Revisi Poin 14)
-        self.stdout.write("\n" + self.style.MIGRATE_HEADING("--- AUDIT PENOMORAN SPK TERPISAH PER CABANG & FORMAT ROMAWI (POIN 14) ---"))
+        # Verify Branch-Isolated SPK Numbering & Roman Month Format (Bagian B Poin 1)
+        self.stdout.write("\n" + self.style.MIGRATE_HEADING("--- AUDIT PENOMORAN SPK TERPISAH PER CABANG & FORMAT ROMAWI (BAGIAN B POIN 1) ---"))
         import datetime
         oct_date = datetime.date(2026, 10, 29)
-        spk_sample = format_official_spk_number(
+        nov_date = datetime.date(2026, 11, 15)
+
+        # 1. Dokumen Resmi Contoh 1: Tangerang, Lady Americana, Okt 2026, RAS
+        spk_ex1 = format_official_spk_number(
             nomor=1,
-            brand="Serenity",
-            cabang="Bandung",
+            brand="Lady Americana",
+            cabang="Tangerang",
             date_val=oct_date,
             perusahaan="PT ROYAL ABADI SEJAHTERA",
         )
-        if spk_sample == "001/SERENITY/RAS/X/2026":
-            self.stdout.write(self.style.SUCCESS(f"  ✅ Format SPK Baku (Poin 14): '{spk_sample}' tepat sesuai spesifikasi resmi."))
+        if spk_ex1 == "001/SK-RAS/TANGERANG/LADY/X/2026":
+            self.stdout.write(self.style.SUCCESS(f"  ✅ Format SPK Resmi Contoh 1: '{spk_ex1}' tepat sesuai spesifikasi resmi."))
         else:
-            self.stderr.write(self.style.ERROR(f"  ❌ Format SPK tidak sesuai: got '{spk_sample}', expected '001/SERENITY/RAS/X/2026'"))
+            self.stderr.write(self.style.ERROR(f"  ❌ Format SPK Contoh 1 tidak sesuai: got '{spk_ex1}', expected '001/SK-RAS/TANGERANG/LADY/X/2026'"))
 
-        # Test 5 Company Profiles mapping to short codes
+        # 2. Dokumen Resmi Contoh 2: Cabang Pusat, Lady Americana, Nov 2026, RAS
+        spk_ex2 = format_official_spk_number(
+            nomor=1,
+            brand="Lady Americana",
+            cabang="Pusat",
+            date_val=nov_date,
+            perusahaan="PT ROYAL ABADI SEJAHTERA",
+        )
+        if spk_ex2 == "001/SK-RAS/PUSAT/LADY/XI/2026":
+            self.stdout.write(self.style.SUCCESS(f"  ✅ Format SPK Resmi Contoh 2 (Pusat): '{spk_ex2}' tepat sesuai spesifikasi resmi."))
+        else:
+            self.stderr.write(self.style.ERROR(f"  ❌ Format SPK Contoh 2 tidak sesuai: got '{spk_ex2}', expected '001/SK-RAS/PUSAT/LADY/XI/2026'"))
+
+        # Test 5 Company Profiles mapping to SK- prefix and short codes
         pt_expected = [
-            ("PT ANUGRAH CEMERLANG ABADI", "ACA"),
-            ("PT BANGUN CIPTA PRIMATARA", "BCP"),
-            ("PT BESTARI MULIA", "BM"),
-            ("PT CEMERLANG ABADI MULIA", "CAM"),
-            ("PT ROYAL ABADI SEJAHTERA", "RAS"),
+            ("PT ANUGRAH CEMERLANG ABADI", "SK-ACA"),
+            ("PT BANGUN CIPTA PRIMATARA", "SK-BCP"),
+            ("PT BESTARI MULIA", "SK-BM"),
+            ("PT CEMERLANG ABADI MULIA", "SK-CAM"),
+            ("PT ROYAL ABADI SEJAHTERA", "SK-RAS"),
         ]
         for pt_name, expected_code in pt_expected:
-            res_no = format_official_spk_number(1, "Elite", perusahaan=pt_name, date_val=oct_date)
-            if f"/{expected_code}/" in res_no:
-                self.stdout.write(self.style.SUCCESS(f"  ✅ Pemetaan PT: '{pt_name}' -> Short Code '{expected_code}' ({res_no})"))
+            res_no = format_official_spk_number(1, "Elite", cabang="Bandung", perusahaan=pt_name, date_val=oct_date)
+            if f"/{expected_code}/" in res_no and "/BANDUNG/" in res_no:
+                self.stdout.write(self.style.SUCCESS(f"  ✅ Pemetaan PT: '{pt_name}' -> Code '{expected_code}' ({res_no})"))
             else:
                 self.stderr.write(self.style.ERROR(f"  ❌ Pemetaan PT gagal: '{pt_name}' -> '{res_no}'"))
+
+        # Test Brand to PT Affiliation mapping
+        self.stdout.write("\n" + self.style.MIGRATE_HEADING("--- AUDIT AFILIASI PT BERDASARKAN BRAND ---"))
+        from django_forms_workflows.company_profiles import resolve_company_profile
+        brand_pt_expected = [
+            ("Classic", "PT. ROYAL ABADI SEJAHTERA", "RAS"),
+            ("Royal Foam", "PT. ROYAL ABADI SEJAHTERA", "RAS"),
+            ("Lady Americana", "PT. ANUGRAH CEMERLANG ABADI", "ACA"),
+            ("Elite Springbed", "PT. ANUGRAH CEMERLANG ABADI", "ACA"),
+            ("Elite", "PT. ANUGRAH CEMERLANG ABADI", "ACA"),
+            ("Serenity", "PT. ANUGRAH CEMERLANG ABADI", "ACA"),
+        ]
+        for b_name, expected_pt, expected_short in brand_pt_expected:
+            prof = resolve_company_profile(form_data={"brand": b_name})
+            if prof.get("short_code") == expected_short and prof.get("display_name") == expected_pt:
+                self.stdout.write(self.style.SUCCESS(f"  ✅ Brand '{b_name}' -> Afiliasi PT '{expected_pt}' ({expected_short})"))
+            else:
+                self.stderr.write(self.style.ERROR(f"  ❌ Brand '{b_name}' gagal: got {prof.get('display_name')} ({prof.get('short_code')}), expected {expected_pt} ({expected_short})"))
 
         # Test Branch-Isolated Sequence
         test_sub_bdg = FormSubmission.objects.create(
@@ -230,12 +382,12 @@ class Command(BaseCommand):
             }
         ]
         discount_scheme_data = [
-            {
-                "komponen": "Diskon Reguler Toko",
-                "nilai": "15%",
-                "tipe": "Persentase",
-                "keterangan": "Khusus Kasur 160x200 & 180x200",
-            }
+            {"komponen": "MD1", "nilai": "40%", "tipe": "Persentase", "keterangan": "—"},
+            {"komponen": "MD2", "nilai": "10%", "tipe": "Persentase", "keterangan": "—"},
+            {"komponen": "MD3", "nilai": "5%",  "tipe": "Persentase", "keterangan": "—"},
+            {"komponen": "Thematic", "nilai": "0%", "tipe": "Persentase", "keterangan": "Program Thematik yang berlaku"},
+            {"komponen": "MPRTO", "nilai": "5%", "tipe": "Persentase", "keterangan": "(Pareto)"},
+            {"komponen": "MLCD", "nilai": "5%", "tipe": "Persentase", "keterangan": "(Tambahan)"},
         ]
         tier_support_data = [
             {
@@ -248,7 +400,8 @@ class Command(BaseCommand):
         ]
 
         test_payload = {
-            # Step 1: Identitas & Legalitas Toko (NIK 16 digit & NPWP terpisah, 4 Official Brands)
+            # Step 1: Identitas & Legalitas Toko (NIK 16 digit & NPWP terpisah, 5 Official Brands, Channel)
+            "channel": "Retail Mattress",
             "brand": "Lady Americana",
             "cabang": "BANDUNG",
             "perusahaan": "PT. ROYAL ABADI SEJAHTERA",
@@ -260,34 +413,29 @@ class Command(BaseCommand):
             "nomor_npwp": "01.234.567.8-428.000",
             "no_telepon": "081234567890",
             "email": "makmur.jaya@example.com",
-            "nomor_spk": "001/LADY/RAS/X/2026",
+            "nomor_spk": "001/SK-RAS/BANDUNG/LADY/X/2026",
 
             # Step 2 - Card 1: Periode & Masa Berlaku Kontrak (Pasal 4 / 5)
             "tanggal_mulai": "2026-11-01",
             "tanggal_berakhir": "2027-10-31",
-            "durasi": "12 Bulan",
+            "durasi": "1 Tahun",
             "grace_period": "1 Bulan",
 
             # Step 2 - Card 2: Target Penjualan & Skema Insentif (Pasal 3 - Default Exclude Ppn)
             "target_incentive": json.dumps(target_incentive_data),
+            "jenis_pencairan_insentif": "Transfer/Giro",
 
-            # Step 2 - Card 3: Skema Diskon Produk & Ketentuan DO (Pasal 5 / 6)
-            "discount_do": "2.5",
-            "ketentuan_do": "Jatuh tempo sebelum pengambilan barang DO",
+            # Step 2 - Card 3: Skema Diskon Produk (Pasal 5 / 6)
+            "chk_diskon_mtht": True,
+            "chk_diskon_mprto": True,
+            "chk_diskon_mlcd": True,
             "discount_scheme": json.dumps(discount_scheme_data),
 
-            # Step 2 - Card 4: Fasilitas & Dukungan Promosi (Pasal 4 & 7 Promo)
-            "is_support_provided": True,
-            "pct_support_promo": "5.0",
-            "frekuensi_pencairan": "Per Kuartal",
-            "komponen_biaya": ["Sewa", "Listrik", "Instore"],
-            "tier_support": json.dumps(tier_support_data),
-
-            # Step 2 - Card 5: Tata Cara & Ketentuan Pembayaran (BAB III - Pasal 7, 8, 9)
+            # Step 2 - Card 4: Tata Cara & Ketentuan Pembayaran (BAB III - Pasal 7, 8, 9, 10)
             "top": 60,
-            "rekening_perusahaan": "BCA 084-3012899 a/n PT Bestari Mulia",
+            "rekening_perusahaan": "BCA Cimahi - Bandung 139 8826 999 (IDR) a/n PT. ROYAL ABADI SEJAHTERA",
 
-            # Step 2 - Card 6: Ketentuan Akhir & Tempat Pengesahan (BAB IV & Penutup)
+            # Step 2 - Card 5: Ketentuan Akhir & Tempat Pengesahan (BAB IV & Penutup)
             "kota_penandatanganan": "Bandung",
             "tanggal_penandatanganan": "2026-10-28",
         }
@@ -301,16 +449,11 @@ class Command(BaseCommand):
         )
         self.stdout.write(self.style.SUCCESS(f"\n[1] Berhasil menyimpan draft pengujian: ID #{submission.id}"))
 
-        # 4. Fetch Templates (Standard and Support Promosi)
+        # 4. Fetch Standard Template (11 Pasal)
         tpl_standard = DocumentTemplate.objects.filter(
             form_definition=form_def,
             name__icontains="Standard"
         ).first() or DocumentTemplate.objects.filter(form_definition=form_def).first()
-
-        tpl_support = DocumentTemplate.objects.filter(
-            form_definition=form_def,
-            name__icontains="Support Promosi"
-        ).first()
 
         if not tpl_standard:
             self.stderr.write(self.style.ERROR("DocumentTemplate Standard not found!"))
@@ -319,8 +462,6 @@ class Command(BaseCommand):
         templates_to_test = [
             ("SPK Standard (11 Pasal)", tpl_standard),
         ]
-        if tpl_support:
-            templates_to_test.append(("SPK Support Promosi (12 Pasal)", tpl_support))
 
         # 5. Audit Each Template
         fields_to_audit = [
@@ -336,18 +477,15 @@ class Command(BaseCommand):
             ("tanggal_mulai", "Card 1 (Pasal 4 / 5)", "Tanggal Mulai Kontrak", True),
             ("tanggal_berakhir", "Card 1 (Pasal 4 / 5)", "Tanggal Berakhir Kontrak", True),
             ("durasi", "Card 1 (Pasal 4 / 5)", "Durasi Kontrak", True),
-            ("grace_period", "Card 1 (Pasal 4 / 5)", "Grace Period / Masa Tenggang", True),
+            ("grace_period", "Card 1 (Pasal 4 / 5)", "Grace Period (Tidak di SPK)", True),
             ("target_volume_text", "Card 2 (Pasal 3)", "Target Penjualan Bulanan (Rp)", True),
             ("target_incentive_table", "Card 2 (Pasal 3)", "Tabel Dynamic Grid Tier Target", True),
+            ("jenis_pencairan_insentif", "Card 2 (Pasal 3)", "Pencairan Insentif (DB)", True),
             ("discount_scheme_table", "Card 3 (Pasal 5 / 6)", "Tabel Dynamic Grid Diskon Produk", True),
-            ("discount_do", "Card 3 (Pasal 5 / 6)", "Diskon Delivery Order (DO %)", True),
-            ("ketentuan_do", "Card 3 (Pasal 5 / 6)", "Ketentuan Pengambilan DO", True),
-            ("pct_support_promo", "Card 4 (Pasal 4 / 7 Promo)", "Persentase Support Promo (%)", False),
-            ("tier_support_table", "Card 4 (Pasal 7 Promo)", "Tabel Dynamic Grid Tier Support", False),
-            ("top", "Card 5 (BAB III - Pembayaran)", "Term of Payment (Hari)", True),
-            ("rekening_perusahaan", "Card 5 (BAB III - Pembayaran)", "Rekening Resmi Pembayaran", True),
-            ("kota_penandatanganan", "Card 6 (Tempat Pengesahan)", "Kota Tanda Tangan", True),
-            ("tanggal_penandatanganan", "Card 6 (Tanggal Pengesahan)", "Tanggal Tanda Tangan", True),
+            ("top", "Card 4 (BAB III - Pembayaran)", "Term of Payment (Hari)", True),
+            ("rekening_perusahaan", "Card 4 (BAB III - Pembayaran)", "Rekening Resmi Pembayaran", True),
+            ("kota_penandatanganan", "Card 5 (Tempat Pengesahan)", "Kota Tanda Tangan", True),
+            ("tanggal_penandatanganan", "Card 5 (Tanggal Pengesahan)", "Tanggal Tanda Tangan", True),
         ]
 
         for tpl_label, tpl in templates_to_test:
@@ -385,8 +523,8 @@ class Command(BaseCommand):
                 snippet = ""
 
                 if f_name == "nomor_spk":
-                    is_rendered = bool(re.search(r"001/LADY/RAS/X/2026", rendered_html)) or bool(re.search(r"SURAT PERJANJIAN KERJASAMA", rendered_html))
-                    snippet = "001/LADY/RAS/X/2026 Terformat"
+                    is_rendered = bool(re.search(r"001/SK-RAS/BANDUNG/LADY/X/2026", rendered_html)) or bool(re.search(r"SURAT PERJANJIAN KERJASAMA", rendered_html))
+                    snippet = "001/SK-RAS/BANDUNG/LADY/X/2026 Terformat"
                 elif f_name == "pengadilan_negeri":
                     is_rendered = "Bale Bandung" in rendered_html
                     snippet = "PN Bale Bandung (Cabang Bandung)"
@@ -394,8 +532,10 @@ class Command(BaseCommand):
                     is_rendered = "250.000.000" in rendered_html or "Tier Platinum" in rendered_html
                     snippet = "Tabel Tier 250 Jt Ter-render"
                 elif f_name == "discount_scheme_table":
-                    is_rendered = "Diskon Reguler Toko" in rendered_html
-                    snippet = "Tabel Diskon 15% Ter-render"
+                    has_fixed = all(k in rendered_html for k in ["MD1", "40%", "MD2", "10%", "MD3", "5%"])
+                    has_dynamic = all(k in rendered_html for k in ["Thematic", "0%", "MPRTO", "MLCD"])
+                    is_rendered = has_fixed and has_dynamic
+                    snippet = "6 Baris (3 Fixed + 3 Dinamis)"
                 elif f_name == "tier_support_table":
                     if "Support" in tpl_label:
                         is_rendered = "3.000.000.000" in rendered_html or "147.000.000" in rendered_html
@@ -421,6 +561,13 @@ class Command(BaseCommand):
                     expected_date = format_date_indonesia(val)
                     is_rendered = (expected_date in rendered_html) and (str(val) not in rendered_html)
                     snippet = f"{expected_date} (Baku ID)"
+                elif f_name == "grace_period":
+                    # Grace Period (Poin 6) must NOT be printed in SPK template
+                    is_rendered = ("grace period" not in rendered_html.lower()) and ("masa tenggang" not in rendered_html.lower())
+                    snippet = "(Poin 6: Tidak dicetak di SPK)"
+                elif f_name == "jenis_pencairan_insentif":
+                    is_rendered = in_db
+                    snippet = f"{val} (DB Stored)"
                 elif val is not None:
                     str_val = str(val)
                     is_rendered = str_val in rendered_html
@@ -449,6 +596,33 @@ class Command(BaseCommand):
                 all_passed = False
             else:
                 self.stdout.write(self.style.SUCCESS(f"✅ Sempurna: 0 token mentah {{...}} tersisa pada template {tpl_label}."))
+
+            # Verify Poin 6: Grace Period tidak boleh muncul di SPK rendered_html
+            if "grace period" not in rendered_html.lower() and "masa tenggang" not in rendered_html.lower():
+                self.stdout.write(self.style.SUCCESS("✅ Grace Period (Poin 6): Tidak dicetak pada dokumen SPK."))
+            else:
+                self.stderr.write(self.style.ERROR("❌ Grace Period (Poin 6): Masih muncul di dokumen SPK!"))
+                all_passed = False
+
+            # Verify Poin 8 & 9: discount_do dan ketentuan_do tidak boleh muncul di SPK rendered_html
+            if "discount_do" not in rendered_html and "ketentuan_do" not in rendered_html and "diskon do" not in rendered_html.lower():
+                self.stdout.write(self.style.SUCCESS("✅ Eliminasi DO (Poin 8 & 9): Bersih dari klausul Diskon DO & Ketentuan DO."))
+            else:
+                self.stderr.write(self.style.ERROR("❌ Eliminasi DO (Poin 8 & 9): Masih terdapat klausul DO di SPK template!"))
+                all_passed = False
+
+            # Verify Poin 10: Discount Scheme Fixed & Dynamic Rows
+            if all(k in rendered_html for k in ["MD1", "40%", "MD2", "10%", "MD3", "5%"]):
+                self.stdout.write(self.style.SUCCESS("✅ Skema Diskon (Poin 10): 3 Baris Baku Fixed (MD1 40%, MD2 10%, MD3 5%) ter-render sempurna."))
+            else:
+                self.stderr.write(self.style.ERROR("❌ Skema Diskon (Poin 10): Baris fixed MD1/MD2/MD3 tidak lengkap di template!"))
+                all_passed = False
+
+            if all(k in rendered_html for k in ["Thematic", "0%", "MPRTO", "MLCD"]):
+                self.stdout.write(self.style.SUCCESS("✅ Skema Diskon (Poin 10): Baris dinamis Thematic (0%), MPRTO (5%), MLCD (5%) ter-render lengkap."))
+            else:
+                self.stderr.write(self.style.ERROR("❌ Skema Diskon (Poin 10): Baris dinamis Thematic/MPRTO/MLCD tidak ditemukan di template!"))
+                all_passed = False
 
             # Verify Pasal 3 Ayat (1) contains Exclude Ppn
             if re.search(r"per bulan Exclude Ppn", rendered_html, re.IGNORECASE):
@@ -550,8 +724,8 @@ class Command(BaseCommand):
             assert format_komponen_biaya_legal_text([]) == "sewa, listrik, instore, pameran, dan asuransi"
 
             # 3. Test context data injection
-            if ctx.get("komponen_biaya") == "sewa, listrik, dan instore":
-                self.stdout.write(self.style.SUCCESS(f"✅ Template Context (Poin 10): context['komponen_biaya'] ter-format legal tepat ('{ctx.get('komponen_biaya')}')."))
+            if ctx.get("komponen_biaya") == "sewa, listrik, instore, pameran, dan asuransi":
+                self.stdout.write(self.style.SUCCESS(f"✅ Template Context (Poin 10): context['komponen_biaya'] fallback aman ('{ctx.get('komponen_biaya')}')."))
             else:
                 self.stderr.write(self.style.ERROR(f"❌ Template Context (Poin 10): context['komponen_biaya'] tidak sesuai (got '{ctx.get('komponen_biaya')}')."))
                 all_passed = False

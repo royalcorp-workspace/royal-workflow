@@ -207,7 +207,7 @@
             <div class="review-kv-item">
               <span class="review-kv-label">Durasi Kontrak</span>
               <span class="review-kv-value fw-semibold">
-                {% if 'Bulan' in form_data.durasi %}{{ form_data.durasi }}{% elif form_data.durasi %}{{ form_data.durasi }} Bulan{% else %}12 Bulan{% endif %}
+                {% if 'Tahun' in form_data.durasi or 'Bulan' in form_data.durasi %}{{ form_data.durasi }}{% elif form_data.durasi %}{{ form_data.durasi }} Bulan{% else %}—{% endif %}
               </span>
             </div>
           </div>
@@ -223,7 +223,7 @@
 
         <div class="border-top my-3"></div>
 
-        <!-- Baris 2: Pembayaran & Diskon DO (4 Kolom Simetris) -->
+        <!-- Baris 2: Pembayaran & Pencairan Insentif -->
         <div class="row g-3">
           <div class="col-sm-6 col-md-3">
             <div class="review-kv-item">
@@ -237,16 +237,10 @@
               <span class="review-kv-value">Transfer / Cek / Giro</span>
             </div>
           </div>
-          <div class="col-sm-6 col-md-3">
+          <div class="col-sm-12 col-md-6">
             <div class="review-kv-item">
-              <span class="review-kv-label">Diskon DO (%)</span>
-              <span class="review-kv-value font-monospace fw-semibold">{{ form_data.discount_do|default:"0" }}%</span>
-            </div>
-          </div>
-          <div class="col-sm-6 col-md-3">
-            <div class="review-kv-item">
-              <span class="review-kv-label">Ketentuan DO</span>
-              <span class="review-kv-value">{{ form_data.ketentuan_do|default:"Jatuh tempo sebelum pengambilan barang DO" }}</span>
+              <span class="review-kv-label">Jenis Pencairan Insentif</span>
+              <span class="review-kv-value fw-semibold text-primary">{{ form_data.jenis_pencairan_insentif|default:"Transfer/Giro" }}</span>
             </div>
           </div>
         </div>
@@ -281,92 +275,7 @@
     </div>
   </div>
 
-  <!-- ==================== 4. FASILITAS DUKUNGAN PROMOSI ==================== -->
-  <div class="accordion-item review-accordion-item border-0 border-bottom">
-    <h2 class="accordion-header" id="headingGrupSupport">
-      <button class="accordion-button collapsed review-accordion-btn py-2 px-3" type="button"
-              data-bs-toggle="collapse" data-bs-target="#collapseGrupSupport"
-              aria-expanded="false" aria-controls="collapseGrupSupport">
-        <div class="d-flex align-items-center justify-content-between w-100 pe-3 flex-wrap gap-2">
-          <div class="d-flex align-items-center gap-2">
-            <i class="bi bi-megaphone text-secondary" style="font-size: 14px;"></i>
-            <span class="review-section-title">4. Fasilitas Dukungan Promosi</span>
-          </div>
-          <span class="review-section-meta text-muted small font-monospace">
-            {% if form_data.is_support_provided in 'True,true,1,on' or form_data.is_support_provided is True %}
-              Support Promosi {{ form_data.pct_support_promo|default:"5" }}%
-            {% else %}
-              Kontrak Reguler (Tanpa Support)
-            {% endif %}
-          </span>
-        </div>
-      </button>
-    </h2>
-    <div id="collapseGrupSupport" class="accordion-collapse collapse" aria-labelledby="headingGrupSupport">
-      <div class="accordion-body px-3.5 py-3 bg-white border-top">
-        {% if form_data.is_support_provided in 'True,true,1,on' or form_data.is_support_provided is True %}
-          <!-- Baris 1: Komersial Support (4 Kolom Simetris) -->
-          <div class="row g-3">
-            <div class="col-sm-6 col-md-3">
-              <div class="review-kv-item">
-                <span class="review-kv-label">Status Support</span>
-                <span class="review-kv-value fw-semibold">Diberikan Fasilitas Support</span>
-              </div>
-            </div>
-            <div class="col-sm-6 col-md-3">
-              <div class="review-kv-item">
-                <span class="review-kv-label">Persentase Support %</span>
-                <span class="review-kv-value font-monospace fw-semibold">{{ form_data.pct_support_promo|default:"5.0" }}%</span>
-              </div>
-            </div>
-            <div class="col-sm-6 col-md-3">
-              <div class="review-kv-item">
-                <span class="review-kv-label">Frekuensi Pencairan</span>
-                <span class="review-kv-value">{{ form_data.frekuensi_pencairan|default:"Per Kuartal" }}</span>
-              </div>
-            </div>
-            <div class="col-sm-6 col-md-3">
-              <div class="review-kv-item">
-                <span class="review-kv-label">Syarat Pencairan</span>
-                <span class="review-kv-value fw-semibold">Setelah pembayaran LUNAS</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="border-top my-3"></div>
-
-          <!-- Baris 2: Komponen Biaya Support (Full Width) -->
-          <div class="row g-3">
-            <div class="col-12">
-              <div class="review-kv-item">
-                <span class="review-kv-label">Komponen Biaya Support</span>
-                <div class="review-kv-value">{{ form_data.komponen_biaya|render_komponen_biaya_badges }}</div>
-                <span class="text-muted mt-1 small" style="font-size: 11.5px;">
-                  * Sesuai ketentuan Pasal 4, support promosi tidak mencakup biaya Billboard, Pajak Billboard, dan Backdrop toko baru.
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Dynamic Grid 5: Tier Support Tahunan -->
-          {% if form_data.tier_support and form_data.tier_support != '[]' and form_data.tier_support != '""' and form_data.tier_support != 'null' and form_data.tier_support != '—' %}
-          <div class="review-table-section">
-            <div class="review-table-title"><i class="bi bi-layers text-secondary"></i>Tabel Tier Support Tahunan / Biaya Sewa (Pasal 7 Support)</div>
-            <div class="table-responsive w-100">
-              {{ form_data.tier_support|render_grid_table }}
-            </div>
-          </div>
-          {% endif %}
-        {% else %}
-          <div class="text-muted small fst-italic">
-            <i class="bi bi-info-circle me-1"></i>Kontrak Reguler: Pengajuan ini tidak menyertakan fasilitas tambahan dukungan promosi atau biaya sewa (SPK Standard 11 Pasal).
-          </div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-
-  <!-- ==================== 5. KETENTUAN PENGESAHAN & REKENING ==================== -->
+  <!-- ==================== 4. KETENTUAN PENGESAHAN & REKENING ==================== -->
   <div class="accordion-item review-accordion-item border-0">
     <h2 class="accordion-header" id="headingGrupPengesahan">
       <button class="accordion-button collapsed review-accordion-btn py-2 px-3" type="button"
@@ -375,7 +284,7 @@
         <div class="d-flex align-items-center justify-content-between w-100 pe-3 flex-wrap gap-2">
           <div class="d-flex align-items-center gap-2">
             <i class="bi bi-pen text-secondary" style="font-size: 14px;"></i>
-            <span class="review-section-title">5. Ketentuan Pengesahan &amp; Rekening</span>
+            <span class="review-section-title">4. Ketentuan Pengesahan &amp; Rekening</span>
           </div>
           <span class="review-section-meta text-muted small font-monospace">
             {{ form_data.kota_penandatanganan|default:"Bandung" }} &middot; {{ form_data.tanggal_penandatanganan|format_date_indonesia }}
@@ -402,7 +311,7 @@
           <div class="col-md-4">
             <div class="review-kv-item">
               <span class="review-kv-label">Rekening Resmi Perusahaan</span>
-              <span class="review-kv-value font-monospace fw-semibold">{{ form_data.rekening_perusahaan|default:"BCA 084-3012899 a/n PT Bestari Mulia" }}</span>
+              <span class="review-kv-value font-monospace fw-semibold">{{ form_data.rekening_perusahaan|default:"BCA Cimahi - Bandung 139 8826 999 (IDR) a/n PT. ROYAL ABADI SEJAHTERA" }}</span>
             </div>
           </div>
         </div>

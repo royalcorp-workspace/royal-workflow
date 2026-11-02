@@ -304,7 +304,7 @@
         if (wrapper.querySelector('.wizard-step-pane')) return;
 
         const STEP1_FIELDS = new Set([
-            'nomor_spk', 'cabang', 'brand', 'perusahaan',
+            'nomor_spk', 'cabang', 'channel', 'brand', 'perusahaan',
             'kode_customer_jde', 'nama_toko', 'nama_pemilik', 'alamat_toko',
             'no_telepon', 'email', 'kota', 'nomor_nik', 'nomor_npwp', 'jenis_identitas', 'nomor_identitas',
             'asset_toko', 'market_share'
@@ -312,10 +312,8 @@
 
         const STEP2_FIELDS = new Set([
             'info_kontrak_lama', 'tanggal_mulai', 'tanggal_berakhir', 'durasi', 'grace_period',
-            'top', 'is_support_provided', 'support_promosi',
-            'target_incentive', 'pct_support_promo', 'frekuensi_pencairan',
-            'komponen_biaya', 'discount_scheme',
-            'tier_support', 'discount_do', 'ketentuan_do',
+            'top', 'target_incentive', 'jenis_pencairan_insentif',
+            'chk_diskon_mtht', 'chk_diskon_mprto', 'chk_diskon_mlcd', 'discount_scheme',
             'kota_penandatanganan', 'tanggal_penandatanganan', 'rekening_perusahaan'
         ]);
 
@@ -1065,10 +1063,20 @@
                 months += 1;
             } else if (end.getDate() >= start.getDate()) {
                 months += 1;
+            const totalMonths = Math.max(1, months);
+            const years = Math.floor(totalMonths / 12);
+            const remMonths = totalMonths % 12;
+
+            let result = '';
+            if (years > 0 && remMonths > 0) {
+                result = `${years} Tahun ${remMonths} Bulan`;
+            } else if (years > 0) {
+                result = `${years} Tahun`;
+            } else {
+                result = `${remMonths} Bulan`;
             }
 
-            const totalMonths = Math.max(1, months);
-            durasiInput.value = `${totalMonths} Bulan`;
+            durasiInput.value = result;
             durasiInput.dispatchEvent(new Event('change', { bubbles: true }));
             durasiInput.dispatchEvent(new Event('input', { bubbles: true }));
         }
@@ -1112,7 +1120,7 @@
             const bUpper = brandVal.toUpperCase();
             const cUpper = compVal.toUpperCase();
             
-            // Clean Brand Code (4 Official Brands: LADY, ROYAL, SERENITY, ELITE)
+            // Clean Brand Code (5 Official Brands: LADY, ROYAL, SERENITY, ELITE, CLASSIC)
             let brandCode = 'LADY';
             if (bUpper.includes('LADY')) {
                 brandCode = 'LADY';
@@ -1122,6 +1130,8 @@
                 brandCode = 'SERENITY';
             } else if (bUpper.includes('ELITE')) {
                 brandCode = 'ELITE';
+            } else if (bUpper.includes('CLASSIC')) {
+                brandCode = 'CLASSIC';
             } else {
                 brandCode = brandVal.split(' ')[0].toUpperCase().replace(/[^A-Z0-9]/g, '') || 'LADY';
             }
@@ -1151,7 +1161,8 @@
                 seq = String(n).padStart(3, '0');
             }
 
-            spkInput.value = `${seq}/${brandCode}/${ptCode}/${monthRoman}/${year}`;
+            const cabClean = (cabangVal || 'PUSAT').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'PUSAT';
+            spkInput.value = `${seq}/SK-${ptCode}/${cabClean}/${brandCode}/${monthRoman}/${year}`;
             spkInput.dispatchEvent(new Event('input', { bubbles: true }));
             spkInput.dispatchEvent(new Event('change', { bubbles: true }));
         }
@@ -1232,21 +1243,21 @@
             const c = (compName || '').toUpperCase();
             const b = (brandName || '').toUpperCase();
             if (c.includes('PRIMATARA') || c.includes('BANGUN CIPTA') || c === 'BCP') {
-                return 'BCA KCU CIMAHI 139.9888.777 (IDR) a/n PT. BANGUN CIPTA PRIMATARA';
+                return 'BCA Cimahi - Bandung 139 8826 999 (IDR) a/n PT. BANGUN CIPTA PRIMATARA';
             }
             if (c.includes('BESTARI') || c === 'BM') {
-                return 'BCA KCU CIMAHI 139.9888.777 (IDR) a/n PT. BESTARI MULIA';
+                return 'BCA Cimahi - Bandung 139 8075 888 (IDR) a/n PT. BESTARI MULIA';
             }
             if (c.includes('CEMERLANG ABADI MULIA') || c.includes('ABADI MULIA') || c === 'CAM') {
-                return 'BCA CIMAHI – BANDUNG 139.9183.888 (IDR) a/n PT. CEMERLANG ABADI MULIA';
+                return 'BCA Cimahi - Bandung 139 9183 888 (IDR) a/n PT. CEMERLANG ABADI MULIA';
             }
             if (c.includes('ANUGRAH') || c === 'ACA') {
-                return 'BCA CIMAHI – BANDUNG 139.9183.888 (IDR) a/n PT. ANUGRAH CEMERLANG ABADI';
+                return 'BCA Cimahi - Bandung 139 9183 888 (IDR) a/n PT. ANUGRAH CEMERLANG ABADI';
             }
             if (c.includes('SEJAHTERA') || c.includes('RAS') || c.includes('ROYAL') || b.includes('ROYAL') || b.includes('FOAM')) {
-                return 'BCA KCU CIMAHI 139.9888.777 (IDR) a/n PT. ROYAL ABADI SEJAHTERA';
+                return 'BCA Cimahi - Bandung 139 8826 999 (IDR) a/n PT. ROYAL ABADI SEJAHTERA';
             }
-            return 'BCA KCU CIMAHI 139.9888.777 (IDR) a/n PT. ROYAL ABADI SEJAHTERA';
+            return 'BCA Cimahi - Bandung 139 8826 999 (IDR) a/n PT. ROYAL ABADI SEJAHTERA';
         }
 
         function syncRekeningPerusahaan() {
@@ -1406,7 +1417,7 @@
             }
             const b = brandName.trim().toUpperCase();
 
-            // 4 Brand Resmi SPK:
+            // 5 Brand Resmi SPK:
             if (b.includes('LADY')) {
                 return 'LADY (RP)';
             }
@@ -1418,6 +1429,9 @@
             }
             if (b.includes('ROYAL') || b.includes('FOAM')) {
                 return 'ROYAL FOAM (RP)';
+            }
+            if (b.includes('CLASSIC')) {
+                return 'CLASSIC (RP)';
             }
 
             return `${b} (RP)`;
@@ -1745,20 +1759,51 @@
         render();
     }
 
-    // --- Grid 4: Discount Scheme ---
+    // --- Grid 4: Discount Scheme (MD1, MD2, MD3 Fixed + Checkbox MTHT, MPRTO, MLCD) ---
     function setupDiscountSchemeGrid(form) {
         const field = form.querySelector('[name="discount_scheme"]');
         if (!field) return;
 
         field.style.display = 'none';
-        const container = createGridContainer(field, 'Discount Scheme (Pasal 6)', 'Rincian komponen potongan harga dan diskon khusus.', 'discount_scheme');
+        const container = createGridContainer(field, 'Discount Scheme (Pasal 5 / 6)', 'Rincian komponen potongan harga reguler dan program diskon khusus.', 'discount_scheme');
+
+        const FIXED_KOMPONEN = ['MD1', 'MD2', 'MD3'];
+        const DYNAMIC_DISCOUNTS = {
+            mtht: {
+                komponen: 'Thematic',
+                nilai: '0%',
+                tipe: 'Persentase',
+                keterangan: 'Program Thematik yang berlaku',
+                matches: (k) => ['thematic', 'mtht'].includes(String(k || '').trim().toLowerCase())
+            },
+            mprto: {
+                komponen: 'MPRTO',
+                nilai: '5%',
+                tipe: 'Persentase',
+                keterangan: '(Pareto)',
+                matches: (k) => String(k || '').trim().toLowerCase() === 'mprto'
+            },
+            mlcd: {
+                komponen: 'MLCD',
+                nilai: '5%',
+                tipe: 'Persentase',
+                keterangan: '(Tambahan)',
+                matches: (k) => String(k || '').trim().toLowerCase() === 'mlcd'
+            }
+        };
 
         function getRows() {
             try {
-                return JSON.parse(field.value || '[]');
-            } catch (e) {
-                return [];
-            }
+                const parsed = JSON.parse(field.value || '[]');
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    return parsed;
+                }
+            } catch (e) {}
+            return [
+                { komponen: 'MD1', nilai: '40%', tipe: 'Persentase', keterangan: '—' },
+                { komponen: 'MD2', nilai: '10%', tipe: 'Persentase', keterangan: '—' },
+                { komponen: 'MD3', nilai: '5%',  tipe: 'Persentase', keterangan: '—' }
+            ];
         }
 
         function saveRows(rows) {
@@ -1770,27 +1815,69 @@
             let rows = getRows();
             if (!rows.length) {
                 rows = [
-                    { komponen: '', nilai: '0%', tipe: 'Persentase', keterangan: '' }
+                    { komponen: 'MD1', nilai: '40%', tipe: 'Persentase', keterangan: '—' },
+                    { komponen: 'MD2', nilai: '10%', tipe: 'Persentase', keterangan: '—' },
+                    { komponen: 'MD3', nilai: '5%',  tipe: 'Persentase', keterangan: '—' }
                 ];
                 saveRows(rows);
             }
 
+            const hasMtht = rows.some(r => DYNAMIC_DISCOUNTS.mtht.matches(r.komponen));
+            const hasMprto = rows.some(r => DYNAMIC_DISCOUNTS.mprto.matches(r.komponen));
+            const hasMlcd = rows.some(r => DYNAMIC_DISCOUNTS.mlcd.matches(r.komponen));
+
+            // Sync hidden boolean form fields if present
+            const chkMtht = form.querySelector('[name="chk_diskon_mtht"]');
+            if (chkMtht) chkMtht.checked = hasMtht;
+            const chkMprto = form.querySelector('[name="chk_diskon_mprto"]');
+            if (chkMprto) chkMprto.checked = hasMprto;
+            const chkMlcd = form.querySelector('[name="chk_diskon_mlcd"]');
+            if (chkMlcd) chkMlcd.checked = hasMlcd;
+
             let html = `
+                <div class="kontrak-discount-toggles p-3 mb-3 bg-light rounded border">
+                    <div class="fw-semibold text-dark small mb-2">
+                        <i class="bi bi-tags-fill text-primary me-1"></i> Program Diskon Tambahan / Khusus (Centang untuk menambahkan baris ke tabel):
+                    </div>
+                    <div class="d-flex flex-wrap gap-4 align-items-center">
+                        <div class="form-check m-0">
+                            <input class="form-check-input chk-diskon-toggle" type="checkbox" id="chk_toggle_mtht" data-type="mtht" ${hasMtht ? 'checked' : ''}>
+                            <label class="form-check-label small fw-medium text-dark" for="chk_toggle_mtht">
+                                <strong>Thematic (MTHT)</strong> <span class="text-secondary small">(0% - Program Thematik yang berlaku)</span>
+                            </label>
+                        </div>
+                        <div class="form-check m-0">
+                            <input class="form-check-input chk-diskon-toggle" type="checkbox" id="chk_toggle_mprto" data-type="mprto" ${hasMprto ? 'checked' : ''}>
+                            <label class="form-check-label small fw-medium text-dark" for="chk_toggle_mprto">
+                                <strong>MPRTO</strong> <span class="text-secondary small">(5% - Pareto)</span>
+                            </label>
+                        </div>
+                        <div class="form-check m-0">
+                            <input class="form-check-input chk-diskon-toggle" type="checkbox" id="chk_toggle_mlcd" data-type="mlcd" ${hasMlcd ? 'checked' : ''}>
+                            <label class="form-check-label small fw-medium text-dark" for="chk_toggle_mlcd">
+                                <strong>MLCD</strong> <span class="text-secondary small">(5% - Tambahan)</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="table-responsive">
-                    <table class="table table-bordered kontrak-grid-table" data-grid="discount_scheme">
+                    <table class="table table-bordered kontrak-grid-table align-middle" data-grid="discount_scheme">
                         <thead>
-                            <tr>
+                            <tr class="table-light">
                                 <th>Komponen</th>
-                                <th style="width: 140px;">Nilai</th>
-                                <th style="width: 150px;">Tipe</th>
+                                <th style="width: 140px;" class="text-center">Nilai</th>
+                                <th style="width: 150px;" class="text-center">Tipe</th>
                                 <th>Keterangan</th>
-                                <th style="width: 50px;" class="text-center">Aksi</th>
+                                <th style="width: 70px;" class="text-center">Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
             `;
 
             rows.forEach((r, idx) => {
+                const kompClean = String(r.komponen || '').trim();
+                const isFixed = FIXED_KOMPONEN.some(fk => fk.toLowerCase() === kompClean.toLowerCase());
                 const isNominal = (r.tipe === 'Nominal');
                 let displayVal = r.nilai || '';
                 if (isNominal) {
@@ -1799,25 +1886,38 @@
 
                 html += `
                     <tr data-index="${idx}">
-                        <td><input type="text" class="cell-input" data-key="komponen" value="${escapeHtml(r.komponen || '')}" placeholder="Komponen diskon"></td>
+                        <td>
+                            ${isFixed ? `
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-white border-end-0 text-primary"><i class="bi bi-shield-check"></i></span>
+                                    <input type="text" class="cell-input border-start-0 bg-light text-dark fw-bold" data-key="komponen" value="${escapeHtml(r.komponen || '')}" readonly title="Komponen standar baku">
+                                </div>
+                            ` : `
+                                <input type="text" class="cell-input" data-key="komponen" value="${escapeHtml(r.komponen || '')}" placeholder="Komponen diskon">
+                            `}
+                        </td>
                         <td>
                             <input type="text"
                                    inputmode="${isNominal ? 'numeric' : 'decimal'}"
-                                   class="cell-input ${isNominal ? 'cell-num cell-nilai-nominal' : 'cell-nilai-persen'}"
+                                   class="cell-input text-center ${isNominal ? 'cell-num cell-nilai-nominal' : 'cell-nilai-persen'}"
                                    data-key="nilai"
                                    data-tipe="${isNominal ? 'Nominal' : 'Persentase'}"
                                    value="${escapeHtml(String(displayVal))}"
                                    placeholder="${isNominal ? 'Misal: 50.000' : 'Misal: 10%'}">
                         </td>
                         <td>
-                            <select class="cell-input select-tipe-diskon" data-key="tipe">
+                            <select class="cell-input select-tipe-diskon text-center" data-key="tipe">
                                 <option value="Persentase" ${!isNominal ? 'selected' : ''}>Persentase</option>
                                 <option value="Nominal" ${isNominal ? 'selected' : ''}>Nominal</option>
                             </select>
                         </td>
                         <td><input type="text" class="cell-input" data-key="keterangan" value="${escapeHtml(r.keterangan || '')}" placeholder="Catatan syarat"></td>
                         <td class="text-center">
-                            <button type="button" class="btn-delete-row" title="Hapus"><i class="bi bi-trash"></i></button>
+                            ${isFixed ? `
+                                <span class="badge bg-light text-secondary border px-2 py-1 small" title="Baris standar baku"><i class="bi bi-lock-fill"></i> Baku</span>
+                            ` : `
+                                <button type="button" class="btn-delete-row" title="Hapus"><i class="bi bi-trash"></i></button>
+                            `}
                         </td>
                     </tr>
                 `;
@@ -1828,11 +1928,36 @@
                     </table>
                 </div>
                 <div class="mt-2">
-                    <button type="button" class="btn-add-row"><i class="bi bi-plus-circle"></i> Tambah Discount</button>
+                    <button type="button" class="btn-add-row"><i class="bi bi-plus-circle"></i> Tambah Discount Lain</button>
                 </div>
             `;
 
             container.innerHTML = html;
+
+            container.querySelectorAll('.chk-diskon-toggle').forEach(chk => {
+                chk.addEventListener('change', () => {
+                    const type = chk.dataset.type;
+                    const def = DYNAMIC_DISCOUNTS[type];
+                    if (!def) return;
+
+                    let currentRows = getRows();
+                    if (chk.checked) {
+                        const exists = currentRows.some(r => def.matches(r.komponen));
+                        if (!exists) {
+                            currentRows.push({
+                                komponen: def.komponen,
+                                nilai: def.nilai,
+                                tipe: def.tipe,
+                                keterangan: def.keterangan
+                            });
+                        }
+                    } else {
+                        currentRows = currentRows.filter(r => !def.matches(r.komponen));
+                    }
+                    saveRows(currentRows);
+                    render();
+                });
+            });
 
             container.querySelectorAll('tr[data-index]').forEach(tr => {
                 const idx = parseInt(tr.dataset.index);
@@ -1842,7 +1967,7 @@
                 const komponenInput = tr.querySelector('[data-key="komponen"]');
                 const ketInput = tr.querySelector('[data-key="keterangan"]');
 
-                if (komponenInput) {
+                if (komponenInput && !komponenInput.readOnly) {
                     komponenInput.addEventListener('input', () => {
                         rows[idx].komponen = komponenInput.value;
                         saveRows(rows);
@@ -2538,6 +2663,12 @@
         const infoBlock = extractFieldElement('info_kontrak_lama');
         if (infoBlock) card1.body.appendChild(infoBlock);
 
+        // Default Grace Period if empty
+        const graceInput = form.querySelector('[name="grace_period"]');
+        if (graceInput && !graceInput.value.trim()) {
+            graceInput.value = '1 Bulan';
+        }
+
         const rowDates = document.createElement('div');
         rowDates.className = 'row g-3 mb-2';
         ['tanggal_mulai', 'tanggal_berakhir', 'durasi', 'grace_period'].forEach(fn => {
@@ -2568,45 +2699,32 @@
         const targetGridBlock = pane2.querySelector('.kontrak-target-incentive-wrapper') || extractFieldElement('target_incentive');
         if (targetGridBlock) card2.body.appendChild(targetGridBlock);
 
-        // 3. Card 3: Skema Diskon Produk & Ketentuan DO (Pasal 5 / 6)
-        const card3 = createClauseCard('Pasal 5 / 6', '', 'Skema Diskon Produk & Ketentuan DO', 'Rincian komponen potongan harga penjualan produk serta ketentuan Delivery Order (DO).');
-        
-        const rowDO = document.createElement('div');
-        rowDO.className = 'row g-3 mb-3';
-        
-        const discDO = extractFieldElement('discount_do');
-        if (discDO) {
+        // Field Jenis Pencairan Insentif (Poin 7)
+        const rowPencairan = document.createElement('div');
+        rowPencairan.className = 'row g-3 mt-1 mb-2';
+        const pencairanEl = extractFieldElement('jenis_pencairan_insentif');
+        if (pencairanEl) {
             const col = document.createElement('div');
-            col.className = 'col-md-4';
-            discDO.classList.remove('col-md-3', 'col-md-4', 'col-md-6', 'col-md-12');
-            col.appendChild(discDO);
-            rowDO.appendChild(col);
+            col.className = 'col-md-6';
+            pencairanEl.classList.remove('col-md-3', 'col-md-4', 'col-md-6', 'col-md-12');
+            col.appendChild(pencairanEl);
+            rowPencairan.appendChild(col);
+            card2.body.appendChild(rowPencairan);
         }
-        
-        const ketDO = extractFieldElement('ketentuan_do');
-        if (ketDO) {
-            const col = document.createElement('div');
-            col.className = 'col-md-8';
-            ketDO.classList.remove('col-md-3', 'col-md-4', 'col-md-6', 'col-md-12');
-            col.appendChild(ketDO);
-            rowDO.appendChild(col);
-        }
-        card3.body.appendChild(rowDO);
+
+        // 3. Card 3: Skema Diskon Produk (Pasal 5 / 6)
+        const card3 = createClauseCard('Pasal 5 / 6', '', 'Skema Diskon Produk', 'Rincian komponen potongan harga penjualan produk toko.');
+
+        ['chk_diskon_mtht', 'chk_diskon_mprto', 'chk_diskon_mlcd'].forEach(chkName => {
+            const el = extractFieldElement(chkName);
+            if (el) el.style.display = 'none';
+        });
 
         const discountGridBlock = pane2.querySelector('.kontrak-discount-scheme-wrapper') || extractFieldElement('discount_scheme');
         if (discountGridBlock) card3.body.appendChild(discountGridBlock);
 
-        // 4. Card 4: Fasilitas & Dukungan Promosi (Pasal 4 & 7 Promo - Kondisional)
-        const card4 = createClauseCard('Pasal 4 & 7 Promo', 'badge-promo', 'Fasilitas & Dukungan Promosi Tambahan', 'Support promosi instore, pameran, sewa, listrik, dan tier reward tahunan toko.');
-        
-        const toggleEl = extractFieldElement('is_support_provided');
-        if (toggleEl) card4.body.appendChild(toggleEl);
-
-        const facWrapper = pane2.querySelector('.kontrak-support-facility-wrapper') || form.querySelector('.kontrak-support-facility-wrapper');
-        if (facWrapper) card4.body.appendChild(facWrapper);
-
-        // 5. Card 5: Tata Cara & Ketentuan Pembayaran (BAB III - Pasal 7, 8, 9)
-        const card5 = createClauseCard('BAB III', 'badge-bab3', 'Tata Cara & Ketentuan Pembayaran (Pasal 7, 8, 9)', 'Jangka waktu pembayaran (TOP), sistem transaksi resmi, dan rekening bank perusahaan.');
+        // 4. Card 4: Tata Cara & Ketentuan Pembayaran (BAB III - Pasal 7, 8, 9, 10)
+        const card4 = createClauseCard('BAB III', 'badge-bab3', 'Tata Cara & Ketentuan Pembayaran (Pasal 7, 8, 9, 10)', 'Jangka waktu pembayaran (TOP), sistem transaksi resmi, dan rekening bank perusahaan.');
         
         const rowBayar = document.createElement('div');
         rowBayar.className = 'row g-3 mb-2';
@@ -2628,10 +2746,10 @@
                 }
             }
         });
-        card5.body.appendChild(rowBayar);
+        card4.body.appendChild(rowBayar);
 
-        // 6. Card 6: Ketentuan Akhir & Tempat Pengesahan (BAB IV & Penutup)
-        const card6 = createClauseCard('BAB IV & Penutup', 'badge-bab4', 'Ketentuan Akhir & Tempat Pengesahan', 'Lokasi dan tanggal resmi pengesahan Surat Perjanjian Kerjasama (SPK).');
+        // 5. Card 5: Ketentuan Akhir & Tempat Pengesahan (BAB IV & Penutup)
+        const card5 = createClauseCard('BAB IV & Penutup', 'badge-bab4', 'Ketentuan Akhir & Tempat Pengesahan', 'Lokasi dan tanggal resmi pengesahan Surat Perjanjian Kerjasama (SPK).');
         
         const rowTtd = document.createElement('div');
         rowTtd.className = 'row g-3 mb-2';
@@ -2645,7 +2763,7 @@
                 rowTtd.appendChild(col);
             }
         });
-        card6.body.appendChild(rowTtd);
+        card5.body.appendChild(rowTtd);
 
         // Append cards to pane2
         pane2.appendChild(card1.card);
@@ -2653,7 +2771,6 @@
         pane2.appendChild(card3.card);
         pane2.appendChild(card4.card);
         pane2.appendChild(card5.card);
-        pane2.appendChild(card6.card);
 
         // Remove leftover empty containers from pane2
         Array.from(pane2.children).forEach(child => {
@@ -2668,7 +2785,7 @@
             }
         });
 
-        console.log('[KontrakGridWidget] Step 2 successfully structured into 6 SPK Legal Clause Cards.');
+        console.log('[KontrakGridWidget] Step 2 successfully structured into 5 SPK Legal Clause Cards.');
     }
 
     /* --------------------------------------------------------------------------
@@ -2838,8 +2955,8 @@
                 <div class="mt-1">${tipeKontrakBadge}</div>
             </div>
             <div class="col-md-4">
-                <div class="small text-muted">Brand & Cabang</div>
-                <div class="fw-medium">${getV('brand') || '-'} / ${getV('cabang') || '-'}</div>
+                <div class="small text-muted">Brand, Cabang & Channel</div>
+                <div class="fw-medium">${getV('brand') || '-'} / ${getV('cabang') || '-'} / ${getV('channel') || '-'}</div>
             </div>
             <div class="col-md-4">
                 <div class="small text-muted">Pemilik / Pihak Kedua</div>
@@ -2853,6 +2970,10 @@
             <div class="col-md-4">
                 <div class="small text-muted">Periode Kontrak</div>
                 <div class="fw-medium">${formatIndonesianDate(getV('tanggal_mulai'))} s/d ${formatIndonesianDate(getV('tanggal_berakhir'))} (${getV('durasi') || '-'})</div>
+            </div>
+            <div class="col-md-4">
+                <div class="small text-muted">Pencairan Insentif</div>
+                <div class="fw-medium">${getV('jenis_pencairan_insentif') || 'Transfer/Giro'}</div>
             </div>
             <div class="col-md-4">
                 <div class="small text-muted">Jangka Waktu Pembayaran (TOP)</div>
@@ -2925,9 +3046,10 @@
             if (!b || b === '—') return '—';
             const bu = b.trim().toUpperCase();
             if (bu.includes('LADY')) return 'Lady Americana';
-            if (bu.includes('ELITE')) return 'Elite';
+            if (bu.includes('ELITE')) return 'Elite Springbed';
             if (bu.includes('SERENITY')) return 'Serenity';
             if (bu.includes('ROYAL') || bu.includes('FOAM')) return 'Royal Foam';
+            if (bu.includes('CLASSIC')) return 'Classic';
             return b;
         }
         const brand = getCanonicalBrand(getV('brand'));
@@ -2940,17 +3062,17 @@
         function getCanonicalDurasi(d) {
             if (!d || d === '—' || d === '-') return '—';
             const ds = String(d).trim();
-            const mPure = ds.match(/^(\d+)\s*Bulan$/i);
-            if (mPure) return `${mPure[1]} Bulan`;
-            const mYt = ds.match(/(\d+)\s*Tahun/i);
-            const mBl = ds.match(/(\d+)\s*Bulan/i);
-            if (mYt || mBl) {
-                const y = mYt ? parseInt(mYt[1], 10) : 0;
-                const m = mBl ? parseInt(mBl[1], 10) : 0;
-                const total = (y * 12) + m;
-                if (total > 0) return `${total} Bulan`;
+            if (/^\d+\s*Tahun/i.test(ds) || /^\d+\s*Bulan/i.test(ds)) {
+                return ds;
             }
-            if (/^\d+$/.test(ds)) return `${ds} Bulan`;
+            if (/^\d+$/.test(ds)) {
+                const n = parseInt(ds, 10);
+                const y = Math.floor(n / 12);
+                const m = n % 12;
+                if (y > 0 && m > 0) return `${y} Tahun ${m} Bulan`;
+                if (y > 0) return `${y} Tahun`;
+                return `${m} Bulan`;
+            }
             return ds;
         }
         const durasi = getCanonicalDurasi(getV('durasi'));
@@ -3124,8 +3246,8 @@
                 director: 'Alvin Steven',
                 jabatan: 'Direktur PT. BANGUN CIPTA PRIMATARA',
                 alamat: 'Kawasan Industri Gandasari, Jl. Raya Industri No. 12, Tangerang',
-                bankName: 'BCA KCU CIMAHI',
-                rekNo: '139.9888.777 (IDR)',
+                bankName: 'BCA Cimahi - Bandung',
+                rekNo: '139 8826 999 (IDR)',
                 rekAn: 'PT. BANGUN CIPTA PRIMATARA',
                 pn: 'Kantor Panitera Pengadilan Negeri Tangerang',
                 logoUrl: '/static/images/logos/bcp.png'
@@ -3137,8 +3259,8 @@
                 director: 'Alvin Steven',
                 jabatan: 'Direktur PT. BESTARI MULIA',
                 alamat: 'Kawasan Industri Gandasari, Jl. Raya Industri No. 12, Tangerang',
-                bankName: 'BCA KCU CIMAHI',
-                rekNo: '139.9888.777 (IDR)',
+                bankName: 'BCA Cimahi - Bandung',
+                rekNo: '139 8075 888 (IDR)',
                 rekAn: 'PT. BESTARI MULIA',
                 pn: 'Kantor Panitera Pengadilan Negeri Tangerang',
                 logoUrl: '/static/images/logos/bm.png'
@@ -3150,8 +3272,8 @@
                 director: 'Alvin Steven',
                 jabatan: 'Direktur PT. CEMERLANG ABADI MULIA',
                 alamat: 'Jl. Industri Raya No.8 RT.003 RW.004 Budi Mulya Cikupa Kab.Tangerang, Banten',
-                bankName: 'BCA CIMAHI – BANDUNG',
-                rekNo: '139.9183.888 (IDR)',
+                bankName: 'BCA Cimahi - Bandung',
+                rekNo: '139 9183 888 (IDR)',
                 rekAn: 'PT. CEMERLANG ABADI MULIA',
                 pn: 'Kantor Panitera Pengadilan Negeri Bale Bandung',
                 logoUrl: '/static/images/logos/cam.png'
@@ -3163,8 +3285,8 @@
                 director: 'Alvin Steven',
                 jabatan: 'Direktur PT. ANUGRAH CEMERLANG ABADI',
                 alamat: 'Jl. Industri Raya No.8 RT.003 RW.004 Budi Mulya Cikupa Kab.Tangerang, Banten',
-                bankName: 'BCA CIMAHI – BANDUNG',
-                rekNo: '139.9183.888 (IDR)',
+                bankName: 'BCA Cimahi - Bandung',
+                rekNo: '139 9183 888 (IDR)',
                 rekAn: 'PT. ANUGRAH CEMERLANG ABADI',
                 pn: 'Kantor Panitera Pengadilan Negeri Bale Bandung',
                 logoUrl: '/static/images/logos/aca.png'
@@ -3176,8 +3298,8 @@
                 director: 'Alvin Steven',
                 jabatan: 'Direktur PT. ROYAL ABADI SEJAHTERA',
                 alamat: 'Kawasan Industri Gandasari, Jl. Raya Industri No. 12, Tangerang',
-                bankName: 'BCA KCU CIMAHI',
-                rekNo: '139.9888.777 (IDR)',
+                bankName: 'BCA Cimahi - Bandung',
+                rekNo: '139 8826 999 (IDR)',
                 rekAn: 'PT. ROYAL ABADI SEJAHTERA',
                 pn: 'Kantor Panitera Pengadilan Negeri Tangerang',
                 logoUrl: '/static/images/logos/ras.png'
@@ -3289,8 +3411,8 @@
                 const ROMAN_MONTHS = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
                 const mRoman = ROMAN_MONTHS[now.getMonth() + 1] || 'X';
                 const yStr = String(now.getFullYear());
-                const cleanBrand = (brandUpper.includes('LADY') ? 'LADY' : (brandUpper.includes('ROYAL') || brandUpper.includes('FOAM') ? 'ROYAL' : (brandUpper.includes('SERENITY') ? 'SERENITY' : (brandUpper.includes('ELITE') ? 'ELITE' : (brandUpper.split(' ')[0] || 'LADY')))));
-                displayNomorSPK = `001/${cleanBrand}/${prof.shortCode || 'RAS'}/${mRoman}/${yStr}`;
+                const cabClean = (cabang && cabang !== '—' ? cabang : 'PUSAT').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'PUSAT';
+                displayNomorSPK = `001/SK-${prof.shortCode || 'RAS'}/${cabClean}/${cleanBrand}/${mRoman}/${yStr}`;
             } else {
                 displayNomorSPK = '— / — / — / — / —';
             }
@@ -3367,12 +3489,11 @@
                     <ol style="margin-top: 0; margin-bottom: 12px; padding-left: 20px;">
                         <li style="text-align: justify; margin-bottom: 4px;">Pihak Pertama memberikan support promosi yang meliputi biaya (${komponenBiayaLegalText}) kepada Pihak Kedua sebesar <strong>${pctSupportPromo}%</strong>. Support promosi tersebut <strong>TIDAK</strong> meliputi biaya Billboard, Pajak Billboard, dan Backdrop apabila Pihak Kedua membuka cabang baru atau toko baru.</li>
                         <li style="text-align: justify; margin-bottom: 4px;">Support promosi ini dapat dicairkan setelah pembayaran <strong>LUNAS</strong>.</li>
-                        <li style="text-align: justify;">Grace period selama ${gracePeriod && gracePeriod !== '—' ? `<strong>${gracePeriod}</strong>` : '1 (satu) bulan'} dari masa kontrak berakhir, apabila Pihak Kedua belum mencapai target.</li>
                     </ol>
 
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 5</div>
                     <p style="text-align: justify; margin-bottom: 12px;">
-                        Perjanjian berlaku untuk Jangka Waktu <strong>${durasi}</strong> terhitung dari sejak tanggal <strong>${tglMulai}</strong> dan akan berakhir pada tanggal <strong>${tglAkhir}</strong>${gracePeriod && gracePeriod !== '—' ? ` dengan tenggang waktu (grace period) selama <strong>${gracePeriod}</strong>` : ''}.
+                        Perjanjian berlaku untuk Jangka Waktu <strong>${durasi}</strong> terhitung dari sejak tanggal <strong>${tglMulai}</strong> dan akan berakhir pada tanggal <strong>${tglAkhir}</strong>.
                     </p>
 
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 6</div>
@@ -3380,12 +3501,11 @@
                         Skema discount untuk penjualan Produk yang berlaku untuk Pihak Kedua dalam Perjanjian ini adalah sebagai berikut :
                     </p>
                     ${discountTableHtml || '<p class="text-muted fst-italic">Belum ada skema diskon yang ditambahkan.</p>'}
-                    ${discountDO && discountDO !== '0' && discountDO !== '—' ? `<p style="text-align: justify; margin-bottom: 8px;">Diskon Delivery Order (DO): <strong>${discountDO}%</strong> ${ketentuanDO && ketentuanDO !== '—' ? `&mdash; Ketentuan: ${escapeHtml(ketentuanDO)}` : ''}</p>` : ''}
                     ` : `
                     <!-- STANDARD REGULER -->
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 4</div>
                     <p style="text-align: justify; margin-bottom: 12px;">
-                        Perjanjian berlaku untuk Jangka Waktu <strong>${durasi}</strong> terhitung dari sejak tanggal <strong>${tglMulai}</strong> dan akan berakhir pada tanggal <strong>${tglAkhir}</strong>${gracePeriod && gracePeriod !== '—' ? ` dengan tenggang waktu (grace period) selama <strong>${gracePeriod}</strong>` : ''}.
+                        Perjanjian berlaku untuk Jangka Waktu <strong>${durasi}</strong> terhitung dari sejak tanggal <strong>${tglMulai}</strong> dan akan berakhir pada tanggal <strong>${tglAkhir}</strong>.
                     </p>
 
                     <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 5</div>
@@ -3393,7 +3513,6 @@
                         Skema discount untuk penjualan Produk yang berlaku untuk Pihak Kedua dalam Perjanjian ini adalah sebagai berikut :
                     </p>
                     ${discountTableHtml || '<p class="text-muted fst-italic">Belum ada skema diskon yang ditambahkan.</p>'}
-                    ${discountDO && discountDO !== '0' && discountDO !== '—' ? `<p style="text-align: justify; margin-bottom: 8px;">Diskon Delivery Order (DO): <strong>${discountDO}%</strong> ${ketentuanDO && ketentuanDO !== '—' ? `&mdash; Ketentuan: ${escapeHtml(ketentuanDO)}` : ''}</p>` : ''}
                     `}
                 </div>
                 <div class="spk-page-footer">Halaman 1 dari 2</div>
@@ -3813,6 +3932,20 @@
                             cabangSelect.classList.remove('is-invalid');
                             console.log(`[Wizard Navigation] Validation: Cabang OK ('${cabangVal}')`);
                         }
+                    }
+
+                    // 2b. Channel validation (Wajib)
+                    const channelSelect = form.querySelector('[name="channel"]');
+                    const channelVal = (channelSelect?.value || '').trim();
+                    if (!channelVal) {
+                        if (channelSelect) channelSelect.classList.add('is-invalid');
+                        hasError = true;
+                        if (!firstInvalid) firstInvalid = channelSelect;
+                        errorDetails.push('<strong>Channel Distribusi</strong> wajib dipilih.');
+                        console.warn("[Wizard Navigation] Validation: Channel KOSONG");
+                    } else {
+                        if (channelSelect) channelSelect.classList.remove('is-invalid');
+                        console.log(`[Wizard Navigation] Validation: Channel OK ('${channelVal}')`);
                     }
 
                     // 3. Kode Customer JDE validation (Wajib)
