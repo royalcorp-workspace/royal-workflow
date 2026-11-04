@@ -21,6 +21,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import escape
 from django.views.decorators.clickjacking import xframe_options_exempt
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from .forms import DynamicForm
@@ -3124,6 +3125,120 @@ def resubmit_submission(request, submission_id):
     )
 
 
+def _resolve_spk_pdf_filename(submission_or_data, submission_id=None, suffix="") -> str:
+    """
+    Generate an official, sanitized PDF filename based on the submission's official SPK number.
+    Replaces illegal filename/path characters with hyphens.
+    Example: '001/SK-RAS/PUSAT/ELITE/XI/2026' -> 'SPK-001-SK-RAS-PUSAT-ELITE-XI-2026.pdf'
+    """
+    import re
+    if hasattr(submission_or_data, "form_data"):
+        form_data = submission_or_data.form_data or {}
+        sub_id = getattr(submission_or_data, "id", None) or submission_id
+    elif isinstance(submission_or_data, dict):
+        form_data = submission_or_data
+        sub_id = submission_id
+    else:
+        form_data = {}
+        sub_id = submission_id
+
+    spk_raw = str(form_data.get("nomor_spk") or "").strip()
+    if not spk_raw or spk_raw.startswith("OTOMATIS") or spk_raw == "—" or "/" not in spk_raw:
+        try:
+            from .company_profiles import format_official_spk_number
+            spk_raw = format_official_spk_number(form_data, submission_id=sub_id)
+        except Exception:
+            spk_raw = ""
+
+    # Sanitize characters not allowed in filenames: / \ : * ? " < > | and spaces
+    sanitized = re.sub(r'[/\\?%*:|"<>\s]+', '-', spk_raw).strip('-')
+    if not sanitized:
+        sanitized = f"Submission_{sub_id}" if sub_id else "SPK-Draft"
+
+    prefix = "SPK-" if not sanitized.upper().startswith("SPK-") else ""
+    sfx = f"_{suffix}" if suffix else ""
+    return f"{prefix}{sanitized}{sfx}.pdf"
+
+
+@csrf_exempt
+def form_preview_pdf(request, slug):
+    """
+    Generate a dynamic in-memory PDF stream preview for the current form state
+    without saving to the database (True WYSIWYG Parity).
+    Accepts AJAX POST with FormData or JSON payload.
+    """
+    import io
+    import json
+    from django.http import HttpResponse, HttpResponseBadRequest
+    from .models import FormDefinition, FormSubmission
+
+    form_def = get_object_or_404(FormDefinition, slug=slug)
+
+    if request.method != "POST":
+        return HttpResponseBadRequest("Only POST method is allowed for PDF preview.")
+
+    # Parse incoming payload
+    form_data = {}
+    if request.content_type and "application/json" in request.content_type:
+        try:
+            form_data = json.loads(request.body.decode("utf-8"))
+        except Exception:
+            form_data = {}
+    else:
+        for key in request.POST:
+            val = request.POST.get(key)
+            # Try parsing JSON values for complex grid fields
+            if key in ["target_incentive", "discount_scheme", "tier_support", "lampiran_aset", "komponen_biaya"]:
+                try:
+                    parsed = json.loads(val)
+                    form_data[key] = parsed
+                except Exception:
+                    form_data[key] = val
+            else:
+                form_data[key] = val
+
+    # Build transient in-memory FormSubmission instance (unsaved)
+    temp_submission = FormSubmission(
+        form_definition=form_def,
+        form_data=form_data,
+        status="draft",
+        submitter=request.user if request.user.is_authenticated else None,
+    )
+    temp_submission.id = 0  # Dummy ID for formatting
+
+    filename = _resolve_spk_pdf_filename(form_data, suffix="preview")
+
+    # 1. Generate PDF bytes via EMeteraiService (canonical ReportLab engine)
+    try:
+        from .services.ematerai import EMeteraiService
+        pdf_bytes, page_count = EMeteraiService.generate_spk_pdf_bytes(temp_submission)
+        if pdf_bytes and pdf_bytes.startswith(b"%PDF"):
+            response = HttpResponse(pdf_bytes, content_type="application/pdf")
+            response["Content-Disposition"] = f'inline; filename="{filename}"'
+            response["X-Page-Count"] = str(page_count)
+            response["Access-Control-Expose-Headers"] = "Content-Disposition, X-Page-Count"
+            return response
+    except Exception as e:
+        logger.warning("ReportLab preview PDF generation failed for %s: %s", slug, e)
+
+    # 2. Fallback to WeasyPrint if available
+    try:
+        from weasyprint import HTML
+        from .company_profiles import resolve_spk_document_template
+        template = resolve_spk_document_template(form_def, submission=temp_submission)
+        if template:
+            html_string = template.render(temp_submission)
+            pdf_bytes = HTML(string=html_string, base_url=request.build_absolute_uri("/")).write_pdf()
+            response = HttpResponse(pdf_bytes, content_type="application/pdf")
+            response["Content-Disposition"] = f'inline; filename="{filename}"'
+            response["Access-Control-Expose-Headers"] = "Content-Disposition"
+            return response
+    except Exception as weasy_err:
+        logger.warning("WeasyPrint preview fallback failed for %s: %s", slug, weasy_err)
+
+    return HttpResponseBadRequest("Unable to generate PDF preview at this time.")
+
+
 @login_required
 def submission_pdf(request, submission_id, filename=None):
     """Generate and serve a PDF of a form submission.
@@ -3189,9 +3304,9 @@ def submission_pdf(request, submission_id, filename=None):
         workflow and workflow.hide_approval_history and is_submitter_only
     )
 
-    # Determine filename with guaranteed .pdf extension
+    # Determine dynamic filename with guaranteed official SPK naming & .pdf extension
     if form_def.slug == "permohonan-kontrak":
-        effective_filename = f"SPK_Submission_{submission_id}.pdf"
+        effective_filename = _resolve_spk_pdf_filename(submission)
     elif filename:
         effective_filename = filename
     else:
@@ -3223,7 +3338,7 @@ def submission_pdf(request, submission_id, filename=None):
             try:
                 if stamped_doc.stamped_file.storage.exists(stamped_doc.stamped_file.name):
                     content = stamped_doc.stamped_file.read()
-                    f_name = stamped_doc.file_name or f"SPK_Submission_{submission_id}_stamped.pdf"
+                    f_name = stamped_doc.file_name or _resolve_spk_pdf_filename(submission, suffix="stamped")
                     if not f_name.lower().endswith(".pdf"):
                         f_name += ".pdf"
                     response = FileResponse(
@@ -3236,6 +3351,29 @@ def submission_pdf(request, submission_id, filename=None):
                     return response
             except Exception as e:
                 logger.warning("Error serving stamped file for sub #%s: %s", submission_id, e)
+
+    # --- Untuk form permohonan-kontrak: prioritaskan ReportLab generator dari EMeteraiService ---
+    # Memastikan dokumen cetak/unduhan 100% konsisten (pixel-perfect) dengan e-Meterai dan live preview
+    if form_def.slug == "permohonan-kontrak":
+        try:
+            from .services.ematerai import EMeteraiService
+            pdf_bytes, page_count = EMeteraiService.generate_spk_pdf_bytes(submission)
+            if pdf_bytes and pdf_bytes.startswith(b"%PDF"):
+                response = FileResponse(
+                    io.BytesIO(pdf_bytes),
+                    as_attachment=as_attachment,
+                    filename=effective_filename,
+                    content_type="application/pdf",
+                )
+                response["Access-Control-Expose-Headers"] = "Content-Disposition, X-Page-Count"
+                response["X-Page-Count"] = str(page_count)
+                return response
+        except Exception as rl_err:
+            logger.warning(
+                "ReportLab PDF generation failed for SPK submission #%s: %s. Falling back to template HTML.",
+                submission_id,
+                rl_err,
+            )
 
     # --- check for custom document template ---
     from .models import DocumentTemplate
@@ -3333,19 +3471,20 @@ def submission_pdf(request, submission_id, filename=None):
             else f"Submission #{submission.id} – {form_def.name}"
         )
         fallback_html = _render_print_preview_fallback(
-            html_string, title=doc_title, submission_id=submission.id
+            html_string, title=doc_title, submission_id=submission.id, download_filename=effective_filename
         )
         return HttpResponse(fallback_html, content_type="text/html; charset=utf-8")
 
 
 
-def _render_print_preview_fallback(html_string, title="Cetak Dokumen", submission_id=None):
+def _render_print_preview_fallback(html_string, title="Cetak Dokumen", submission_id=None, download_filename=None):
     """Render a clean, professional print-preview HTML page when WeasyPrint is unavailable.
 
     Provides an interactive floating top action bar with 'Cetak / Unduh PDF'
     and 'Kembali' buttons that automatically disappears during printing (@media print).
     """
     sub_text = f" (Submission #{submission_id})" if submission_id else ""
+    dl_name = download_filename or (f"SPK_Submission_{submission_id}.pdf" if submission_id else "document.pdf")
     toolbar_html = f"""
     <div class="no-print d-print-none print-preview-bar" style="position: sticky; top: 0; left: 0; right: 0; z-index: 99999; background: #0f172a; color: #f8fafc; padding: 12px 24px; box-shadow: 0 4px 14px rgba(0,0,0,0.2); display: flex; justify-content: space-between; align-items: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
         <div style="display: flex; align-items: center; gap: 12px;">
@@ -3360,7 +3499,7 @@ def _render_print_preview_fallback(html_string, title="Cetak Dokumen", submissio
             <button type="button" onclick="window.print()" style="background: #334155; color: #f8fafc; border: 1px solid #475569; padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s;">
                 🖨️ Cetak
             </button>
-            <a href="?download=1" download="SPK_Submission_{submission_id}.pdf" style="background: #0284c7; color: #ffffff; text-decoration: none; border: none; padding: 7px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 6px rgba(2,132,199,0.4); display: inline-flex; align-items: center; gap: 6px; transition: all 0.15s;">
+            <a href="?download=1" download="{dl_name}" style="background: #0284c7; color: #ffffff; text-decoration: none; border: none; padding: 7px 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 6px rgba(2,132,199,0.4); display: inline-flex; align-items: center; gap: 6px; transition: all 0.15s;">
                 ⬇️ Unduh PDF
             </a>
         </div>

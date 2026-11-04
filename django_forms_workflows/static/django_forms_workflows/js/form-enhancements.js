@@ -559,6 +559,11 @@ class FormEnhancements {
      * or by the steps option: [{ title: 'Step 1', fields: ['field1', 'field2'] }]
      */
     setupMultiStepForm() {
+        if (this.form.querySelector('.wizard-step-pane') || this.form.dataset.formSlug === 'permohonan-kontrak') {
+            console.log('[FormEnhancements] Multi-step wizard is delegated to specialized controller (kontrak-grid-widget.js). Skipping generic multi-step setup.');
+            return;
+        }
+
         console.log('Setting up multi-step form', this.options);
 
         // If steps are defined in options, use them
@@ -791,6 +796,10 @@ class FormEnhancements {
      * Show a specific step
      */
     showStep(stepIndex) {
+        if (this.form.querySelector('.wizard-step-pane') || this.form.dataset.formSlug === 'permohonan-kontrak') {
+            return;
+        }
+
         if (stepIndex < 0 || stepIndex >= this.steps.length) return;
 
         this.currentStep = stepIndex;

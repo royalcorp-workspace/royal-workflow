@@ -10,12 +10,29 @@ import logging
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.signals import user_logged_in
+from django.db.backends.signals import connection_created
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+
+@receiver(connection_created)
+def configure_sqlite_wal(sender, connection, **kwargs):
+    """
+    Ensure SQLite connections always operate in WAL mode with a 60s busy timeout
+    to prevent 'database is locked' errors under concurrent read/write traffic.
+    """
+    if connection.vendor == 'sqlite':
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute('PRAGMA journal_mode=WAL;')
+                cursor.execute('PRAGMA busy_timeout=60000;')
+                cursor.execute('PRAGMA synchronous=NORMAL;')
+        except Exception as e:
+            logger.warning("Could not set SQLite WAL pragma on connection: %s", e)
 
 
 def get_ldap_attribute(user, attr_name, ldap_attr_name=None):

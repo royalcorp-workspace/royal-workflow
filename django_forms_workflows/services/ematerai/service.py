@@ -33,7 +33,8 @@ class NumberedCanvas(canvas.Canvas):
     """
     Two-pass dynamic canvas:
     1. Collects page states on first pass.
-    2. In save(), calculates total pages and renders dynamic footers ('Halaman X dari Y').
+    2. In save(), calculates total pages and renders dynamic footers ('- %d -')
+       on every actual page at bottom center (x = 595.28 / 2.0, y = 16).
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -53,11 +54,11 @@ class NumberedCanvas(canvas.Canvas):
 
     def draw_page_decorations(self, page_count):
         self.saveState()
-        # Footer: Halaman X dari Y on bottom right
-        self.setFont("Times-Roman", 8)
-        self.setFillColor(colors.HexColor("#64748b"))
-        page_text = f"Halaman {self._pageNumber} dari {page_count}"
-        self.drawRightString(595.27 - 36, 15, page_text)
+        # Footer: - %d - on bottom center
+        self.setFont("Times-Roman", 9)
+        self.setFillColor(colors.HexColor("#334155"))
+        page_text = f"- {self._pageNumber} -"
+        self.drawCentredString(595.28 / 2.0, 16, page_text)
         self.restoreState()
 
 
@@ -118,27 +119,29 @@ class EMeteraiService:
     def generate_spk_pdf_bytes(cls, submission, for_stamping: bool = False) -> Tuple[bytes, int]:
         """
         Generate in-memory PDF bytes of the SPK contract and return (pdf_bytes, page_count).
-        First attempts WeasyPrint; if WeasyPrint has OS library constraints, falls back
-        to ReportLab PDF generation.
+        For permohonan-kontrak, directly uses high-fidelity ReportLab generator to guarantee
+        exact NumberedCanvas pagination (- %d -) and pixel-perfect e-meterai placement.
+        For other forms, uses DocumentTemplate + WeasyPrint with ReportLab fallback.
         """
-        from django_forms_workflows.models import DocumentTemplate
+        form_def = getattr(submission, "form_definition", None)
+        if form_def and getattr(form_def, "slug", "") == "permohonan-kontrak":
+            # Permohonan Kontrak: Prioritaskan ReportLab engine murni
+            pdf_bytes = cls._generate_reportlab_spk_pdf(submission, for_stamping=for_stamping)
+            page_count = cls._get_pdf_page_count(pdf_bytes)
+            return pdf_bytes, page_count
 
-        form_def = submission.form_definition
-        if form_def.slug == "permohonan-kontrak":
-            from django_forms_workflows.company_profiles import resolve_spk_document_template
-            custom_template = resolve_spk_document_template(form_def, submission=submission)
-        else:
-            custom_template = DocumentTemplate.objects.filter(
-                form_definition=form_def, is_default=True, is_active=True
-            ).first()
+        from django_forms_workflows.models import DocumentTemplate
+        custom_template = DocumentTemplate.objects.filter(
+            form_definition=form_def, is_default=True, is_active=True
+        ).first()
 
         html_content = ""
         if custom_template:
             html_content = custom_template.render(submission)
         else:
-            html_content = f"<h1>Surat Perjanjian Kerjasama #{submission.id}</h1><p>Form: {form_def.name}</p>"
+            html_content = f"<h1>Surat Perjanjian Kerjasama #{getattr(submission, 'id', 0)}</h1><p>Form: {form_def.name if form_def else 'General'}</p>"
 
-        # 1. Try WeasyPrint
+        # 1. Try WeasyPrint for generic forms
         try:
             from weasyprint import HTML
             pdf_bytes = HTML(string=html_content).write_pdf()
@@ -148,7 +151,7 @@ class EMeteraiService:
             logger.warning(
                 "WeasyPrint unavailable (%s). Falling back to ReportLab engine for submission #%s",
                 wp_exc,
-                submission.id,
+                getattr(submission, "id", 0),
             )
 
         # 2. Fallback to ReportLab pure python generator
@@ -195,6 +198,7 @@ class EMeteraiService:
             Image as RLImage,
             HRFlowable,
             PageBreak,
+            CondPageBreak,
         )
         from reportlab.lib import colors
         from django.utils import timezone
@@ -203,6 +207,8 @@ class EMeteraiService:
             get_company_logo_abs_path,
             format_official_spk_number,
             format_date_indonesia,
+            build_spk_incentive_matrix_data,
+            get_brand_default_discount_rows,
         )
 
         form_data = submission.form_data or {}
@@ -210,6 +216,7 @@ class EMeteraiService:
         perusahaan = comp_prof["display_name"]
 
         buffer = io.BytesIO()
+        spk_title = form_data.get("nomor_spk") or f"SPK_Submission_{getattr(submission, 'id', 0)}"
         doc = SimpleDocTemplate(
             buffer,
             pagesize=A4,
@@ -217,7 +224,7 @@ class EMeteraiService:
             rightMargin=36,
             topMargin=26,
             bottomMargin=26,
-            title=f"SPK_Submission_{submission.id}",
+            title=str(spk_title),
             author=perusahaan or "PT Royal Abadi Sejahtera",
         )
 
@@ -319,6 +326,144 @@ class EMeteraiService:
             alignment=1,  # Center
             textColor=colors.HexColor("#111827"),
         )
+        inc_cell_left = ParagraphStyle(
+            "SPKIncCellLeft",
+            parent=styles["Normal"],
+            fontName="Times-Roman",
+            fontSize=8.5,
+            leading=10.5,
+            alignment=0,  # Left
+            textColor=colors.HexColor("#111827"),
+        )
+        inc_cell_center = ParagraphStyle(
+            "SPKIncCellCenter",
+            parent=styles["Normal"],
+            fontName="Times-Roman",
+            fontSize=8.5,
+            leading=10.5,
+            alignment=1,  # Center
+            textColor=colors.HexColor("#111827"),
+        )
+
+        def build_incentive_table(calc_data):
+            t_data = [
+                [
+                    Paragraph("Insentive Reward", inc_cell_left),
+                    Paragraph("=", inc_cell_center),
+                    Paragraph(f"Rp. {calc_data.get('reward_nominal', '-')}", inc_cell_left),
+                    Paragraph(f"( {calc_data.get('reward_rate', '-')} x Pencapaian Omzet )", inc_cell_left),
+                ],
+                [
+                    Paragraph("Pph 23 Untuk Insentive Kontrak", inc_cell_left),
+                    Paragraph("=", inc_cell_center),
+                    Paragraph(f"Rp. {calc_data.get('pph_nominal', '-')}", inc_cell_left),
+                    Paragraph(f"( Insentive x {calc_data.get('pph_rate', '15%')} )", inc_cell_left),
+                ],
+                [
+                    Paragraph("Netto Reward", inc_cell_left),
+                    Paragraph("=", inc_cell_center),
+                    Paragraph(f"Rp. {calc_data.get('netto_nominal', '-')}", inc_cell_left),
+                    Paragraph("(Total Insentive – Pph 23)", inc_cell_left),
+                ],
+            ]
+            t_style = TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 1.5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+            ])
+            return Table(t_data, colWidths=[185, 15, 110, 213], style=t_style, hAlign="CENTER")
+        cell_right_style = ParagraphStyle(
+            "SPKCellRight",
+            parent=styles["Normal"],
+            fontName="Times-Roman",
+            fontSize=7.5,
+            leading=9.5,
+            alignment=2,  # Right
+            textColor=colors.HexColor("#111827"),
+        )
+        cell_right_bold_style = ParagraphStyle(
+            "SPKCellRightBold",
+            parent=styles["Normal"],
+            fontName="Times-Bold",
+            fontSize=7.5,
+            leading=9.5,
+            alignment=2,  # Right
+            textColor=colors.HexColor("#111827"),
+        )
+        matrix_th_style = ParagraphStyle(
+            "SPKMatrixTH",
+            parent=styles["Normal"],
+            fontName="Times-Bold",
+            fontSize=7.5,
+            leading=9.5,
+            alignment=1,  # Center
+            textColor=colors.HexColor("#111827"),
+        )
+        matrix_cell_left = ParagraphStyle(
+            "SPKMatrixCellLeft",
+            parent=styles["Normal"],
+            fontName="Times-Roman",
+            fontSize=7.5,
+            leading=9.5,
+            alignment=0,  # Left
+            textColor=colors.HexColor("#111827"),
+        )
+        matrix_cell_center = ParagraphStyle(
+            "SPKMatrixCellCenter",
+            parent=styles["Normal"],
+            fontName="Times-Roman",
+            fontSize=7.5,
+            leading=9.5,
+            alignment=1,  # Center
+            textColor=colors.HexColor("#111827"),
+        )
+
+        def build_incentive_matrix_table(f_data):
+            m_rows = build_spk_incentive_matrix_data(f_data)
+            t_data = [
+                [
+                    Paragraph("Target Tahunan", matrix_th_style),
+                    Paragraph("Insentif", matrix_th_style),
+                    "",
+                    Paragraph("PPH", matrix_th_style),
+                    "",
+                    Paragraph("Nilai Netto (Rp)", matrix_th_style),
+                ],
+                [
+                    "",
+                    Paragraph("%", matrix_th_style),
+                    Paragraph("Value", matrix_th_style),
+                    Paragraph("%", matrix_th_style),
+                    Paragraph("Value", matrix_th_style),
+                    "",
+                ]
+            ]
+            for r in m_rows:
+                t_data.append([
+                    Paragraph(r["target_tahunan_fmt"], matrix_cell_left),
+                    Paragraph(r["incentive_pct_str"], matrix_cell_center),
+                    Paragraph(r["incentive_val_fmt"], cell_right_style),
+                    Paragraph(r["pph_pct_str"], matrix_cell_center),
+                    Paragraph(r["pph_val_fmt"], cell_right_style),
+                    Paragraph(r["netto_val_fmt"], cell_right_bold_style),
+                ])
+            t_matrix_style = TableStyle([
+                ("SPAN", (0, 0), (0, 1)),
+                ("SPAN", (1, 0), (2, 0)),
+                ("SPAN", (3, 0), (4, 0)),
+                ("SPAN", (5, 0), (5, 1)),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+                ("BACKGROUND", (0, 0), (-1, 1), colors.HexColor("#f1f5f9")),
+                ("ALIGN", (0, 0), (-1, 1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 1.5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+            ])
+            return Table(t_data, colWidths=[130, 45, 92, 45, 92, 119], style=t_matrix_style, hAlign="CENTER")
 
         def format_rupiah(val):
             if val is None or val == "":
@@ -362,6 +507,7 @@ class EMeteraiService:
         kota_toko = form_data.get("kota") or form_data.get("cabang") or "Bandung"
         no_npwp = form_data.get("nomor_npwp") or "—"
         no_nik = form_data.get("nomor_nik") or form_data.get("nomor_identitas") or "—"
+        no_email = form_data.get("email") or "—"
         jenis_pajak = form_data.get("jenis_pajak") or "Exclude PPN"
 
         brand = form_data.get("brand") or "LADY"
@@ -380,14 +526,25 @@ class EMeteraiService:
         raw_target = form_data.get("nilai_target")
         target_rp = format_rupiah(raw_target) if raw_target else "-"
 
-        pct_promo = form_data.get("pct_support_promo") or "5"
+        pct_promo_raw = form_data.get("persen_support") or form_data.get("pct_support_promo") or "5"
+        try:
+            pct_promo = str(pct_promo_raw).replace("%", "").strip()
+        except Exception:
+            pct_promo = "5"
         top = form_data.get("top") or "30"
+        jenis_pencairan_insentif = form_data.get("jenis_pencairan_insentif") or "Transfer/Giro"
 
         tgl_ttd = format_date_indonesia(form_data.get("tanggal_penandatanganan") or timezone.now().date())
         kota_ttd = form_data.get("kota_penandatanganan") or cabang or "Bandung"
 
         # Check Support Promosi vs Standard
-        has_support = form_data.get("is_support_provided") in (True, "True", "true", "1", 1, "on")
+        raw_supp = form_data.get("is_sales_support") or form_data.get("tipe_kontrak")
+        is_sales_support = raw_supp in (
+            True, "True", "true", "1", 1, "on",
+            "Sales Support (Support Promosi)", "Sales Support", "sales_support"
+        ) or form_data.get("is_support_provided") in (True, "True", "true", "1", 1, "on")
+        has_support = is_sales_support
+        p_offset = 1 if is_sales_support else 0
 
         elements = []
 
@@ -444,6 +601,7 @@ class EMeteraiService:
             [Paragraph("Alamat", cell_style), Paragraph(":", cell_center_style), Paragraph(f"{alamat_toko}, {kota_toko}", cell_style)],
             [Paragraph("NPWP", cell_style), Paragraph(":", cell_center_style), Paragraph(no_npwp, cell_style)],
             [Paragraph("NIK", cell_style), Paragraph(":", cell_center_style), Paragraph(no_nik, cell_style)],
+            [Paragraph("Email", cell_style), Paragraph(":", cell_center_style), Paragraph(no_email, cell_style)],
             [Paragraph(f"Selanjutnya disebut sebagai <b>PIHAK KEDUA</b> Dealer produk Springbed merk <b>“{brand}”</b>", body_style), Paragraph("", cell_style), Paragraph("", cell_style)],
         ]
         t_parties = Table(parties_data, colWidths=[90, 12, 421])
@@ -453,11 +611,11 @@ class EMeteraiService:
                     ("GRID", (0, 0), (-1, -1), 0, colors.transparent),
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
                     ("SPAN", (0, 3), (2, 3)),
-                    ("SPAN", (0, 9), (2, 9)),
-                    ("TOPPADDING", (0, 0), (-1, -1), 1),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-                    ("BOTTOMPADDING", (0, 3), (-1, 3), 3),
-                    ("BOTTOMPADDING", (0, 9), (-1, 9), 3),
+                    ("SPAN", (0, 10), (2, 10)),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0.75),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0.75),
+                    ("BOTTOMPADDING", (0, 3), (-1, 3), 2),
+                    ("BOTTOMPADDING", (0, 10), (-1, 10), 2),
                     ("LEFTPADDING", (0, 0), (-1, -1), 0),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                 ]
@@ -495,13 +653,26 @@ class EMeteraiService:
         # BAB II (Pasal 3 & Tabel Target)
         elements.append(Paragraph("<b>BAB II<br/>VOLUME PENJUALAN dan PENGHARGAAN – PERIODE KONTRAK - SKEMA DISCOUNT</b>", bab_heading_style))
         elements.append(Paragraph("<u><b>Pasal 3</b></u>", pasal_heading_style))
-        p3_text = (
-            f"(1) Para Pihak sepakat bahwa Target Volume Penjualan produk selama jangka waktu perjanjian ini <b>{target_rp}</b> per bulan {jenis_pajak}.<br/>"
-            f"(2) Pihak Kedua wajib memenuhi Volume Penjualan yang telah ditentukan dalam perjanjian ini."
-        )
-        elements.append(Paragraph(p3_text, body_style))
 
-        grid_target = parse_grid_data(form_data.get("target_incentive"))
+        grid_target = parse_grid_data(form_data.get("target_incentive_scheme") or form_data.get("target_incentive"))
+        raw_target = form_data.get("nilai_target")
+        target_rp = format_rupiah(raw_target) if raw_target else "-"
+
+        # Fallback bertingkat: Jika target_rp kosong/strip, ambil dari baris pertama grid_target
+        if target_rp in ("-", "", "Rp 0") and grid_target:
+            first_val = grid_target[0].get("target_bulanan")
+            if first_val:
+                target_rp = format_rupiah(first_val)
+
+        p3_ayat1 = Paragraph(
+            "(1) Para Pihak sepakat bahwa Target Volume Penjualan produk selama jangka waktu perjanjian, dijelaskan seperti tabel dibawah ini.",
+            body_style,
+        )
+        p3_ayat2 = Paragraph(
+            "(2) Pihak Kedua wajib memenuhi Volume Penjualan yang telah ditentukan dalam perjanjian ini.",
+            body_style,
+        )
+
         target_table_data = [
             [
                 Paragraph("Target Bulanan", th_style),
@@ -527,22 +698,29 @@ class EMeteraiService:
                 Paragraph(target_rp if target_rp != "-" else "Target Bulanan Sesuai Kesepakatan", cell_center_style),
                 Paragraph("Exclude PPN", cell_center_style),
                 Paragraph("Sesuai Skema", cell_center_style),
-                Paragraph("Diverifikasi setiap akhir bulan kalender", cell_style),
+                Paragraph("Diverifikasi setiap akhir bulan kalender", cell_center_style),
             ])
-        t_target = Table(target_table_data, colWidths=[130, 95, 80, 218])
+        t_target = Table(target_table_data, colWidths=[130, 95, 80, 218], hAlign="CENTER")
         t_target.setStyle(
             TableStyle(
                 [
                     ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f8fafc")),
                     ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#94a3b8")),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("TOPPADDING", (0, 0), (-1, -1), 2),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                    ("TOPPADDING", (0, 0), (-1, -1), 1.2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1.2),
                     ("LEFTPADDING", (0, 0), (-1, -1), 4),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                 ]
             )
         )
+
+        elements.append(p3_ayat1)
+        elements.append(Spacer(1, 2))
+        elements.append(t_target)
+        elements.append(Spacer(1, 2))
+        elements.append(p3_ayat2)
 
         # Discount Scheme Table Shared Builder
         grid_disc = parse_grid_data(form_data.get("discount_scheme"))
@@ -554,40 +732,62 @@ class EMeteraiService:
                 Paragraph("Keterangan", th_style),
             ]
         ]
+        disc_order = {
+            'md1': 1, 'md2': 2, 'mtop': 3, 'md3': 3, 'md4': 4,
+            'mthmt': 5, 'thematic': 5, 'mtht': 5, 'mprto': 6, 'mlcd': 7
+        }
+        if not grid_disc:
+            grid_disc = get_brand_default_discount_rows(brand)
+
         if grid_disc:
-            for r in grid_disc:
-                komp = r.get("komponen") or "Diskon Khusus"
-                val_raw = r.get("nilai")
-                if val_raw is not None and str(val_raw).strip() != "":
-                    val = str(val_raw).strip()
-                    if not val.endswith("%") and str(r.get("tipe", "")).lower() == "persentase":
-                        val += "%"
+            sorted_disc = sorted(
+                grid_disc,
+                key=lambda x: disc_order.get(str(x.get("komponen") or "").strip().lower(), 99)
+            )
+            for r in sorted_disc:
+                komp = str(r.get("komponen") or "Diskon Khusus").strip()
+                komp_upper = komp.upper()
+                if komp_upper == "MD3":
+                    komp = "MTOP"
+                    komp_upper = "MTOP"
+                elif komp_upper in ("THEMATIC", "MTHT"):
+                    komp = "MTHMT"
+                    komp_upper = "MTHMT"
+
+                is_mthmt = (komp_upper == "MTHMT")
+                if is_mthmt:
+                    val = ""
+                    tip = ""
+                    ket = r.get("keterangan") or "Program Thematic Yang Berlaku"
                 else:
-                    val = "-"
-                tip = str(r.get("tipe") or "Persentase")
-                ket = r.get("keterangan") or "—"
+                    val_raw = r.get("nilai")
+                    if val_raw is not None and str(val_raw).strip() not in ("", "—", "-"):
+                        val = str(val_raw).strip()
+                        if not val.endswith("%") and str(r.get("tipe", "")).lower() == "persentase":
+                            val += "%"
+                    else:
+                        val = "—"
+                    tip = str(r.get("tipe") or "Persentase") if val != "—" else "—"
+                    ket = r.get("keterangan") or ("TOP" if komp_upper == "MTOP" else "—")
+                    if komp_upper == "MTOP" and val == "—":
+                        ket = "—"
+
                 disc_table_data.append([
                     Paragraph(komp, cell_style),
                     Paragraph(val, cell_center_style),
                     Paragraph(tip, cell_center_style),
-                    Paragraph(ket, cell_style if len(ket) > 10 else cell_center_style),
+                    Paragraph(ket, cell_center_style),
                 ])
-        else:
-            disc_table_data.append([
-                Paragraph("Diskon Reguler / Promo Display", cell_style),
-                Paragraph(f"{pct_promo}%", cell_center_style),
-                Paragraph("Persentase", cell_center_style),
-                Paragraph("Diberikan berdasarkan pencapaian target", cell_style),
-            ])
-        t_disc = Table(disc_table_data, colWidths=[130, 80, 95, 218])
+        t_disc = Table(disc_table_data, colWidths=[130, 80, 95, 218], hAlign="CENTER")
         t_disc.setStyle(
             TableStyle(
                 [
                     ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f8fafc")),
                     ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#94a3b8")),
+                    ("ALIGN", (1, 0), (-1, -1), "CENTER"),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("TOPPADDING", (0, 0), (-1, -1), 2),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                    ("TOPPADDING", (0, 0), (-1, -1), 1.5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
                     ("LEFTPADDING", (0, 0), (-1, -1), 4),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                 ]
@@ -623,210 +823,104 @@ class EMeteraiService:
             )
             return [rek_intro, Spacer(1, 4), t_rek, Spacer(1, 4), rek_outro]
 
-        # BRANCHING: STANDARD (11 PASAL) VS SUPPORT PROMOSI (12 PASAL)
-        inc_calc = calculate_spk_incentive_breakdown(form_data, is_support=has_support)
-
-        if not has_support:
-            # === DRAFT STANDARD (11 PASAL) ===
-            # HALAMAN 1 (PASAL 4, 5)
+        # ==================== KLAUSUL PASAL DOKUMEN SPK ====================
+        # Mode Standar: 12 Pasal (p_offset = 0)
+        # Mode Sales Support: 13 Pasal (p_offset = 1, Pasal 4 Support Promosi disisipkan)
+        
+        # HALAMAN 1
+        if is_sales_support:
+            komp_biaya_raw = form_data.get("komponen_biaya_support") or form_data.get("komponen_biaya")
+            komp_biaya_text = format_komponen_biaya_legal_text(komp_biaya_raw)
             elements.append(Paragraph("<u><b>Pasal 4</b></u>", pasal_heading_style))
-            elements.append(
-                Paragraph(f"Perjanjian berlaku untuk Jangka Waktu <b>{durasi}</b> terhitung dari sejak tanggal <b>{tgl_mulai}</b> dan akan berakhir pada tanggal <b>{tgl_akhir}</b>.", body_style)
-            )
-
-            elements.append(Paragraph("<u><b>Pasal 5</b></u>", pasal_heading_style))
-            elements.append(Paragraph("Skema discount untuk penjualan Produk yang berlaku untuk Pihak Kedua dalam Perjanjian ini adalah sebagai berikut :", body_style))
-            elements.append(t_disc)
-
-            # BATAS RESMI HALAMAN 1 -> PINDAH KE HALAMAN 2
-            elements.append(PageBreak())
-
-            # ==================== HALAMAN 2 (STANDARD) ====================
-            elements.extend(get_page_header_logo())
-
-            elements.append(Paragraph("<u><b>Pasal 6</b></u>", pasal_heading_style))
-            p6_std = (
-                "Pihak Pertama memberikan kompensasi Insentive Reward kepada Pihak Kedua saat perjanjian ini berakhir dan seluruh kewajiban "
-                "Pihak Kedua kepada Pihak Pertama telah selesai atau LUNAS.<br/>"
-                "Adapun perhitungan insentif adalah sebagai berikut :<br/>"
-                f"• Target Rp. {inc_calc['target_per_periode']} per {inc_calc['frekuensi_bulan']} Bulan mendapatkan insentif reward {inc_calc['reward_rate']}<br/>"
-                f"&nbsp; &nbsp; Insentive Reward = Rp. {inc_calc['reward_nominal']} ( {inc_calc['reward_rate']} x Pencapaian Omzet )<br/>"
-                f"&nbsp; &nbsp; Pph 23 Untuk Insentive Kontrak = Rp. {inc_calc['pph_nominal']} ( Insentive x {inc_calc['pph_rate']} )<br/>"
-                f"&nbsp; &nbsp; Netto Reward = Rp. {inc_calc['netto_nominal']} (Total Insentive – Pph 23)<br/>"
-                f"Maka insentive yang dibayarkan adalah sebesar Rp. {inc_calc['netto_nominal']}."
-            )
-            elements.append(KeepTogether([Paragraph(p6_std, body_style)]))
-
-            # BAB III (Pasal 7, 8, 9, 10)
-            elements.append(Paragraph("<b>BAB III<br/>TATA CARA PEMBAYARAN</b>", bab_heading_style))
-            elements.append(Paragraph("<u><b>Pasal 7</b></u>", pasal_heading_style))
-            elements.append(Paragraph(f"Wajib melaksanakan Pembayaran kepada Pihak Pertama paling lambat <b>{top}</b> hari setelah tanggal pengiriman ( selanjutnya disebut “ Jangka Waktu Pembayaran” ).", body_style))
-
-            elements.append(Paragraph("<u><b>Pasal 8</b></u>", pasal_heading_style))
-            elements.append(
-                Paragraph(
-                    f"Sistem pembayaran melalui Transfer / Cek / Giro yang telah di tulis nama <b>{perusahaan}</b> dengan Nomer Rekening ({rekening_display}) sesuai "
-                    f"yang ada pada Faktur dan kontrabon. Serta <b>TIDAK DIPERKENANKAN</b> membayar secara TUNAI kepada Salesman/Collector/Kepala Depo/ASM/BM "
-                    f"atau menitip pembayaran kepada Supir maupun Karyawan lainnya.",
-                    body_style,
-                )
-            )
-
-            elements.append(Paragraph("<u><b>Pasal 9</b></u>", pasal_heading_style))
-            elements.append(KeepTogether(build_rek_block(perusahaan, rekening_an, rekening_bank, rekening_no)))
-
-            elements.append(Paragraph("<u><b>Pasal 10</b></u>", pasal_heading_style))
-            elements.append(
-                Paragraph(
-                    "Apabila pembayaran tidak sesuai dengan TOP dan jika terjadi backdate, Pihak Pertama dapat mengambil/menyita aset sesuai dengan piutang.",
-                    body_style,
-                )
-            )
-
-            # BAB IV (Pasal 11, 12)
-            elements.append(Paragraph("<b>BAB IV<br/>ITIKAD BAIK DAN PERSELISIHAN</b>", bab_heading_style))
-            elements.append(Paragraph("<u><b>Pasal 11</b></u>", pasal_heading_style))
-            elements.append(Paragraph("Para pihak dengan itikad baik dan penuh tanggung jawab menjalankan tugas, hak dan kewajibannya dengan mengindahkan peraturan perundangan yang berlaku.", body_style))
-
-            elements.append(Paragraph("<u><b>Pasal 12</b></u>", pasal_heading_style))
-            elements.append(
-                Paragraph(
-                    f"Apabila terjadi perselisihan/sengketa diantara Para Pihak terkait dengan isi dan/atau Pelaksanaan Perjanjian ini maka perselisihan tersebut "
-                    f"akan di selesaikan terlebih dahulu melalui musyawarah mufakat diantara Para Pihak. Apabila dengan cara musyawarah mufakat tidak dapat dilakukan "
-                    f"atau tidak tercapai sesuatu penyelesaian yang baik bagi Para Pihak maka Para Pihak sepakat untuk memilih <b>{domisili_pn}</b> "
-                    f"sebagai satu satunya domisili hukum yang tetap bagi Para Pihak.",
-                    body_style,
-                )
-            )
-
-        else:
-            # === DRAFT SUPPORT PROMOSI (12 PASAL) ===
-            # HALAMAN 1 (PASAL 4, 5, 6)
-            elements.append(Paragraph("<u><b>Pasal 4</b></u>", pasal_heading_style))
-            komp_biaya_text = format_komponen_biaya_legal_text(form_data.get("komponen_biaya"))
             p4_supp = (
-                f"1. Pihak Pertama memberikan support promosi yang meliputi biaya ({komp_biaya_text}) kepada Pihak Kedua sebesar <b>{pct_promo}%</b>. "
+                f"(1) Pihak Pertama memberikan support promosi yang meliputi biaya ({komp_biaya_text}) kepada Pihak Kedua sebesar <b>{pct_promo}%</b>. "
                 f"Support promosi tersebut <b>TIDAK</b> meliputi biaya Billboard, Pajak Billboard, dan Backdrop apabila Pihak Kedua membuka cabang baru atau toko baru.<br/>"
-                f"2. Support promosi ini dapat dicairkan setelah pembayaran <b>LUNAS</b>.<br/>"
-                f"3. Grace period selama 1 (satu) bulan dari masa kontrak berakhir, apabila Pihak Kedua belum mencapai target."
+                f"(2) Support promosi ini dapat dicairkan setelah pembayaran <b>LUNAS</b>.<br/>"
+                f"(3) Grace period selama 1 (satu) bulan dari masa kontrak berakhir, apabila Pihak Kedua belum mencapai target."
             )
             elements.append(Paragraph(p4_supp, body_style))
 
-            elements.append(Paragraph("<u><b>Pasal 5</b></u>", pasal_heading_style))
-            elements.append(
-                Paragraph(f"Perjanjian berlaku untuk Jangka Waktu <b>{durasi}</b> terhitung dari sejak tanggal <b>{tgl_mulai}</b> dan akan berakhir pada tanggal <b>{tgl_akhir}</b>.", body_style)
+        elements.append(Paragraph(f"<u><b>Pasal {4 + p_offset}</b></u>", pasal_heading_style))
+        elements.append(
+            Paragraph(f"Perjanjian berlaku untuk Jangka Waktu <b>{durasi}</b> terhitung dari sejak tanggal <b>{tgl_mulai}</b> dan akan berakhir pada tanggal <b>{tgl_akhir}</b>.", body_style)
+        )
+
+        elements.append(Paragraph(f"<u><b>Pasal {5 + p_offset}</b></u>", pasal_heading_style))
+        elements.append(Paragraph("Skema discount untuk penjualan Produk yang berlaku untuk Pihak Kedua dalam Perjanjian ini adalah sebagai berikut :", body_style))
+        elements.append(t_disc)
+
+        # BATAS RESMI HALAMAN 1 -> PINDAH KE HALAMAN 2
+        # Menggunakan CondPageBreak(300) agar jika konten telah mengalir ke halaman 2,
+        # tidak memicu halaman kosong baru yang prematur.
+        elements.append(CondPageBreak(300))
+
+        # ==================== HALAMAN 2 ====================
+        elements.extend(get_page_header_logo())
+
+        elements.append(Paragraph(f"<u><b>Pasal {6 + p_offset}</b></u>", pasal_heading_style))
+        p_insentif_intro = Paragraph(
+            "(1) Pihak Pertama memberikan Insentif kepada Pihak Kedua saat perjanjian ini berakhir, "
+            "atau ketika target penjualan sudah terpenuhi (mana yang lebih dulu tercapai) dan seluruh kewajiban "
+            "pembayaran Pihak Kedua kepada Pihak Pertama telah selesai atau LUNAS. "
+            "Adapun perhitungan insentif adalah sebagai berikut :",
+            body_style,
+        )
+        t_matrix = build_incentive_matrix_table(form_data)
+        p_insentif_outro = Paragraph(
+            "Insentif yang akan diberikan seperti perhitungan pada tabel di atas.<br/>"
+            f"(2) Pencairan Insentif yang menjadi hak Pihak Kedua dapat diberikan melalui <b>{jenis_pencairan_insentif}</b>.",
+            body_style,
+        )
+        elements.append(
+            KeepTogether([
+                p_insentif_intro,
+                Spacer(1, 2),
+                t_matrix,
+                Spacer(1, 2),
+                p_insentif_outro,
+            ])
+        )
+
+        # BAB III TATA CARA PEMBAYARAN
+        elements.append(Paragraph("<b>BAB III<br/>TATA CARA PEMBAYARAN</b>", bab_heading_style))
+        elements.append(Paragraph(f"<u><b>Pasal {7 + p_offset}</b></u>", pasal_heading_style))
+        elements.append(Paragraph(f"Wajib melaksanakan Pembayaran kepada Pihak Pertama paling lambat <b>{top}</b> hari setelah tanggal pengiriman (selanjutnya disebut “Jangka Waktu Pembayaran”).", body_style))
+
+        elements.append(Paragraph(f"<u><b>Pasal {8 + p_offset}</b></u>", pasal_heading_style))
+        p_ket_top_text = (
+            "a. Pihak Pertama dalam hal ini dapat menghilangkan diskon TOP jika Pihak Kedua tidak membayar tagihan sesuai dengan jangka waktu pembayaran yang telah diberikan (TOP).<br/>"
+            "b. Jika terjadi gagal bayar atau bad debt maka Pihak Pertama berhak menyita asset dari Pihak Kedua jika diperlukan."
+        )
+        elements.append(Paragraph(p_ket_top_text, body_style))
+
+        elements.append(Paragraph(f"<u><b>Pasal {9 + p_offset}</b></u>", pasal_heading_style))
+        elements.append(
+            Paragraph(
+                f"Sistem pembayaran melalui Transfer atau buka Cek/Giro yang telah di tulis nama <b>{perusahaan}</b> "
+                f"dengan Nomer Rekening sesuai yang ada pada Faktur dan Kontra Bon. Serta <b>TIDAK DIPERKENANKAN</b> membayar secara TUNAI kepada Salesman/Collector/Kepala Depo/ASM/BM "
+                f"atau menitip pembayaran kepada Supir maupun Karyawan lainnya.",
+                body_style,
             )
+        )
 
-            elements.append(Paragraph("<u><b>Pasal 6</b></u>", pasal_heading_style))
-            elements.append(Paragraph("Skema discount untuk penjualan Produk yang berlaku untuk Pihak Kedua dalam Perjanjian ini adalah sebagai berikut :", body_style))
-            elements.append(t_disc)
+        elements.append(Paragraph(f"<u><b>Pasal {10 + p_offset}</b></u>", pasal_heading_style))
+        elements.append(KeepTogether(build_rek_block(perusahaan, rekening_an, rekening_bank, rekening_no)))
 
-            # BATAS RESMI HALAMAN 1 -> PINDAH KE HALAMAN 2
-            elements.append(PageBreak())
+        # BAB IV ITIKAD BAIK DAN PERSELISIHAN
+        elements.append(Paragraph("<b>BAB IV<br/>ITIKAD BAIK DAN PERSELISIHAN</b>", bab_heading_style))
+        elements.append(Paragraph(f"<u><b>Pasal {11 + p_offset}</b></u>", pasal_heading_style))
+        elements.append(Paragraph("Para pihak dengan itikad baik dan penuh tanggung jawab menjalankan tugas, hak dan kewajibannya dengan mengindahkan peraturan perundangan yang berlaku.", body_style))
 
-            # ==================== HALAMAN 2 (SUPPORT PROMOSI) ====================
-            elements.extend(get_page_header_logo())
-
-            elements.append(Paragraph("<u><b>Pasal 7</b></u>", pasal_heading_style))
-            narasi_p7_text = (
-                f"<b>Rincian Perhitungan Resmi:</b> {inc_calc['narasi_perhitungan_paragraf']}"
+        elements.append(Paragraph(f"<u><b>Pasal {12 + p_offset}</b></u>", pasal_heading_style))
+        elements.append(
+            Paragraph(
+                f"Apabila terjadi perselisihan/sengketa diantara Para Pihak terkait dengan isi dan/atau Pelaksanaan Perjanjian ini maka perselisihan tersebut "
+                f"akan di selesaikan terlebih dahulu melalui musyawarah mufakat diantara Para Pihak. Apabila dengan cara musyawarah mufakat tidak dapat dilakukan "
+                f"atau tidak tercapai sesuatu penyelesaian yang baik bagi Para Pihak maka Para Pihak sepakat untuk memilih <b>{domisili_pn}</b> "
+                f"sebagai satu satunya domisili hukum yang tetap bagi Para Pihak.",
+                body_style,
             )
-            p7_supp = (
-                "Pihak Pertama memberikan kompensasi Insentive Reward kepada Pihak Kedua saat perjanjian ini berakhir dan seluruh kewajiban "
-                "Pihak Kedua kepada Pihak Pertama telah selesai atau LUNAS.<br/>"
-                f"{narasi_p7_text}<br/>"
-                "Adapun rincian perhitungan insentif adalah sebagai berikut :<br/>"
-                f"• Target Rp. {inc_calc['target_per_periode']} per {inc_calc['frekuensi_bulan']} Bulan mendapatkan reward (support promosi) {inc_calc['reward_rate']}<br/>"
-                f"&nbsp; &nbsp; Insentive Reward = Rp. {inc_calc['reward_nominal']} ( {inc_calc['reward_rate']} x Pencapaian Omzet )<br/>"
-                f"&nbsp; &nbsp; Pph 23 Untuk Insentive Kontrak = Rp. {inc_calc['pph_nominal']} ( Reward x {inc_calc['pph_rate']} )<br/>"
-                f"&nbsp; &nbsp; Netto Reward = Rp. {inc_calc['netto_nominal']} (Total Insentive – Pph 23)<br/>"
-                f"Maka insentive yang dibayarkan adalah sebesar Rp. {inc_calc['netto_nominal']}."
-            )
-            elements.append(KeepTogether([Paragraph(p7_supp, body_style)]))
-
-            # Tier Support Grid if present (5 Kolom Lengkap Sesuai Poin 11)
-            grid_tier = parse_grid_data(form_data.get("tier_support"))
-            if grid_tier:
-                tier_table_data = [
-                    [
-                        Paragraph("Target Tahunan", th_style),
-                        Paragraph("Dukungan (%)", th_style),
-                        Paragraph("PPh 23 (%)", th_style),
-                        Paragraph("Nilai Netto (Rp)", th_style),
-                        Paragraph("Keterangan", th_style),
-                    ]
-                ]
-                for r in grid_tier:
-                    raw_netto = r.get("netto", 0)
-                    try:
-                        netto_num = float(re.sub(r"[^\d.-]", "", str(raw_netto)) or 0)
-                        netto_str = format_rupiah(netto_num)
-                    except Exception:
-                        netto_str = str(raw_netto) if raw_netto else "—"
-                    tier_table_data.append([
-                        Paragraph(format_rupiah(r.get("target_tahunan")), cell_center_style),
-                        Paragraph(f"{r.get('support_pct', 0)}%", cell_center_style),
-                        Paragraph(f"{r.get('pph_pct', 2)}%", cell_center_style),
-                        Paragraph(netto_str, cell_center_style),
-                        Paragraph(str(r.get("keterangan") or "—"), cell_style),
-                    ])
-                t_tier = Table(tier_table_data, colWidths=[120, 75, 75, 110, 143])
-                t_tier.setStyle(
-                    TableStyle(
-                        [
-                            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f8fafc")),
-                            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#94a3b8")),
-                            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                            ("TOPPADDING", (0, 0), (-1, -1), 2),
-                            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                            ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                        ]
-                    )
-                )
-                elements.append(t_tier)
-
-            # BAB III (Pasal 8, 9, 10)
-            elements.append(Paragraph("<b>BAB III<br/>TATA CARA PEMBAYARAN</b>", bab_heading_style))
-            elements.append(Paragraph("<u><b>Pasal 8</b></u>", pasal_heading_style))
-            elements.append(Paragraph(f"Wajib melaksanakan Pembayaran kepada Pihak Pertama paling lambat <b>{top}</b> hari setelah tanggal pengiriman ( selanjutnya disebut “ Jangka Waktu Pembayaran” ).", body_style))
-
-            elements.append(Paragraph("<u><b>Pasal 9</b></u>", pasal_heading_style))
-            elements.append(
-                Paragraph(
-                    f"Sistem pembayaran melalui Transfer / Cek / Giro yang telah di tulis nama <b>{perusahaan}</b> dengan Nomer Rekening ({rekening_display}) sesuai "
-                    f"yang ada pada Faktur dan kontrabon. Serta <b>TIDAK DIPERKENANKAN</b> membayar secara TUNAI kepada Salesman/Collector/Kepala Depo/ASM/BM "
-                    f"atau menitip pembayaran kepada Supir maupun Karyawan lainnya.",
-                    body_style,
-                )
-            )
-
-            elements.append(Paragraph("<u><b>Pasal 10</b></u>", pasal_heading_style))
-            elements.append(KeepTogether(build_rek_block(perusahaan, rekening_an, rekening_bank, rekening_no)))
-
-            elements.append(Paragraph("<u><b>Pasal 11</b></u>", pasal_heading_style))
-            elements.append(
-                Paragraph(
-                    "Apabila pembayaran tidak sesuai dengan TOP dan jika terjadi backdate, Pihak Pertama dapat mengambil/menyita aset sesuai dengan piutang.",
-                    body_style,
-                )
-            )
-
-            # BAB IV (Pasal 12, 13)
-            elements.append(Paragraph("<b>BAB IV<br/>ITIKAD BAIK DAN PERSELISIHAN</b>", bab_heading_style))
-            elements.append(Paragraph("<u><b>Pasal 12</b></u>", pasal_heading_style))
-            elements.append(Paragraph("Para pihak dengan itikad baik dan penuh tanggung jawab menjalankan tugas, hak dan kewajibannya dengan mengindahkan peraturan perundangan yang berlaku.", body_style))
-
-            elements.append(Paragraph("<u><b>Pasal 13</b></u>", pasal_heading_style))
-            elements.append(
-                Paragraph(
-                    f"Apabila terjadi perselisihan/sengketa diantara Para Pihak terkait dengan isi dan/atau Pelaksanaan Perjanjian ini maka perselisihan tersebut "
-                    f"akan di selesaikan terlebih dahulu melalui musyawarah mufakat diantara Para Pihak. Apabila dengan cara musyawarah mufakat tidak dapat dilakukan "
-                    f"atau tidak tercapai sesuatu penyelesaian yang baik bagi Para Pihak maka Para Pihak sepakat untuk memilih <b>{domisili_pn}</b> "
-                    f"sebagai satu satunya domisili hukum yang tetap bagi Para Pihak.",
-                    body_style,
-                )
-            )
+        )
 
         # Blok Penutup & Tanda Tangan: 2 Kolom Bersih Dilindungi KeepTogether
         direksi_approved_time = timezone.now().strftime("%d/%m/%Y")
@@ -844,6 +938,25 @@ class EMeteraiService:
         mockup_img_path = os.path.join(settings.BASE_DIR, "static", "images", "ematerai_mockup.png")
         if has_ematerai and not for_stamping and os.path.exists(mockup_img_path):
             meterai_slot_p = RLImage(mockup_img_path, width=54, height=52)
+        elif not for_stamping:
+            # Mode Preview: Kotak panduan visual e-Meterai berbingkai biru lembut
+            guide_data = [
+                [Paragraph("<font size='7' color='#0369a1'><b>e-Meterai</b></font>", cell_center_style)],
+                [Paragraph("<font size='6' color='#0284c7'><b>Rp 10.000</b></font>", cell_center_style)],
+                [Paragraph("<font size='5' color='#64748b'>[POSISI STEMPEL]</font>", cell_center_style)],
+            ]
+            t_guide = Table(guide_data, colWidths=[54], rowHeights=[16, 16, 16], hAlign='CENTER')
+            t_guide.setStyle(TableStyle([
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#0284c7")),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f0f9ff")),
+                ("TOPPADDING", (0, 0), (-1, -1), 0.5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0.5),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ]))
+            meterai_slot_p = t_guide
         else:
             meterai_slot_p = Spacer(54, 52)
 
@@ -1044,7 +1157,7 @@ class EMeteraiService:
                 "bermeterai cukup dan berkekuatan hukum yang sama yang dapat dipergunakan secara sah sebagai bukti adanya kesepakatan diantara Para Pihak.",
                 body_style,
             ),
-            Spacer(1, 10),
+            Spacer(1, 6),
             Paragraph(
                 f"<b>{kota_ttd}, {tgl_ttd}</b>",
                 body_style,

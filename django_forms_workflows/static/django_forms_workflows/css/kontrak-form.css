@@ -171,6 +171,35 @@ input[name="kota"][readonly]:focus {
     background-color: #fee2e2;
 }
 
+/* Discount Scheme Grid Strict Layout & Cell Constraints */
+.kontrak-grid-table[data-grid="discount_scheme"] {
+    table-layout: fixed !important;
+    width: 100% !important;
+}
+
+.kontrak-grid-table[data-grid="discount_scheme"] th,
+.kontrak-grid-table[data-grid="discount_scheme"] td {
+    overflow: hidden !important;
+    text-overflow: ellipsis;
+    vertical-align: middle !important;
+    padding: 6px 8px !important;
+}
+
+.kontrak-grid-table[data-grid="discount_scheme"] .cell-input,
+.kontrak-grid-table[data-grid="discount_scheme"] .cell-num {
+    min-width: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+.kontrak-grid-table[data-grid="discount_scheme"] select.select-tipe-diskon {
+    min-width: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 4px 6px !important;
+}
+
 /* Add row button */
 .btn-add-row {
     background-color: #f1f5f9;
@@ -308,7 +337,7 @@ input[name="kota"][readonly]:focus {
 .spk-page-footer {
     font-size: 11px;
     color: #64748b;
-    text-align: left;
+    text-align: center;
     border-top: 1px solid #e2e8f0;
     padding-top: 8px;
     margin-top: 20px;
@@ -476,26 +505,98 @@ table.clause-table td.cell-currency {
     }
 }
 
-/* Interactive Stepper Header (Tab-like Stepper) */
+/* ==========================================================================
+   Wizard Stepper & Progress Bar Styling (Clean Corporate Aesthetic)
+   ========================================================================== */
+#kontrakWizardProgress.form-progress {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 22px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+#kontrakWizardProgress .progress {
+    height: 8px !important;
+    background-color: #f1f5f9;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 12px;
+}
+
+#kontrakWizardProgress .progress-bar {
+    background: linear-gradient(90deg, #0284c7 0%, #2563eb 100%) !important;
+    transition: width 0.3s ease-in-out;
+    border-radius: 4px;
+}
+
+.step-indicators {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+}
+
 .step-indicators .step-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     cursor: pointer !important;
     user-select: none;
     transition: all 0.2s ease-in-out;
+    padding: 6px 12px;
+    border-radius: 6px;
+    flex: 1;
 }
 
 .step-indicators .step-indicator:hover {
-    opacity: 0.95 !important;
+    background-color: #f8fafc;
 }
 
 .step-indicators .step-indicator:hover .step-number {
-    transform: scale(1.12);
-    box-shadow: 0 2px 8px rgba(2, 132, 199, 0.35);
+    transform: scale(1.08);
+}
+
+.step-indicators .step-number {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background-color: #e2e8f0;
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 12px;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+}
+
+.step-indicators .step-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: #64748b;
+    transition: color 0.2s ease;
+    white-space: nowrap;
+}
+
+.step-indicators .step-indicator.active {
+    background-color: #f0f9ff;
 }
 
 .step-indicators .step-indicator.active .step-number {
     background-color: #0284c7 !important;
     color: #ffffff !important;
-    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.25) !important;
+    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.2) !important;
+}
+
+.step-indicators .step-indicator.active .step-title {
+    color: #0369a1 !important;
+    font-weight: 600;
 }
 
 .step-indicators .step-indicator.completed .step-number {
@@ -503,9 +604,9 @@ table.clause-table td.cell-currency {
     color: #ffffff !important;
 }
 
-.step-indicators .step-indicator.completed {
-    opacity: 0.9 !important;
+.step-indicators .step-indicator.completed .step-title {
     color: #059669 !important;
+    font-weight: 500;
 }
 
 /* ── Persistent & Seamless Sidebar Enforcement ── */
@@ -612,7 +713,35 @@ table.clause-table td.cell-currency {
 }
 
 .table-discount-scheme .kontrak-grid-table,
-.kontrak-grid-table[data-grid="discount_scheme"],
+.kontrak-grid-table[data-grid="discount_scheme"] {
+    min-width: 100% !important;
+    width: 100% !important;
+    table-layout: fixed !important;
+}
+
+.kontrak-grid-table[data-grid="discount_scheme"] th,
+.kontrak-grid-table[data-grid="discount_scheme"] td {
+    overflow: hidden !important;
+    text-overflow: ellipsis;
+    vertical-align: middle !important;
+    padding: 4px 6px !important;
+}
+
+.kontrak-grid-table[data-grid="discount_scheme"] .cell-input,
+.kontrak-grid-table[data-grid="discount_scheme"] .cell-num {
+    min-width: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+.kontrak-grid-table[data-grid="discount_scheme"] select.select-tipe-diskon {
+    min-width: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 2px 4px !important;
+}
+
 .table-tier-support .kontrak-grid-table,
 .kontrak-grid-table[data-grid="tier_support"] {
     min-width: 680px !important;
@@ -960,3 +1089,46 @@ table.clause-table td.cell-currency {
     margin-bottom: 0.5rem !important;
     box-shadow: none !important;
 }
+
+/* ==========================================================================
+   Modern Clean PDF Preview Toolbar & Viewer Frame (Enterprise Edition)
+   ========================================================================== */
+.spk-pdf-preview-wrapper {
+    width: 100%;
+}
+
+.spk-pdf-toolbar {
+    background-color: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.spk-pdf-toolbar .btn-sm {
+    font-size: 12.5px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    transition: all 0.15s ease-in-out;
+}
+
+.spk-pdf-toolbar .btn-sm i {
+    font-size: 13px;
+}
+
+.spk-pdf-toolbar .btn-outline-secondary {
+    background-color: #ffffff;
+    border-color: #cbd5e1;
+    color: #475569;
+}
+
+.spk-pdf-toolbar .btn-outline-secondary:hover:not(:disabled) {
+    background-color: #f1f5f9;
+    border-color: #94a3b8;
+    color: #1e293b;
+}
+
+#spkPdfViewerFrame {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+}
+

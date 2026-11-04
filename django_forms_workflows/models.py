@@ -1047,6 +1047,8 @@ class DocumentTemplate(models.Model):
             format_date_indonesia,
             format_komponen_biaya_legal_text,
             calculate_spk_incentive_breakdown,
+            build_spk_incentive_matrix_data,
+            get_brand_default_discount_rows,
         )
         context["brand"] = format_canonical_brand_name(form_data.get("brand") or context.get("brand", ""))
         context["durasi"] = normalize_contract_duration(form_data.get("durasi") or context.get("durasi", ""))
@@ -1073,10 +1075,55 @@ class DocumentTemplate(models.Model):
         context["metode_pembayaran"] = form_data.get("metode_pembayaran") or "Transfer / Cek / Giro"
         # Standardisasi syarat pencairan baku (Non-Input, Otomatis LUNAS)
         context["syarat_pencairan"] = "Setelah pembayaran LUNAS"
-        # Standardisasi komponen biaya support promosi (Poin 10)
-        komp_legal = format_komponen_biaya_legal_text(form_data.get("komponen_biaya"))
+
+        # Deteksi Mode Sales Support vs Standar
+        raw_supp = form_data.get("is_sales_support") or form_data.get("tipe_kontrak")
+        is_sales_support = raw_supp in (
+            True, "True", "true", "1", 1, "on", 
+            "Sales Support (Support Promosi)", "Sales Support", "sales_support"
+        ) or form_data.get("is_support_provided") in (True, "True", "true", "1", 1, "on")
+        context["is_sales_support"] = is_sales_support
+        
+        # Persentase & Komponen Biaya Support
+        pct_promo = form_data.get("persen_support") or form_data.get("pct_support_promo") or "5"
+        try:
+            pct_promo_clean = str(pct_promo).replace("%", "").strip()
+        except Exception:
+            pct_promo_clean = "5"
+        context["pct_support_promo"] = pct_promo_clean
+        context["persen_support"] = pct_promo_clean
+
+        raw_komp = form_data.get("komponen_biaya_support") or form_data.get("komponen_biaya")
+        komp_legal = format_komponen_biaya_legal_text(raw_komp)
         context["komponen_biaya"] = komp_legal
         context["komponen_biaya_text"] = komp_legal
+        context["komponen_biaya_support"] = komp_legal
+
+        # Dynamic Pasal Numbering & Blocks
+        p_offset = 1 if is_sales_support else 0
+        context["pasal_offset"] = p_offset
+        context["pasal_periode_num"] = f"Pasal {4 + p_offset}"
+        context["pasal_diskon_num"] = f"Pasal {5 + p_offset}"
+        context["pasal_insentif_num"] = f"Pasal {6 + p_offset}"
+        context["pasal_top_num"] = f"Pasal {7 + p_offset}"
+        context["pasal_ket_top_num"] = f"Pasal {8 + p_offset}"
+        context["pasal_bayar_num"] = f"Pasal {9 + p_offset}"
+        context["pasal_rek_num"] = f"Pasal {10 + p_offset}"
+        context["pasal_itikad_num"] = f"Pasal {11 + p_offset}"
+        context["pasal_pn_num"] = f"Pasal {12 + p_offset}"
+
+        if is_sales_support:
+            context["pasal_support_promosi_block"] = f"""
+            <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 4</div>
+            <div style="text-align: justify; margin-bottom: 10px;">
+                <p style="margin-bottom: 4px; text-indent: -20px; padding-left: 20px;">(1) Pihak Pertama memberikan support promosi yang meliputi biaya ({komp_legal}) kepada Pihak Kedua sebesar <strong>{pct_promo_clean}%</strong>. Support promosi tersebut <strong>TIDAK</strong> meliputi biaya Billboard, Pajak Billboard, dan Backdrop apabila Pihak Kedua membuka cabang baru atau toko baru.</p>
+                <p style="margin-bottom: 4px; text-indent: -20px; padding-left: 20px;">(2) Support promosi ini dapat dicairkan setelah pembayaran <strong>LUNAS</strong>.</p>
+                <p style="margin-bottom: 0; text-indent: -20px; padding-left: 20px;">(3) Grace period selama 1 (satu) bulan dari masa kontrak berakhir, apabila Pihak Kedua belum mencapai target.</p>
+            </div>
+            """
+        else:
+            context["pasal_support_promosi_block"] = ""
+
         context["pengecualian_ketentuan_support"] = form_data.get("pengecualian_ketentuan_support") or ""
         context["catatan_lain"] = form_data.get("catatan_lain") or ""
         context["jenis_pajak"] = "Exclude Ppn"
@@ -1094,6 +1141,7 @@ class DocumentTemplate(models.Model):
         context["nomor_nik"] = nik or "—"
         context["nomor_npwp"] = npwp or "—"
         context["nomor_identitas"] = f"{npwp} / {nik}" if (npwp and nik) else (npwp or nik or "—")
+        context["email"] = form_data.get("email") or "—"
 
         # Ensure official SPK number format
         spk_val = form_data.get("nomor_spk") or ""
@@ -1111,7 +1159,7 @@ class DocumentTemplate(models.Model):
 
         # Target Volume Text
         target_val = 0.0
-        parsed_target = form_data.get("target_incentive")
+        parsed_target = form_data.get("target_incentive_scheme") or form_data.get("target_incentive")
         if isinstance(parsed_target, str) and parsed_target.strip().startswith("["):
             try:
                 import json
@@ -1175,6 +1223,42 @@ class DocumentTemplate(models.Model):
         else:
             context["target_incentive_table"] = ""
 
+        # Build clean HTML table for incentive_matrix_table (Pasal 6 - 6 Kolom Multi-Tier)
+        matrix_rows = build_spk_incentive_matrix_data(form_data)
+        m_rows_html = ""
+        for mr in matrix_rows:
+            m_rows_html += f"""
+                <tr>
+                    <td style="padding: 5px 8px; font-size: 12.5px; border: 1px solid #cbd5e1; text-align: left; font-weight: 500; font-variant-numeric: tabular-nums;">{mr['target_tahunan_fmt']}</td>
+                    <td style="padding: 5px 6px; font-size: 12.5px; border: 1px solid #cbd5e1; text-align: center; font-variant-numeric: tabular-nums;">{mr['incentive_pct_str']}</td>
+                    <td style="padding: 5px 8px; font-size: 12.5px; border: 1px solid #cbd5e1; text-align: right; font-variant-numeric: tabular-nums;">{mr['incentive_val_fmt']}</td>
+                    <td style="padding: 5px 6px; font-size: 12.5px; border: 1px solid #cbd5e1; text-align: center; font-variant-numeric: tabular-nums;">{mr['pph_pct_str']}</td>
+                    <td style="padding: 5px 8px; font-size: 12.5px; border: 1px solid #cbd5e1; text-align: right; font-variant-numeric: tabular-nums;">{mr['pph_val_fmt']}</td>
+                    <td style="padding: 5px 8px; font-size: 12.5px; border: 1px solid #cbd5e1; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums;">{mr['netto_val_fmt']}</td>
+                </tr>
+            """
+        context["incentive_matrix_table"] = f"""
+            <div style="margin: 8px auto; width: 100%; text-align: center; overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; font-size: 12.5px; margin: 0 auto;">
+                    <thead>
+                        <tr style="background-color: #f1f5f9; color: #1e293b; font-weight: 600;">
+                            <th rowspan="2" style="padding: 5px 8px; border: 1px solid #cbd5e1; text-align: center; width: 140px;">Target Tahunan</th>
+                            <th colspan="2" style="padding: 5px 8px; border: 1px solid #cbd5e1; text-align: center;">Insentif</th>
+                            <th colspan="2" style="padding: 5px 8px; border: 1px solid #cbd5e1; text-align: center;">PPH</th>
+                            <th rowspan="2" style="padding: 5px 8px; border: 1px solid #cbd5e1; text-align: center; width: 120px;">Nilai Netto (Rp)</th>
+                        </tr>
+                        <tr style="background-color: #f1f5f9; color: #1e293b; font-weight: 600;">
+                            <th style="padding: 4px 6px; border: 1px solid #cbd5e1; text-align: center; width: 45px;">%</th>
+                            <th style="padding: 4px 8px; border: 1px solid #cbd5e1; text-align: center; width: 105px;">Value</th>
+                            <th style="padding: 4px 6px; border: 1px solid #cbd5e1; text-align: center; width: 45px;">%</th>
+                            <th style="padding: 4px 8px; border: 1px solid #cbd5e1; text-align: center; width: 105px;">Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>{m_rows_html}</tbody>
+                </table>
+            </div>
+        """
+
         # Build clean HTML table for discount_scheme_table
         parsed_discount = form_data.get("discount_scheme")
         if isinstance(parsed_discount, str) and parsed_discount.strip().startswith("["):
@@ -1183,22 +1267,53 @@ class DocumentTemplate(models.Model):
                 parsed_discount = json.loads(parsed_discount.strip())
             except Exception:
                 parsed_discount = []
+        if not (isinstance(parsed_discount, list) and parsed_discount):
+            parsed_discount = get_brand_default_discount_rows(form_data.get("brand"))
+
         if isinstance(parsed_discount, list) and parsed_discount:
+            disc_order = {
+                'md1': 1, 'md2': 2, 'mtop': 3, 'md3': 3, 'md4': 4,
+                'mthmt': 5, 'thematic': 5, 'mtht': 5, 'mprto': 6, 'mlcd': 7
+            }
+            sorted_discount = sorted(
+                parsed_discount,
+                key=lambda x: disc_order.get(str(x.get("komponen") or "").strip().lower(), 99)
+            )
             d_rows_html = ""
-            for r in parsed_discount:
-                d_komp = r.get("komponen") or "—"
-                d_tipe = r.get("tipe") or "Persentase"
-                d_val_raw = str(r.get("nilai") if r.get("nilai") is not None else "0%").strip()
-                if "persen" in d_tipe.lower() or "%" in d_val_raw:
-                    clean_pct = d_val_raw.replace("%", "").strip()
-                    d_val = f"{clean_pct}%"
+            for r in sorted_discount:
+                d_komp = str(r.get("komponen") or "—").strip()
+                d_komp_upper = d_komp.upper()
+                if d_komp_upper == "MD3":
+                    d_komp = "MTOP"
+                    d_komp_upper = "MTOP"
+                elif d_komp_upper in ("THEMATIC", "MTHT"):
+                    d_komp = "MTHMT"
+                    d_komp_upper = "MTHMT"
+
+                is_mthmt = (d_komp_upper == "MTHMT")
+                if is_mthmt:
+                    d_val = ""
+                    d_tipe = ""
+                    d_ket = r.get("keterangan") or "Program Thematic Yang Berlaku"
                 else:
-                    try:
-                        d_val = f"Rp {int(round(float(re.sub(r'[^\d.-]', '', d_val_raw) or 0))):,}".replace(",", ".")
-                    except Exception:
-                        d_val = d_val_raw
-                d_ket = r.get("keterangan") or "—"
-                d_align_ket = "text-align: left;" if len(d_ket) > 10 else "text-align: center;"
+                    d_tipe = r.get("tipe") or "Persentase"
+                    d_val_raw = str(r.get("nilai") if r.get("nilai") is not None else "").strip()
+                    if not d_val_raw or d_val_raw in ("—", "-"):
+                        d_val = "—"
+                        d_tipe = "—" if d_komp_upper == "MTOP" else d_tipe
+                    elif "persen" in d_tipe.lower() or "%" in d_val_raw:
+                        clean_pct = d_val_raw.replace("%", "").strip()
+                        d_val = f"{clean_pct}%"
+                    else:
+                        try:
+                            d_val = f"Rp {int(round(float(re.sub(r'[^\d.-]', '', d_val_raw) or 0))):,}".replace(",", ".")
+                        except Exception:
+                            d_val = d_val_raw
+                    d_ket = r.get("keterangan") or ("TOP" if d_komp_upper == "MTOP" else "—")
+                    if d_komp_upper == "MTOP" and d_val == "—":
+                        d_ket = "—"
+
+                d_align_ket = "text-align: center;"
                 d_rows_html += f"""
                     <tr>
                         <td style="padding: 6px 10px; font-size: 13px; border: 1px solid #cbd5e1; text-align: left;">{d_komp}</td>

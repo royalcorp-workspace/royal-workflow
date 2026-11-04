@@ -152,17 +152,17 @@ class Command(BaseCommand):
         else:
             self.stderr.write(self.style.ERROR("❌ SharedOptionList 'jenis-pencairan-insentif-list' tidak ditemukan!"))
 
-        # Verify Discount Checkbox Fields & Default Value (Poin 10)
-        disc_chk_fields = ["chk_diskon_mtht", "chk_diskon_mprto", "chk_diskon_mlcd"]
-        for dcf in disc_chk_fields:
-            if dcf in form_field_names:
-                self.stdout.write(self.style.SUCCESS(f"✅ Field toggle diskon '{dcf}' BERHASIL TERDAFTAR di FormDefinition."))
+        # Verify Elimination of Obsolete Standalone Discount Checkbox Fields (Integrated into discount_scheme)
+        obsolete_disc_fields = ["chk_diskon_mtht", "chk_diskon_mprto", "chk_diskon_mlcd"]
+        for odf in obsolete_disc_fields:
+            if odf not in form_field_names:
+                self.stdout.write(self.style.SUCCESS(f"✅ Field usang '{odf}' BERHASIL DIELIMINASI dari FormDefinition."))
             else:
-                self.stderr.write(self.style.ERROR(f"❌ Field toggle diskon '{dcf}' belum terdaftar di FormDefinition!"))
+                self.stderr.write(self.style.ERROR(f"❌ Field usang '{odf}' masih terdaftar di FormDefinition!"))
 
         ds_f = form_def.fields.filter(field_name="discount_scheme").first()
-        if ds_f and ds_f.default_value and "MD1" in ds_f.default_value and "MD2" in ds_f.default_value and "MD3" in ds_f.default_value:
-            self.stdout.write(self.style.SUCCESS("✅ Field 'discount_scheme' memiliki default_value 3 baris fixed (MD1 40%, MD2 10%, MD3 5%)."))
+        if ds_f and ds_f.default_value and "MD1" in ds_f.default_value and "MD2" in ds_f.default_value and ("MTOP" in ds_f.default_value or "MD3" in ds_f.default_value):
+            self.stdout.write(self.style.SUCCESS("✅ Field 'discount_scheme' memiliki default_value 3 baris fixed (MD1 40%, MD2 10%, MTOP 5%)."))
         else:
             self.stderr.write(self.style.ERROR("❌ Field 'discount_scheme' belum memiliki default_value 3 baris fixed baku!"))
 
@@ -182,7 +182,11 @@ class Command(BaseCommand):
 
         # Verify Master Bank Account Resolution across all 5 company profiles
         self.stdout.write("\n" + self.style.MIGRATE_HEADING("--- AUDIT MASTER REKENING PERUSAHAAN (COMPANY_PROFILES) ---"))
-        from django_forms_workflows.company_profiles import COMPANY_PROFILES, resolve_company_profile
+        from django_forms_workflows.company_profiles import (
+            COMPANY_PROFILES,
+            resolve_company_profile,
+            get_brand_default_discount_rows,
+        )
         for comp_name, prof in COMPANY_PROFILES.items():
             expected_rek = f"{prof['bank_name']} {prof['bank_account_no']} a/n {prof['bank_account_name']}"
             resolved = resolve_company_profile(form_data={"perusahaan": comp_name})
@@ -191,6 +195,68 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS(f"  ✅ {prof['short_code']} ({comp_name}): {res_rek}"))
             else:
                 self.stderr.write(self.style.ERROR(f"  ❌ Mismatch for {comp_name}: got '{res_rek}', expected '{expected_rek}'"))
+
+        # Verify Detailed Poin 12 Requirements for 3 Main Companies
+        self.stdout.write("\n" + self.style.MIGRATE_HEADING("--- AUDIT PROFIL 3 PT UTAMA (DIREKTUR, ALAMAT PABRIK, REKENING RESMI) ---"))
+        pt_requirements = [
+            (
+                "PT. ROYAL ABADI SEJAHTERA",
+                "Alvin Steven",
+                "Jl. Raya Cimareme No. 275 Cimareme, Ngamprah Kabupaten Bandung Barat, Jawa Barat 40552",
+                "139 8826 999 (IDR)",
+            ),
+            (
+                "PT. BESTARI MULIA",
+                "Alvin Steven",
+                "Jl. Industri Raya Keboharan KM 25 Keboharan Krian, Kab Sidoarjo Jawa Timur 61262",
+                "139 8075 888 (IDR)",
+            ),
+            (
+                "PT. ANUGRAH CEMERLANG ABADI",
+                "Alvin Steven",
+                "Jl. Industri Raya No. 8 RT 003 RW 004 Budi Mulya Cikupa Kab Tangerang Banten 15710",
+                "139 9183 888 (IDR)",
+            ),
+        ]
+        for pt_name, exp_dir, exp_addr, exp_rek_no in pt_requirements:
+            prof = resolve_company_profile(form_data={"perusahaan": pt_name})
+            dir_ok = (prof.get("director_name") == exp_dir)
+            addr_ok = (prof.get("factory_address") == exp_addr)
+            rek_ok = (prof.get("bank_account_no") == exp_rek_no)
+            if dir_ok and addr_ok and rek_ok:
+                self.stdout.write(self.style.SUCCESS(f"  ✅ {pt_name}: Direktur '{exp_dir}', Alamat Pabrik OK, No. Rek '{exp_rek_no}'"))
+            else:
+                self.stderr.write(self.style.ERROR(f"  ❌ {pt_name} Mismatch! dir_ok={dir_ok}, addr_ok={addr_ok}, rek_ok={rek_ok}"))
+
+        # Verify Brand Default Discounts (Poin 10 Acuan)
+        self.stdout.write("\n" + self.style.MIGRATE_HEADING("--- AUDIT SKEMA DISKON BAKU 5 BRAND UTAMA (POIN 10 ACUAN) ---"))
+        brand_discount_expectations = [
+            ("Lady Americana", "40%", "10%", "5%", "TOP"),
+            ("Elite Springbed", "40%", "10%", "5%", "TOP"),
+            ("Serenity", "40%", "5.5%", "5%", "TOP"),
+            ("Classic", "40%", "5.5%", "5%", "TOP"),
+            ("Royal Foam", "30%", "40%", "—", "—"),
+        ]
+        for b_name, exp_md1, exp_md2, exp_mtop, exp_mtop_ket in brand_discount_expectations:
+            d_rows = get_brand_default_discount_rows(b_name)
+            md1_row = next((r for r in d_rows if r["komponen"] == "MD1"), {})
+            md2_row = next((r for r in d_rows if r["komponen"] == "MD2"), {})
+            mtop_row = next((r for r in d_rows if r["komponen"] == "MTOP"), {})
+
+            ok_md1 = (md1_row.get("nilai") == exp_md1)
+            ok_md2 = (md2_row.get("nilai") == exp_md2)
+            ok_mtop = (mtop_row.get("nilai") == exp_mtop)
+            ok_ket = (mtop_row.get("keterangan") == exp_mtop_ket)
+
+            if ok_md1 and ok_md2 and ok_mtop and ok_ket:
+                self.stdout.write(self.style.SUCCESS(
+                    f"  ✅ Brand '{b_name}': MD1={exp_md1}, MD2={exp_md2}, MTOP={exp_mtop} (Ket: {exp_mtop_ket})"
+                ))
+            else:
+                self.stderr.write(self.style.ERROR(
+                    f"  ❌ Brand '{b_name}' mismatch! MD1={md1_row.get('nilai')} (exp {exp_md1}), "
+                    f"MD2={md2_row.get('nilai')} (exp {exp_md2}), MTOP={mtop_row.get('nilai')} (exp {exp_mtop})"
+                ))
 
         # Verify 5 Official Brands in SharedOptionList 'brand-list'
         self.stdout.write("\n" + self.style.MIGRATE_HEADING("--- AUDIT 5 BRAND RESMI SPK (SHARED OPTION LIST & NUMBERING) ---"))
@@ -384,8 +450,8 @@ class Command(BaseCommand):
         discount_scheme_data = [
             {"komponen": "MD1", "nilai": "40%", "tipe": "Persentase", "keterangan": "—"},
             {"komponen": "MD2", "nilai": "10%", "tipe": "Persentase", "keterangan": "—"},
-            {"komponen": "MD3", "nilai": "5%",  "tipe": "Persentase", "keterangan": "—"},
-            {"komponen": "Thematic", "nilai": "0%", "tipe": "Persentase", "keterangan": "Program Thematik yang berlaku"},
+            {"komponen": "MTOP", "nilai": "5%",  "tipe": "Persentase", "keterangan": "(TOP)"},
+            {"komponen": "Thematic", "nilai": "", "tipe": "", "keterangan": "Program Thematik yang berlaku"},
             {"komponen": "MPRTO", "nilai": "5%", "tipe": "Persentase", "keterangan": "(Pareto)"},
             {"komponen": "MLCD", "nilai": "5%", "tipe": "Persentase", "keterangan": "(Tambahan)"},
         ]
@@ -426,9 +492,6 @@ class Command(BaseCommand):
             "jenis_pencairan_insentif": "Transfer/Giro",
 
             # Step 2 - Card 3: Skema Diskon Produk (Pasal 5 / 6)
-            "chk_diskon_mtht": True,
-            "chk_diskon_mprto": True,
-            "chk_diskon_mlcd": True,
             "discount_scheme": json.dumps(discount_scheme_data),
 
             # Step 2 - Card 4: Tata Cara & Ketentuan Pembayaran (BAB III - Pasal 7, 8, 9, 10)
@@ -471,6 +534,7 @@ class Command(BaseCommand):
             ("alamat_toko", "Pihak Kedua (Alamat)", "Alamat Toko", True),
             ("nomor_npwp", "Pihak Kedua (NPWP)", "Nomor NPWP Toko/Pemilik", True),
             ("nomor_nik", "Pihak Kedua (NIK)", "Nomor NIK (16 digit)", False),
+            ("email", "Pihak Kedua (Email)", "Alamat Email Toko", True),
             ("brand", "Pihak Pertama & Objek", "Brand Produk Springbed", True),
             ("perusahaan", "Pihak Pertama (Produsen)", "Entitas Perusahaan", True),
             ("pengadilan_negeri", "Pasal 11 / 12 (Domisili Hukum)", "PN Berbasis Cabang Bandung", True),
@@ -478,7 +542,7 @@ class Command(BaseCommand):
             ("tanggal_berakhir", "Card 1 (Pasal 4 / 5)", "Tanggal Berakhir Kontrak", True),
             ("durasi", "Card 1 (Pasal 4 / 5)", "Durasi Kontrak", True),
             ("grace_period", "Card 1 (Pasal 4 / 5)", "Grace Period (Tidak di SPK)", True),
-            ("target_volume_text", "Card 2 (Pasal 3)", "Target Penjualan Bulanan (Rp)", True),
+            ("target_volume_text", "Card 2 (Pasal 3)", "Target Penjualan Bulanan (Rp)", False),
             ("target_incentive_table", "Card 2 (Pasal 3)", "Tabel Dynamic Grid Tier Target", True),
             ("jenis_pencairan_insentif", "Card 2 (Pasal 3)", "Pencairan Insentif (DB)", True),
             ("discount_scheme_table", "Card 3 (Pasal 5 / 6)", "Tabel Dynamic Grid Diskon Produk", True),
@@ -532,8 +596,8 @@ class Command(BaseCommand):
                     is_rendered = "250.000.000" in rendered_html or "Tier Platinum" in rendered_html
                     snippet = "Tabel Tier 250 Jt Ter-render"
                 elif f_name == "discount_scheme_table":
-                    has_fixed = all(k in rendered_html for k in ["MD1", "40%", "MD2", "10%", "MD3", "5%"])
-                    has_dynamic = all(k in rendered_html for k in ["Thematic", "0%", "MPRTO", "MLCD"])
+                    has_fixed = all(k in rendered_html for k in ["MD1", "40%", "MD2", "10%"]) and ("MTOP" in rendered_html or "MD3" in rendered_html)
+                    has_dynamic = ("MTHMT" in rendered_html or "Thematic" in rendered_html) and all(k in rendered_html for k in ["MPRTO", "MLCD"])
                     is_rendered = has_fixed and has_dynamic
                     snippet = "6 Baris (3 Fixed + 3 Dinamis)"
                 elif f_name == "tier_support_table":
@@ -544,8 +608,8 @@ class Command(BaseCommand):
                         is_rendered = True
                         snippet = "(N/A di Standard)"
                 elif f_name == "target_volume_text":
-                    is_rendered = "250.000.000" in rendered_html and bool(re.search(r"per bulan Exclude Ppn", rendered_html, re.IGNORECASE))
-                    snippet = "Rp 250.000.000 per bulan Exclude Ppn"
+                    is_rendered = "250.000.000" in rendered_html
+                    snippet = "Rp 250.000.000 (Tabel Target)"
                 elif f_name == "pct_support_promo":
                     if "Support" in tpl_label:
                         is_rendered = "5%" in rendered_html or "5.0%" in rendered_html
@@ -568,6 +632,12 @@ class Command(BaseCommand):
                 elif f_name == "jenis_pencairan_insentif":
                     is_rendered = in_db
                     snippet = f"{val} (DB Stored)"
+                elif f_name == "rekening_perusahaan":
+                    is_rendered = (
+                        "bank_account_no" not in rendered_html
+                        and ("BCA" in rendered_html or "139" in rendered_html or str(val) in rendered_html)
+                    )
+                    snippet = "Tabel Rekening PT Ter-render"
                 elif val is not None:
                     str_val = str(val)
                     is_rendered = str_val in rendered_html
@@ -612,74 +682,72 @@ class Command(BaseCommand):
                 all_passed = False
 
             # Verify Poin 10: Discount Scheme Fixed & Dynamic Rows
-            if all(k in rendered_html for k in ["MD1", "40%", "MD2", "10%", "MD3", "5%"]):
-                self.stdout.write(self.style.SUCCESS("✅ Skema Diskon (Poin 10): 3 Baris Baku Fixed (MD1 40%, MD2 10%, MD3 5%) ter-render sempurna."))
+            if all(k in rendered_html for k in ["MD1", "40%", "MD2", "10%"]) and ("MTOP" in rendered_html or "MD3" in rendered_html):
+                self.stdout.write(self.style.SUCCESS("✅ Skema Diskon (Poin 10): 3 Baris Baku Fixed (MD1 40%, MD2 10%, MTOP 5%) ter-render sempurna."))
             else:
-                self.stderr.write(self.style.ERROR("❌ Skema Diskon (Poin 10): Baris fixed MD1/MD2/MD3 tidak lengkap di template!"))
+                self.stderr.write(self.style.ERROR("❌ Skema Diskon (Poin 10): Baris fixed MD1/MD2/MTOP tidak lengkap di template!"))
                 all_passed = False
 
-            if all(k in rendered_html for k in ["Thematic", "0%", "MPRTO", "MLCD"]):
-                self.stdout.write(self.style.SUCCESS("✅ Skema Diskon (Poin 10): Baris dinamis Thematic (0%), MPRTO (5%), MLCD (5%) ter-render lengkap."))
+            if ("MTHMT" in rendered_html or "Thematic" in rendered_html) and all(k in rendered_html for k in ["MPRTO", "MLCD"]):
+                self.stdout.write(self.style.SUCCESS("✅ Skema Diskon (Poin 10): Baris dinamis MTHMT/Thematic, MPRTO (5%), MLCD (5%) ter-render lengkap."))
             else:
-                self.stderr.write(self.style.ERROR("❌ Skema Diskon (Poin 10): Baris dinamis Thematic/MPRTO/MLCD tidak ditemukan di template!"))
+                self.stderr.write(self.style.ERROR("❌ Skema Diskon (Poin 10): Baris dinamis MTHMT/Thematic/MPRTO/MLCD tidak ditemukan di template!"))
                 all_passed = False
 
-            # Verify Pasal 3 Ayat (1) contains Exclude Ppn
-            if re.search(r"per bulan Exclude Ppn", rendered_html, re.IGNORECASE):
-                self.stdout.write(self.style.SUCCESS("✅ Pasal 3 Ayat (1): Ter-render dinamis baku 'per bulan Exclude Ppn.'"))
+            # Verify Pasal 6: Tabel Matriks Insentif 6 Kolom Multi-Tier & Redaksi Resmi
+            if all(k in rendered_html for k in ["Target Tahunan", "Insentif", "PPH", "Nilai Netto (Rp)"]):
+                self.stdout.write(self.style.SUCCESS(f"✅ Pasal 6 ({tpl_label}): Tabel Matriks Insentif 6 Kolom Multi-Tier ter-render sempurna."))
             else:
-                self.stderr.write(self.style.ERROR("❌ Pasal 3 Ayat (1): Format 'per bulan Exclude Ppn' tidak ditemukan!"))
+                self.stderr.write(self.style.ERROR(f"❌ Pasal 6 ({tpl_label}): Header tabel matriks 6 kolom tidak lengkap!"))
                 all_passed = False
 
-            # Verify Pasal 8 / 9 Static Payment Clause
-            if "Transfer / Cek / Giro" in rendered_html:
-                self.stdout.write(self.style.SUCCESS("✅ Klausul Pembayaran: Ter-render standar 'Transfer / Cek / Giro'."))
+            if "saat perjanjian ini berakhir, atau ketika target penjualan sudah terpenuhi" in rendered_html and "(2) Pencairan Insentif yang menjadi hak Pihak Kedua" in rendered_html:
+                self.stdout.write(self.style.SUCCESS(f"✅ Pasal 6 ({tpl_label}): Redaksi berpoin (1) dan (2) ter-render lengkap & dinamis."))
             else:
-                self.stderr.write(self.style.ERROR("❌ Klausul Pembayaran: 'Transfer / Cek / Giro' tidak ditemukan!"))
+                self.stderr.write(self.style.ERROR(f"❌ Pasal 6 ({tpl_label}): Redaksi resmi Pasal 6 berpoin (1) dan (2) tidak ditemukan!"))
                 all_passed = False
 
-            # Verify Pasal 4 Support Promosi (Syarat Pencairan Baku LUNAS)
-            if "Support" in tpl_label:
-                if "setelah pembayaran" in rendered_html and "LUNAS" in rendered_html:
-                    self.stdout.write(self.style.SUCCESS("✅ Klausul Syarat Pencairan (Pasal 4): Ter-render baku 'setelah pembayaran LUNAS'."))
-                else:
-                    self.stderr.write(self.style.ERROR("❌ Klausul Syarat Pencairan (Pasal 4): Teks baku 'setelah pembayaran LUNAS' tidak ditemukan!"))
-                    all_passed = False
+            # Verify Pasal 3 Ayat (1), Tabel Target Bulanan, dan Ayat (2)
+            if "dijelaskan seperti tabel dibawah ini" in rendered_html and "Pihak Kedua wajib memenuhi Volume Penjualan yang telah ditentukan dalam perjanjian ini" in rendered_html and "Target Bulanan" in rendered_html:
+                self.stdout.write(self.style.SUCCESS("✅ Pasal 3: Ayat (1), Tabel Target Bulanan multi-tier, dan Ayat (2) ter-render dinamis baku."))
+            else:
+                self.stderr.write(self.style.ERROR("❌ Pasal 3: Struktur Ayat (1), Tabel Target, dan Ayat (2) tidak sesuai spesifikasi!"))
+                all_passed = False
 
-                if "Billboard" in rendered_html and "Backdrop" in rendered_html:
-                    self.stdout.write(self.style.SUCCESS("✅ Klausul Batasan Promosi (Pasal 4): Ter-render baku tanpa Billboard & Backdrop."))
-                else:
-                    self.stderr.write(self.style.ERROR("❌ Klausul Batasan Promosi (Pasal 4): Teks baku batasan Billboard & Backdrop tidak ditemukan!"))
-                    all_passed = False
+            # Verify Pasal 7: TOP Hari setelah tanggal pengiriman
+            if "hari setelah tanggal pengiriman" in rendered_html and "Jangka Waktu Pembayaran" in rendered_html:
+                self.stdout.write(self.style.SUCCESS("✅ Pasal 7: TOP terformat baku dengan satuan 'hari setelah tanggal pengiriman (selanjutnya disebut “Jangka Waktu Pembayaran”)''."))
+            else:
+                self.stderr.write(self.style.ERROR("❌ Pasal 7: Frasa 'hari setelah tanggal pengiriman' tidak ditemukan!"))
+                all_passed = False
+
+            # Verify Pasal 8: Poin a & b
+            if "a. Pihak Pertama dalam hal ini dapat menghilangkan diskon TOP" in rendered_html and "b. Jika terjadi gagal bayar atau bad debt" in rendered_html:
+                self.stdout.write(self.style.SUCCESS("✅ Pasal 8: Format poin huruf a. (diskon TOP) dan b. (sita aset bad debt) ter-render lengkap!"))
+            else:
+                self.stderr.write(self.style.ERROR("❌ Pasal 8: Format poin huruf a. dan b. tidak ditemukan!"))
+                all_passed = False
+
+            # Verify Pasal 9 Payment Clause
+            if "Transfer atau buka Cek/Giro" in rendered_html and "Faktur dan Kontra Bon" in rendered_html:
+                self.stdout.write(self.style.SUCCESS("✅ Klausul Pembayaran (Pasal 9): Ter-render standar 'Transfer atau buka Cek/Giro' dan 'Faktur dan Kontra Bon'."))
+            else:
+                self.stderr.write(self.style.ERROR("❌ Klausul Pembayaran (Pasal 9): Format resmi Pasal 9 tidak ditemukan!"))
+                all_passed = False
 
             # Verify Dynamic Court Jurisdiction
             if "Kantor Panitera Pengadilan Negeri Bale Bandung" in rendered_html:
-                self.stdout.write(self.style.SUCCESS("✅ Klausul Domisili Hukum: Ter-render dinamis 'Kantor Panitera Pengadilan Negeri Bale Bandung' mengikuti Cabang Bandung!"))
+                self.stdout.write(self.style.SUCCESS("✅ Klausul Domisili Hukum (Pasal 12): Ter-render dinamis 'Kantor Panitera Pengadilan Negeri Bale Bandung' mengikuti Cabang Bandung!"))
             else:
-                self.stderr.write(self.style.ERROR("❌ Klausul Domisili Hukum: Pengadilan Negeri Bale Bandung tidak ditemukan!"))
-                all_passed = False
-
-            # Verify Poin 12: Klausul Penyitaan Aset atas Wanprestasi / Backdate
-            asset_clause_text = "Apabila pembayaran tidak sesuai dengan TOP dan jika terjadi backdate, Pihak Pertama dapat mengambil/menyita aset sesuai dengan piutang."
-            if asset_clause_text in rendered_html:
-                self.stdout.write(self.style.SUCCESS("✅ Klausul Penyitaan Aset (Poin 12): Teks baku perlindungan piutang ter-render lengkap!"))
-            else:
-                self.stderr.write(self.style.ERROR("❌ Klausul Penyitaan Aset (Poin 12): Teks klausul penyitaan aset tidak ditemukan!"))
+                self.stderr.write(self.style.ERROR("❌ Klausul Domisili Hukum (Pasal 12): Pengadilan Negeri Bale Bandung tidak ditemukan!"))
                 all_passed = False
 
             # Verify Clause Numbering per Template
-            if "Support" in tpl_label:
-                if "Pasal 11</div>" in rendered_html and "Pasal 12</div>" in rendered_html and "Pasal 13</div>" in rendered_html:
-                    self.stdout.write(self.style.SUCCESS("✅ Penomoran Pasal (Poin 12): SPK Support Promosi memiliki urutan 13 Pasal lengkap (Pasal 11 Aset, Pasal 12 Itikad Baik, Pasal 13 PN)."))
-                else:
-                    self.stderr.write(self.style.ERROR("❌ Penomoran Pasal (Poin 12): SPK Support Promosi gagal memiliki 13 Pasal urut!"))
-                    all_passed = False
+            if "Pasal 10</div>" in rendered_html and "Pasal 11</div>" in rendered_html and "Pasal 12</div>" in rendered_html:
+                self.stdout.write(self.style.SUCCESS("✅ Penomoran Pasal: SPK Standard memiliki urutan 12 Pasal lengkap (Pasal 10 Rekening, Pasal 11 Itikad Baik, Pasal 12 PN)."))
             else:
-                if "Pasal 10</div>" in rendered_html and "Pasal 11</div>" in rendered_html and "Pasal 12</div>" in rendered_html:
-                    self.stdout.write(self.style.SUCCESS("✅ Penomoran Pasal (Poin 12): SPK Standard memiliki urutan 12 Pasal lengkap (Pasal 10 Aset, Pasal 11 Itikad Baik, Pasal 12 PN)."))
-                else:
-                    self.stderr.write(self.style.ERROR("❌ Penomoran Pasal (Poin 12): SPK Standard gagal memiliki 12 Pasal urut!"))
-                    all_passed = False
+                self.stderr.write(self.style.ERROR("❌ Penomoran Pasal: SPK Standard gagal memiliki 12 Pasal urut!"))
+                all_passed = False
 
             # Verify Indonesian Standard Date Formatting (Poin 13)
             if "01 November 2026" in rendered_html and "31 Oktober 2027" in rendered_html and "28 Oktober 2026" in rendered_html:
@@ -730,47 +798,137 @@ class Command(BaseCommand):
                 self.stderr.write(self.style.ERROR(f"❌ Template Context (Poin 10): context['komponen_biaya'] tidak sesuai (got '{ctx.get('komponen_biaya')}')."))
                 all_passed = False
 
-            if "Support Promosi" in tpl.name:
-                if "sewa, listrik, dan instore" in rendered_html:
-                    self.stdout.write(self.style.SUCCESS("✅ Pasal 4 Template SPK (Poin 10): Teks komponen biaya support ('sewa, listrik, dan instore') ter-render dinamis."))
-                else:
-                    self.stderr.write(self.style.ERROR("❌ Pasal 4 Template SPK (Poin 10): Teks komponen biaya support tidak ditemukan dalam template rendered HTML!"))
-                    all_passed = False
-
-                # Verify Revisi Poin 11: 5-Column Tier Support Table & Dynamic Narrative Text
-                from django_forms_workflows.company_profiles import calculate_spk_incentive_breakdown
-                calc_res = calculate_spk_incentive_breakdown(test_payload, is_support=True)
-                assert calc_res["frekuensi_bulan"] == "3"
-                assert calc_res["target_per_periode"] == "750.000.000"
-                assert calc_res["reward_rate"] == "5%"
-                assert calc_res["pph_rate"] == "2%"
-                assert calc_res["reward_nominal"] == "37.500.000"
-                assert calc_res["pph_nominal"] == "750.000"
-                assert calc_res["netto_nominal"] == "36.750.000"
-
-                # Check 5 columns in tier_support_table
-                tier_table_html = ctx.get("tier_support_table", "")
-                if all(col in tier_table_html for col in ["Target Tahunan", "Dukungan (%)", "PPh 23 (%)", "Nilai Netto (Rp)", "Keterangan"]):
-                    self.stdout.write(self.style.SUCCESS("✅ Tabel Tier Support Pasal 7 (Poin 11): 5 Kolom terstruktur lengkap (Target, Dukungan %, PPh 23 %, Netto Rp, Keterangan)."))
-                else:
-                    self.stderr.write(self.style.ERROR("❌ Tabel Tier Support Pasal 7 (Poin 11): Kolom tabel tidak lengkap 5 kolom!"))
-                    all_passed = False
-
-                # Check official calculation narrative in context & rendered HTML
-                if "Target penjualan sebesar Rp. 750.000.000 per 3 Bulan" in rendered_html and "36.750.000" in rendered_html:
-                    self.stdout.write(self.style.SUCCESS("✅ Narasi Perhitungan Pasal 7 (Poin 11): Kalimat narasi baku resmi ter-render lengkap & dinamis."))
-                else:
-                    self.stderr.write(self.style.ERROR("❌ Narasi Perhitungan Pasal 7 (Poin 11): Teks narasi resmi perhitungan tidak ditemukan dalam rendered HTML!"))
-                    all_passed = False
-
-        # 6. Test ReportLab PDF Generator
-        self.stdout.write("\n" + self.style.MIGRATE_HEADING("--- PENGUJIAN REPORTLAB PDF GENERATOR ---"))
+        # 6. PENGUJIAN DUAL-SCENARIO (MODE STANDAR 12 PASAL VS MODE SALES SUPPORT 13 PASAL)
+        self.stdout.write("\n" + self.style.MIGRATE_HEADING("--- AUDIT DUAL-SCENARIO (MODE STANDAR 12 PASAL VS SALES SUPPORT 13 PASAL) ---"))
         from django_forms_workflows.services.ematerai.service import EMeteraiService
-        pdf_bytes, page_count = EMeteraiService.generate_spk_pdf_bytes(submission)
-        if pdf_bytes and len(pdf_bytes) > 1000:
-            self.stdout.write(self.style.SUCCESS(f"✅ ReportLab PDF Generator Berhasil: {len(pdf_bytes)} bytes, {page_count} halaman."))
+
+        # === SKENARIO 1: MODE STANDAR (12 PASAL) ===
+        self.stdout.write(self.style.NOTICE("  [Skenario 1] Mode Standar (12 Pasal Baku)"))
+        html_std = tpl_standard.render(submission)
+        pdf_bytes_std, page_count_std = EMeteraiService.generate_spk_pdf_bytes(submission)
+
+        if "Pasal 4</div>" in html_std and "Perjanjian berlaku untuk Jangka Waktu" in html_std:
+            self.stdout.write(self.style.SUCCESS("    ✅ Standar: Pasal 4 adalah Periode & Masa Berlaku Kontrak."))
         else:
-            self.stderr.write(self.style.ERROR("❌ Gagal menghasilkan PDF ReportLab!"))
+            self.stderr.write(self.style.ERROR("    ❌ Standar: Pasal 4 Periode tidak sesuai!"))
+            all_passed = False
+
+        if "Pasal 12</div>" in html_std and "Pasal 13</div>" not in html_std:
+            self.stdout.write(self.style.SUCCESS("    ✅ Standar: Struktur terkunci pas 12 Pasal (Pasal 12 Domisili PN)."))
+        else:
+            self.stderr.write(self.style.ERROR("    ❌ Standar: Penomoran pasal bukan 12 pasal!"))
+            all_passed = False
+
+        if "support promosi yang meliputi biaya" not in html_std:
+            self.stdout.write(self.style.SUCCESS("    ✅ Standar: Bersih dari klausul Pasal 4 Support Promosi."))
+        else:
+            self.stderr.write(self.style.ERROR("    ❌ Standar: Klausul Support Promosi masih bocor muncul!"))
+            all_passed = False
+
+        if page_count_std == 2:
+            self.stdout.write(self.style.SUCCESS(f"    ✅ Standar ReportLab PDF: Tepat {page_count_std} Halaman A4 ({len(pdf_bytes_std)} bytes)."))
+        else:
+            self.stderr.write(self.style.ERROR(f"    ❌ Standar ReportLab PDF: Halaman tidak pas 2 halaman (got {page_count_std})!"))
+            all_passed = False
+
+        # === SKENARIO 2: MODE SALES SUPPORT (13 PASAL) ===
+        self.stdout.write(self.style.NOTICE("\n  [Skenario 2] Mode Sales Support (13 Pasal: Klausul Pasal 4 Support Promosi & Sewa)"))
+        support_payload = dict(test_payload)
+        support_payload.update({
+            "is_sales_support": True,
+            "persen_support": "5",
+            "komponen_biaya_support": json.dumps(["Sewa", "Listrik", "Pajak Billboard"]),
+        })
+        sub_support = FormSubmission.objects.create(
+            form_definition=form_def,
+            submitter=submitter,
+            form_data=support_payload,
+            status="draft",
+        )
+
+        html_supp = tpl_standard.render(sub_support)
+        pdf_bytes_supp, page_count_supp = EMeteraiService.generate_spk_pdf_bytes(sub_support)
+
+        # 1. Cek Pasal 4 Support Promosi Poin (1), (2), (3)
+        if (
+            "Pasal 4</div>" in html_supp
+            and "Pihak Pertama memberikan support promosi yang meliputi biaya" in html_supp
+            and "sewa, listrik, dan pajak billboard" in html_supp
+            and "5%" in html_supp
+            and "Support promosi ini dapat dicairkan setelah pembayaran" in html_supp
+            and "Grace period selama 1 (satu) bulan dari masa kontrak berakhir" in html_supp
+        ):
+            self.stdout.write(self.style.SUCCESS("    ✅ Sales Support: Pasal 4 Support Promosi ter-render lengkap (poin 1, 2, 3) dengan komponen 'sewa, listrik, dan pajak billboard'."))
+        else:
+            self.stderr.write(self.style.ERROR("    ❌ Sales Support: Klausul Pasal 4 Support Promosi tidak sesuai!"))
+            all_passed = False
+
+        # 2. Cek Pergeseran Penomoran Pasal (Pasal 5 s.d. Pasal 13)
+        if "Pasal 5</div>" in html_supp and "Perjanjian berlaku untuk Jangka Waktu" in html_supp:
+            self.stdout.write(self.style.SUCCESS("    ✅ Sales Support: Periode Kontrak bergeser rapi menjadi Pasal 5."))
+        else:
+            self.stderr.write(self.style.ERROR("    ❌ Sales Support: Periode Kontrak gagal bergeser ke Pasal 5!"))
+            all_passed = False
+
+        if "Pasal 6</div>" in html_supp and "Skema discount untuk penjualan Produk" in html_supp:
+            self.stdout.write(self.style.SUCCESS("    ✅ Sales Support: Skema Diskon bergeser rapi menjadi Pasal 6."))
+        else:
+            self.stderr.write(self.style.ERROR("    ❌ Sales Support: Skema Diskon gagal bergeser ke Pasal 6!"))
+            all_passed = False
+
+        if "Pasal 7</div>" in html_supp and "Pihak Pertama memberikan Insentif" in html_supp:
+            self.stdout.write(self.style.SUCCESS("    ✅ Sales Support: Insentif Tahunan bergeser rapi menjadi Pasal 7."))
+        else:
+            self.stderr.write(self.style.ERROR("    ❌ Sales Support: Insentif Tahunan gagal bergeser ke Pasal 7!"))
+            all_passed = False
+
+        if "Pasal 13</div>" in html_supp and "Pengadilan Negeri Bale Bandung" in html_supp:
+            self.stdout.write(self.style.SUCCESS("    ✅ Sales Support: Total 13 Pasal lengkap & urut (Pasal 13 Domisili PN)."))
+        else:
+            self.stderr.write(self.style.ERROR("    ❌ Sales Support: Pasal 13 Domisili PN tidak ditemukan!"))
+            all_passed = False
+
+        if page_count_supp == 2:
+            self.stdout.write(self.style.SUCCESS(f"    ✅ Sales Support ReportLab PDF: Tepat {page_count_supp} Halaman A4 ({len(pdf_bytes_supp)} bytes)."))
+        else:
+            self.stderr.write(self.style.ERROR(f"    ❌ Sales Support ReportLab PDF: Halaman tidak pas 2 halaman (got {page_count_supp})!"))
+            all_passed = False
+
+        sub_support.delete()
+
+        # 7. Test Penamaan Dinamis Berkas PDF SPK Sesuai Nomor SPK
+        from django_forms_workflows.views import _resolve_spk_pdf_filename, form_preview_pdf
+        from django.test import RequestFactory
+        expected_fn = "SPK-001-SK-RAS-BANDUNG-LADY-X-2026.pdf"
+        actual_fn = _resolve_spk_pdf_filename(submission)
+        if actual_fn == expected_fn:
+            self.stdout.write(self.style.SUCCESS(f"✅ Penamaan Dinamis Berkas PDF Resmi: '{actual_fn}' tepat sesuai format nomor SPK."))
+        else:
+            self.stderr.write(self.style.ERROR(f"❌ Penamaan Dinamis Berkas PDF tidak sesuai: '{actual_fn}' != '{expected_fn}'!"))
+            all_passed = False
+
+        # 8. Test Endpoint Transient Preview PDF (True WYSIWYG Parity)
+        factory = RequestFactory()
+        preview_req = factory.post("/forms/permohonan-kontrak/preview-pdf/", data=submission.form_data)
+        preview_req.user = submission.submitter
+        preview_resp = form_preview_pdf(preview_req, slug="permohonan-kontrak")
+        if preview_resp.status_code == 200 and preview_resp["Content-Type"] == "application/pdf" and preview_resp.content.startswith(b"%PDF"):
+            self.stdout.write(self.style.SUCCESS(f"✅ Endpoint Transient Preview PDF (True WYSIWYG): Status 200 OK, {len(preview_resp.content)} bytes, Disposition: {preview_resp.get('Content-Disposition')}, Page-Count: {preview_resp.get('X-Page-Count')}."))
+        else:
+            self.stderr.write(self.style.ERROR(f"❌ Endpoint Preview PDF gagal: status={preview_resp.status_code}!"))
+            all_passed = False
+
+        # 7. Static Verification: Proteksi Nilai Fixed Discount di kontrak-grid-widget.js
+        import os
+        js_path = os.path.join("django_forms_workflows", "static", "django_forms_workflows", "js", "kontrak-grid-widget.js")
+        if os.path.exists(js_path):
+            with open(js_path, "r", encoding="utf-8") as f:
+                js_content = f.read()
+            if 'readonly' in js_content and 'isFixed' in js_content and 'cursor: not-allowed' in js_content:
+                self.stdout.write(self.style.SUCCESS("✅ Proteksi Skema Diskon (kontrak-grid-widget.js): Input Nilai, Tipe, Keterangan MD1-MTOP berstatus readonly & cursor not-allowed terkunci."))
+            else:
+                self.stderr.write(self.style.ERROR("❌ Proteksi Skema Diskon (kontrak-grid-widget.js): Proteksi readonly baris fixed tidak lengkap!"))
+                all_passed = False
 
         # 7. Cleanup test submission
         submission.delete()
