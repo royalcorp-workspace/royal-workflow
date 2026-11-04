@@ -775,7 +775,30 @@ table.clause-table td.cell-currency {
     }
 }
 
-/* ── 2. Two-Tier Bottom Action Buttons Navigation (< 768px) ── */
+/* ── 2. Responsive Bottom Action Buttons Navigation ── */
+
+/* Tablet & Medium Screens (768px - 991.98px) */
+@media (max-width: 991.98px) and (min-width: 768px) {
+    .form-wizard-footer {
+        flex-wrap: wrap !important;
+        gap: 12px !important;
+        padding: 16px 0 !important;
+    }
+    .footer-left-actions {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+    }
+    .footer-right-actions {
+        display: flex !important;
+        align-items: center !important;
+        gap: 8px !important;
+        flex-wrap: wrap !important;
+        margin-left: auto !important;
+    }
+}
+
+/* Mobile Devices (< 768px) - 2-Tier Balanced Grid */
 @media (max-width: 767.98px) {
     .form-wizard-footer {
         display: grid !important;
@@ -794,8 +817,8 @@ table.clause-table td.cell-currency {
     /* Tier 1 Primary Action: 100% Full-Width on top */
     .footer-right-actions .btn-wizard-next,
     .footer-right-actions .btn-wizard-submit {
-        grid-column: 1 / 3 !important;
-        grid-row: 1 !important;
+        grid-column: 1 / -1 !important;
+        order: 1 !important;
         width: 100% !important;
         height: 44px !important;
         font-size: 14.5px !important;
@@ -810,7 +833,7 @@ table.clause-table td.cell-currency {
     .footer-left-actions .btn-back-to-forms,
     .footer-left-actions .btn-wizard-prev {
         grid-column: 1 / 2 !important;
-        grid-row: 2 !important;
+        order: 2 !important;
         width: 100% !important;
         height: 40px !important;
         display: inline-flex !important;
@@ -828,7 +851,7 @@ table.clause-table td.cell-currency {
     /* Tier 2 Secondary Actions: Right Button (Save Draft) */
     .footer-right-actions .btn-save-draft {
         grid-column: 2 / 3 !important;
-        grid-row: 2 !important;
+        order: 2 !important;
         width: 100% !important;
         height: 40px !important;
         display: inline-flex !important;
@@ -846,21 +869,21 @@ table.clause-table td.cell-currency {
     /* When Save Draft is not present or hidden, let Back / Prev take full width */
     .form-wizard-footer:not(:has(.btn-save-draft:not(.d-none))) .footer-left-actions .btn-back-to-forms,
     .form-wizard-footer:not(:has(.btn-save-draft:not(.d-none))) .footer-left-actions .btn-wizard-prev {
-        grid-column: 1 / 3 !important;
+        grid-column: 1 / -1 !important;
     }
 
     /* Ancillary actions (Preview SPK button, Discard Draft) */
     .footer-right-actions .btn-preview-spk {
-        grid-column: 1 / 3 !important;
-        grid-row: 3 !important;
+        grid-column: 1 / -1 !important;
+        order: 3 !important;
         width: 100% !important;
         height: 38px !important;
         margin: 0 !important;
     }
 
     .footer-right-actions .btn-discard-draft {
-        grid-column: 1 / 3 !important;
-        grid-row: 4 !important;
+        grid-column: 1 / -1 !important;
+        order: 4 !important;
         width: 100% !important;
         height: 36px !important;
         margin: 0 !important;
@@ -1090,17 +1113,119 @@ table.clause-table td.cell-currency {
     box-shadow: none !important;
 }
 
+/* Selectable Modern Chips / Pills untuk Komponen Biaya Support */
+.support-chips-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    align-items: center;
+}
+
+.support-chip-item {
+    display: inline-flex;
+}
+
+.support-chip-label {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: #475569;
+    background-color: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 20px;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.15s ease-in-out;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.support-chip-label:hover {
+    background-color: #f1f5f9;
+    border-color: #94a3b8;
+    color: #1e293b;
+    transform: translateY(-1px);
+}
+
+.support-chip-label .chip-icon-add {
+    font-size: 11px;
+    color: #94a3b8;
+    transition: color 0.15s ease;
+}
+
+.support-chip-label:hover .chip-icon-add {
+    color: #475569;
+}
+
+/* Checked State: Biru lembut dengan border aksen */
+.support-chip-input:checked + .support-chip-label {
+    background-color: #e0f2fe !important;
+    border-color: #0284c7 !important;
+    color: #0369a1 !important;
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(2, 132, 199, 0.15);
+}
+
+.support-chip-input:checked + .support-chip-label .chip-icon-add {
+    display: none !important;
+}
+
+.support-chip-input:checked + .support-chip-label .chip-icon-check {
+    display: inline-block !important;
+    font-size: 13.5px;
+    font-weight: bold;
+    color: #0284c7;
+}
+
+.support-chip-input:focus-visible + .support-chip-label {
+    outline: 2px solid #38bdf8;
+    outline-offset: 1px;
+}
+
 /* ==========================================================================
    Modern Clean PDF Preview Toolbar & Viewer Frame (Enterprise Edition)
    ========================================================================== */
 .spk-pdf-preview-wrapper {
-    width: 100%;
+    width: 100% !important;
 }
 
 .spk-pdf-toolbar {
+    width: 100% !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
     background-color: #f8fafc !important;
     border: 1px solid #e2e8f0 !important;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.spk-pdf-toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.spk-pdf-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 767.98px) {
+    .spk-pdf-toolbar {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 10px !important;
+    }
+    .spk-pdf-toolbar-right {
+        width: 100% !important;
+        margin-left: 0 !important;
+        justify-content: flex-start !important;
+    }
 }
 
 .spk-pdf-toolbar .btn-sm {

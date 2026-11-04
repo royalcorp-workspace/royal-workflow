@@ -76,7 +76,7 @@ def forms_workflows(request):
                 if cat_key not in cat_map:
                     cat_name = cat.name if cat else "General"
                     if "sales" in cat_name.lower():
-                        cat_name = "SALES & MARKETING PT RAS"
+                        cat_name = "Sales & Marketing"
                     cat_map[cat_key] = {
                         "category": cat,
                         "category_name": cat_name,
