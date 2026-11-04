@@ -1113,17 +1113,119 @@ table.clause-table td.cell-currency {
     box-shadow: none !important;
 }
 
+/* Selectable Modern Chips / Pills untuk Komponen Biaya Support */
+.support-chips-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    align-items: center;
+}
+
+.support-chip-item {
+    display: inline-flex;
+}
+
+.support-chip-label {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: #475569;
+    background-color: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 20px;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.15s ease-in-out;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.support-chip-label:hover {
+    background-color: #f1f5f9;
+    border-color: #94a3b8;
+    color: #1e293b;
+    transform: translateY(-1px);
+}
+
+.support-chip-label .chip-icon-add {
+    font-size: 11px;
+    color: #94a3b8;
+    transition: color 0.15s ease;
+}
+
+.support-chip-label:hover .chip-icon-add {
+    color: #475569;
+}
+
+/* Checked State: Biru lembut dengan border aksen */
+.support-chip-input:checked + .support-chip-label {
+    background-color: #e0f2fe !important;
+    border-color: #0284c7 !important;
+    color: #0369a1 !important;
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(2, 132, 199, 0.15);
+}
+
+.support-chip-input:checked + .support-chip-label .chip-icon-add {
+    display: none !important;
+}
+
+.support-chip-input:checked + .support-chip-label .chip-icon-check {
+    display: inline-block !important;
+    font-size: 13.5px;
+    font-weight: bold;
+    color: #0284c7;
+}
+
+.support-chip-input:focus-visible + .support-chip-label {
+    outline: 2px solid #38bdf8;
+    outline-offset: 1px;
+}
+
 /* ==========================================================================
    Modern Clean PDF Preview Toolbar & Viewer Frame (Enterprise Edition)
    ========================================================================== */
 .spk-pdf-preview-wrapper {
-    width: 100%;
+    width: 100% !important;
 }
 
 .spk-pdf-toolbar {
+    width: 100% !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
     background-color: #f8fafc !important;
     border: 1px solid #e2e8f0 !important;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.spk-pdf-toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.spk-pdf-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 767.98px) {
+    .spk-pdf-toolbar {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 10px !important;
+    }
+    .spk-pdf-toolbar-right {
+        width: 100% !important;
+        margin-left: 0 !important;
+        justify-content: flex-start !important;
+    }
 }
 
 .spk-pdf-toolbar .btn-sm {

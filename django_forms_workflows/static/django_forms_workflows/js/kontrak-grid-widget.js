@@ -3037,42 +3037,63 @@
                     Aktifkan jika perjanjian mencakup kontribusi support promosi / operasional toko (otomatis menyisipkan Pasal 4).
                 </div>
             </div>
-            <div class="spk-clause-body" id="kontrak-sales-support-drawer" style="display: none; background: #f8fafc; border-top: 1px dashed #cbd5e1; padding: 18px 20px;">
-                <div class="row g-3 align-items-start">
-                    <div class="col-md-3">
-                        <label class="form-label fw-bold small text-dark mb-1" for="input_persen_support">
+            <div class="spk-clause-body" id="kontrak-sales-support-drawer" style="display: none; background: #f8fafc; border-top: 1px dashed #cbd5e1; padding: 20px 22px;">
+                <!-- Baris 1: Input Persentase Support & Info Kontekstual Seimbang -->
+                <div class="row align-items-center mb-3 g-3">
+                    <div class="col-md-4 col-sm-6">
+                        <label class="form-label fw-bold small text-dark mb-1 text-nowrap" for="input_persen_support">
                             Persentase Support (%) <span class="text-danger">*</span>
                         </label>
                         <div class="input-group input-group-sm">
                             <input type="number" class="form-control fw-semibold text-primary" name="persen_support" id="input_persen_support" value="5" min="0" max="100" step="0.5" placeholder="5">
-                            <span class="input-group-text bg-white fw-bold">%</span>
+                            <span class="input-group-text bg-white fw-bold text-muted">%</span>
                         </div>
-                        <div class="form-text text-muted" style="font-size: 11px;">Nilai support promo toko (default 5%).</div>
+                        <div class="form-text text-muted mt-1" style="font-size: 11px;">Nilai support promo toko (default 5%).</div>
                     </div>
-                    <div class="col-md-9">
-                        <label class="form-label fw-bold small text-dark mb-1">
+                    <div class="col-md-8 col-sm-6">
+                        <div class="alert alert-light border border-info-subtle text-muted small p-2 px-3 mb-0 rounded-2 d-flex align-items-center gap-2" style="background-color: #f0f9ff !important;">
+                            <i class="bi bi-info-circle text-primary fs-5 flex-shrink-0"></i>
+                            <div style="font-size: 11.5px; line-height: 1.4;">
+                                Besaran persentase yang disepakati akan diterapkan pada klausul <strong>Pasal 4 Support Promosi</strong> dalam draf resmi SPK.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Baris 2: Komponen Biaya Support Promosi (Selectable Chips Full-Width) -->
+                <div class="pt-3 border-top">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <label class="form-label fw-bold small text-dark mb-0">
                             Komponen Biaya Support Promosi <span class="text-danger">*</span>
                         </label>
-                        <div class="d-flex flex-wrap gap-2.5 align-items-center p-2.5 rounded-3 border bg-white" id="containerKomponenBiaya">
-                        </div>
-                        <div class="form-text text-muted" style="font-size: 11px;">Pilih komponen biaya operasional/promosi yang dicover Pihak Pertama.</div>
+                        <span class="text-muted small" style="font-size: 11.5px;">Klik untuk memilih komponen</span>
+                    </div>
+                    <div class="support-chips-wrapper" id="containerKomponenBiaya">
+                        <!-- Populated by JavaScript Chips -->
+                    </div>
+                    <div class="form-text text-muted mt-2" style="font-size: 11px;">
+                        Pilih satu atau lebih komponen biaya operasional/promosi yang dicover Pihak Pertama (misal: Sewa, Listrik, Instore, dll).
                     </div>
                 </div>
             </div>
         `;
 
-        // Populate 6 official components
+        // Populate 6 official components as Modern Selectable Chips
         const containerKomponen = card0.querySelector('#containerKomponenBiaya');
         const OFFICIAL_KOMPONEN = ['Sewa', 'Listrik', 'Instore', 'Pameran', 'Pajak Billboard', 'Asuransi'];
         OFFICIAL_KOMPONEN.forEach(komp => {
-            const div = document.createElement('div');
-            div.className = 'form-check form-check-inline mb-0';
             const safeId = 'chk_biaya_' + komp.toLowerCase().replace(/\s+/g, '_');
-            div.innerHTML = `
-                <input class="form-check-input" type="checkbox" name="komponen_biaya_support_chk" value="${komp}" id="${safeId}" style="cursor: pointer;">
-                <label class="form-check-label small fw-medium text-dark" for="${safeId}" style="cursor: pointer;">${komp}</label>
+            const chipItem = document.createElement('div');
+            chipItem.className = 'support-chip-item';
+            chipItem.innerHTML = `
+                <input class="btn-check support-chip-input" type="checkbox" name="komponen_biaya_support_chk" value="${komp}" id="${safeId}" autocomplete="off">
+                <label class="support-chip-label" for="${safeId}">
+                    <i class="bi bi-plus-lg chip-icon-add me-1.5"></i>
+                    <i class="bi bi-check2 chip-icon-check me-1.5 d-none"></i>
+                    <span>${komp}</span>
+                </label>
             `;
-            containerKomponen.appendChild(div);
+            containerKomponen.appendChild(chipItem);
         });
 
         // Ensure real hidden input is_sales_support exists
@@ -3512,10 +3533,10 @@
 
             if (!toolbar) {
                 container.innerHTML = `
-                    <div class="spk-pdf-preview-wrapper" style="max-width: 960px; margin: 0 auto;">
-                        <div class="spk-pdf-toolbar d-flex flex-wrap justify-content-between align-items-center mb-3 p-2.5 px-3 bg-light border rounded-3">
+                    <div class="spk-pdf-preview-wrapper w-100" style="max-width: 1000px; margin: 0 auto;">
+                        <div class="spk-pdf-toolbar d-flex flex-wrap justify-content-between align-items-center mb-3 p-2.5 px-3 bg-light border rounded-3 w-100 gap-2">
                             <!-- Sisi Kiri: Info Dokumen Bersih -->
-                            <div class="d-flex align-items-center gap-2 mb-2 mb-md-0">
+                            <div class="spk-pdf-toolbar-left d-flex align-items-center gap-2">
                                 <i class="bi bi-file-earmark-pdf text-danger fs-5"></i>
                                 <span class="fw-semibold text-dark" style="font-size: 13.5px;">Pratinjau Surat Perjanjian Kerjasama (SPK)</span>
                                 <span class="badge bg-secondary-subtle text-secondary-emphasis border px-2 py-1 ms-1 d-none" id="spkPageBadge" style="font-size: 11.5px; font-weight: 500;">
@@ -3523,7 +3544,7 @@
                                 </span>
                             </div>
                             <!-- Sisi Kanan: Grup Tombol Aksi Compact -->
-                            <div class="d-flex align-items-center gap-2">
+                            <div class="spk-pdf-toolbar-right d-flex align-items-center gap-2 ms-md-auto">
                                 <button type="button" class="btn btn-sm btn-outline-secondary" id="btnRefreshPdfPreview" title="Muat ulang pratinjau data formulir">
                                     <i class="bi bi-arrow-clockwise me-1"></i>Perbarui
                                 </button>
