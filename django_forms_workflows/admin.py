@@ -18,6 +18,7 @@ from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import path, reverse
 from django.utils.html import format_html, mark_safe
+from django.utils import timezone
 
 from .models import (
     ActionExecutionLog,
@@ -44,6 +45,7 @@ from .models import (
     StageApprovalGroup,
     SubWorkflowDefinition,
     SubWorkflowInstance,
+    TaskDelegation,
     UserNotificationPreference,
     UserProfile,
     EmployeeProfile,
@@ -2328,8 +2330,25 @@ class FormSubmissionAdmin(admin.ModelAdmin):
     inlines = [PaymentRecordInline, ChangeHistoryInline]
 
 
+class TaskDelegationInline(admin.TabularInline):
+    model = TaskDelegation
+    extra = 0
+    readonly_fields = ("delegated_by", "delegated_to", "instructions", "status", "staff_notes", "created_at", "completed_at")
+    can_delete = False
+
+
+@admin.register(TaskDelegation)
+class TaskDelegationAdmin(admin.ModelAdmin):
+    list_display = ("id", "task", "delegated_by", "delegated_to", "status", "created_at", "completed_at")
+    list_filter = ("status", "created_at")
+    search_fields = ("delegated_by__username", "delegated_to__username", "instructions", "staff_notes")
+    raw_id_fields = ("task", "delegated_by", "delegated_to")
+    readonly_fields = ("created_at",)
+
+
 @admin.register(ApprovalTask)
 class ApprovalTaskAdmin(admin.ModelAdmin):
+    inlines = [TaskDelegationInline]
     list_display = (
         "id",
         "submission",

@@ -130,16 +130,44 @@ def format_workflow_telegram_message(submission, event: str, task=None) -> str:
     detail_url = f"{base_url}/forms/submissions/{submission.id}/"
     approval_url = f"{base_url}/forms/approvals/"
 
-    task_name = form_data.get("nama_task") or form_name
-    env_target = form_data.get("target_environment", "Production")
-    provider = form_data.get("mail_provider", "SMTP Provider")
+    task_name = (
+        form_data.get("nama_kegiatan")
+        or form_data.get("nama_task")
+        or form_data.get("nomor_spk")
+        or form_name
+    )
+
+    # Dynamic extra fields for financial or technical forms
+    extra_lines = []
+    total_nominal = form_data.get("total_nominal")
+    if total_nominal:
+        try:
+            nom_formatted = f"Rp {int(float(total_nominal)):,}".replace(",", ".")
+            extra_lines.append(f"💰 *Nominal Biaya:* `{nom_formatted}`")
+        except Exception:
+            extra_lines.append(f"💰 *Nominal Biaya:* `Rp {total_nominal}`")
+
+    cabang = form_data.get("cabang")
+    divisi = form_data.get("divisi_pemohon")
+    if cabang:
+        unit_str = f"{cabang} ({divisi})" if divisi else cabang
+        extra_lines.append(f"🏢 *Unit Kerja:* `{unit_str}`")
+    elif form_data.get("target_environment"):
+        extra_lines.append(f"🏢 *Target Server:* `{form_data.get('target_environment')}`")
+
+    if form_data.get("kategori_biaya"):
+        extra_lines.append(f"📂 *Kategori:* `{form_data.get('kategori_biaya')}`")
+    elif form_data.get("mail_provider"):
+        extra_lines.append(f"⚙️ *Provider:* `{form_data.get('mail_provider')}`")
+
+    extra_info_block = "\n".join(extra_lines) + "\n" if extra_lines else ""
 
     if event == "approval_reminder":
         return (
             f"⏰ *[REMINDER] PERSETUJUAN TERTUNDA*\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📌 *Task:* {task_name}\n"
-            f"🏢 *Target Server:* `{env_target}`\n"
+            f"📌 *Pengajuan:* {task_name}\n"
+            f"{extra_info_block}"
             f"👤 *Inisiator:* {submitter_name}\n"
             f"🆔 *Ref Tiket:* `#{submission.id}`\n\n"
             f"⚠️ *Perhatian:* Pengajuan ini masih menunggu review dan persetujuan dari peninjau.\n\n"
@@ -152,26 +180,25 @@ def format_workflow_telegram_message(submission, event: str, task=None) -> str:
         return (
             f"🔔 *[ROYAL WORKFLOW] PERSETUJUAN DIPERLUKAN*\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📌 *Task:* {task_name}\n"
-            f"🏢 *Target Server:* `{env_target}`\n"
-            f"⚙️ *Mail Provider:* {provider}\n"
+            f"📌 *Pengajuan:* {task_name}\n"
+            f"{extra_info_block}"
             f"👤 *Diajukan Oleh:* {submitter_name}\n"
             f"🆔 *Ref Pengajuan:* `#{submission.id}`\n\n"
-            f"Koneksi SMTP & konfigurasi siap untuk dievaluasi oleh Tim Reviewer.\n\n"
-            f"👉 [Review & Approve di Sistem]({approval_url})\n"
+            f"Dokumen dan rincian telah diajukan dan siap dievaluasi oleh Tim Reviewer.\n\n"
+            f"👉 [Review & Otorisasi di Sistem]({approval_url})\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"_Royal Workflow Notifications_"
         )
 
     elif event == "workflow_approved":
         return (
-            f"✅ *[APPROVED] TASK TELAH DISETUJUI PENUH*\n"
+            f"✅ *[APPROVED] PENGAJUAN DISETUJUI PENUH*\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📌 *Task:* {task_name}\n"
-            f"🏢 *Target Server:* `{env_target}`\n"
+            f"📌 *Pengajuan:* {task_name}\n"
+            f"{extra_info_block}"
             f"👤 *Inisiator:* {submitter_name}\n"
             f"🆔 *Ref Tiket:* `#{submission.id}`\n\n"
-            f"Konfigurasi telah disetujui dan dinyatakan resmi aktif di sistem.\n\n"
+            f"Seluruh tahap persetujuan telah selesai dan pengajuan resmi disahkan.\n\n"
             f"📄 [Lihat Detail Pengajuan]({detail_url})\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"_Royal Workflow Notifications_"
@@ -182,11 +209,11 @@ def format_workflow_telegram_message(submission, event: str, task=None) -> str:
         return (
             f"📥 *[ROYAL WORKFLOW] PENGAJUAN BARU DITERIMA*\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📌 *Task:* {task_name}\n"
-            f"🏢 *Target:* `{env_target}`\n"
+            f"📌 *Pengajuan:* {task_name}\n"
+            f"{extra_info_block}"
             f"👤 *Inisiator:* {submitter_name}\n"
             f"🆔 *Ref Tiket:* `#{submission.id}`\n\n"
-            f"Pengajuan berhasil dicatat dan masuk ke antrean review.\n\n"
+            f"Pengajuan berhasil dicatat dan masuk ke antrean review persetujuan.\n\n"
             f"📄 [Buka Detail Tiket]({detail_url})\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"_Royal Workflow Notifications_"

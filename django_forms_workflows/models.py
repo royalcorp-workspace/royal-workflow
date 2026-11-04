@@ -2931,6 +2931,73 @@ class FormSubmission(models.Model):
         who = self.submitter.username if self.submitter_id else "Anonymous"
         return f"{self.form_definition.name} - {who} - {self.get_status_display()}"
 
+    @property
+    def current_stage_order(self):
+        """Returns the 1-based order number of the active pending workflow stage, or completed state."""
+        if self.status == "approved":
+            return 99
+        pending_task = self.approval_tasks.filter(status="pending").order_by("stage_number").first()
+        if pending_task and pending_task.stage_number:
+            return pending_task.stage_number
+        last_task = self.approval_tasks.order_by("-stage_number").first()
+        if last_task and last_task.stage_number:
+            return last_task.stage_number
+        return 1
+
+    @property
+    def e_signatures(self):
+        """Returns dict of e_signatures or empty dict, ensuring safe template access."""
+        if isinstance(self.form_data, dict):
+            return self.form_data.get("e_signatures") or {}
+        return {}
+
+    def get_stage_signature(self, stage_num):
+        """Safely retrieve signature metadata for a stage, fallback to completed approval task."""
+        sigs = self.e_signatures
+        stage_key = f"stage_{stage_num}"
+        if isinstance(sigs, dict) and stage_key in sigs:
+            return sigs[stage_key]
+
+        task = self.approval_tasks.filter(status="approved", stage_number=stage_num).first()
+        if task and task.completed_by:
+            approver_name = task.completed_by.get_full_name() or task.completed_by.username
+            stamped_at = task.completed_at.strftime("%d %b %Y, %H:%M WIB") if task.completed_at else "-"
+            return {
+                "approver_name": approver_name,
+                "approver_username": task.completed_by.username,
+                "stage_name": task.workflow_stage.name if task.workflow_stage else f"Tahap {stage_num}",
+                "stage_order": stage_num,
+                "stamped_at": stamped_at,
+                "stamp_type": "approval_task_completed",
+                "signature_image": None,
+                "is_stamped": True,
+            }
+        return None
+
+    @property
+    def sig_stage_1(self):
+        return self.get_stage_signature(1)
+
+    @property
+    def sig_stage_2(self):
+        return self.get_stage_signature(2)
+
+    @property
+    def sig_stage_3(self):
+        return self.get_stage_signature(3)
+
+    @property
+    def sig_stage_4(self):
+        return self.get_stage_signature(4)
+
+    @property
+    def sig_stage_5(self):
+        return self.get_stage_signature(5)
+
+    @property
+    def sig_stage_6(self):
+        return self.get_stage_signature(6)
+
 
 class PaymentRecord(models.Model):
     """
@@ -3113,6 +3180,82 @@ class ApprovalTask(models.Model):
         swi = self.sub_workflow_instance
         return format_stage_label(stage, swi=swi, fallback_name=self.step_name)
 
+    @property
+    def active_delegation(self):
+        """Return the active pending delegation, if any."""
+        return self.delegations.filter(status="pending").select_related("delegated_to", "delegated_by").first()
+
+    @property
+    def latest_completed_delegation(self):
+        """Return the latest completed delegation for this task."""
+        return self.delegations.filter(status="completed").select_related("delegated_to", "delegated_by").order_by("-completed_at").first()
+
+    @property
+    def has_delegation(self):
+        return self.delegations.exists()
+
+
+class TaskDelegation(models.Model):
+    """
+    Sub-review delegation for approval tasks (Hierarki HRMS / Two-step approval).
+
+    Allows an approver (e.g. General Manager / PIC Pusat) to delegate preliminary
+    review / verification to their staff before final execution and sign-off.
+    """
+
+    DELEGATION_STATUS = [
+        ("pending", "Menunggu Telaah Staf"),
+        ("completed", "Telaah Selesai"),
+        ("recalled", "Ditarik Kembali"),
+    ]
+
+    task = models.ForeignKey(
+        ApprovalTask,
+        on_delete=models.CASCADE,
+        related_name="delegations",
+        help_text="The approval task being delegated",
+    )
+    delegated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="delegated_tasks_sent",
+        help_text="The manager / approver who initiated delegation",
+    )
+    delegated_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="delegated_tasks_received",
+        help_text="The staff member assigned to perform the review",
+    )
+    instructions = models.TextField(
+        help_text="Instructions and points to verify from the manager",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=DELEGATION_STATUS,
+        default="pending",
+        db_index=True,
+    )
+    staff_notes = models.TextField(
+        blank=True,
+        help_text="Review notes and recommendations from the staff member",
+    )
+    staff_signature = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Optional digital signature / seal data from staff",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Task Delegation"
+        verbose_name_plural = "Task Delegations"
+
+    def __str__(self):
+        return f"Delegation #{self.id} for Task #{self.task_id} ({self.delegated_by} -> {self.delegated_to})"
+
 
 def format_stage_label(stage, swi=None, fallback_name: str = "") -> str:
     """Return the standardised display label for a workflow stage.
@@ -3154,6 +3297,9 @@ class AuditLog(models.Model):
         ("withdraw", "Withdrawn"),
         ("assign", "Assigned"),
         ("comment", "Commented"),
+        ("delegate", "Delegated"),
+        ("delegation_complete", "Delegation Completed"),
+        ("delegation_recall", "Delegation Recalled"),
     ]
 
     # What happened
