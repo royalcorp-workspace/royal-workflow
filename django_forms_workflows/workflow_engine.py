@@ -82,6 +82,17 @@ def _dispatch_notification_rules(
                     daemon=True,
                 ).start()
 
+            # Also dispatch Telegram notification concurrently if enabled
+            try:
+                from .services.telegram_service import dispatch_telegram_workflow_event
+                threading.Thread(
+                    target=dispatch_telegram_workflow_event,
+                    args=(submission.id, event, task_id),
+                    daemon=True,
+                ).start()
+            except Exception as _tel_err:
+                logger.debug("Telegram dispatch error: %s", _tel_err)
+
         transaction.on_commit(_fire_rules)
     except Exception:
         logger.warning(

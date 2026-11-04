@@ -2,6 +2,8 @@
 
 {% if submission.form_definition.slug == 'permohonan-kontrak' %}
   {% include 'django_forms_workflows/partials/_contract_review_accordion.html' %}
+{% elif submission.form_definition.slug == 'konfigurasi-service-smtp' %}
+  {% include 'django_forms_workflows/partials/_smtp_config_review.html' %}
 {% elif form_data_ordered %}
   <div class="row g-3">
     {% for row in form_data_ordered %}
