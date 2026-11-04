@@ -25,7 +25,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from .forms import DynamicForm
-from .models import ApprovalTask, AuditLog, FormDefinition, FormField, FormSubmission
+from .models import ApprovalTask, AuditLog, FormDefinition, FormField, FormSubmission, TaskDelegation
 from .utils import (
     check_rate_limit,
     user_can_approve,
@@ -1489,7 +1489,9 @@ def submission_detail(request, submission_id):
     # Get approval tasks with related objects for efficient rendering
     approval_tasks = submission.approval_tasks.select_related(
         "workflow_stage", "assigned_to", "assigned_group", "completed_by"
-    ).order_by("stage_number", "-created_at")
+    ).prefetch_related(
+        "delegations__delegated_to", "delegations__delegated_by"
+    ).order_by("created_at", "id")
 
     # Build stage groups if any tasks are linked to a workflow stage.
     # Separate parent-workflow tasks from sub-workflow tasks so they
@@ -1691,12 +1693,17 @@ def submission_detail(request, submission_id):
         workflow and workflow.hide_approval_history and is_submitter_only
     )
 
+    active_tasks_count = sum(1 for t in approval_tasks if t.status != "skipped")
+    skipped_tasks_count = sum(1 for t in approval_tasks if t.status == "skipped")
+
     return render(
         request,
         "django_forms_workflows/submission_detail.html",
         {
             "submission": submission,
             "approval_tasks": approval_tasks,
+            "active_tasks_count": active_tasks_count,
+            "skipped_tasks_count": skipped_tasks_count,
             "stage_groups": stage_groups,
             "workflow_name_label": (
                 workflow.name_label if workflow and workflow.name_label else None
@@ -1770,10 +1777,15 @@ def approval_inbox(request):
             submission__form_definition_id__in=admin_form_ids,
         )
     else:  # "mine"
+        delegated_task_ids = TaskDelegation.objects.filter(
+            delegated_to=request.user,
+            status="pending",
+        ).values_list("task_id", flat=True)
         base_tasks = ApprovalTask.objects.filter(status="pending").filter(
             models.Q(assigned_to=request.user)
             | models.Q(assigned_group__in=user_groups)
-        )
+            | models.Q(id__in=delegated_task_ids)
+        ).distinct()
 
     # --- Category counts (for the filter bar) ---
     raw_counts = (
@@ -1976,6 +1988,22 @@ def approve_submission(request, task_id):
     # Reviewer (member of form_def.reviewer_groups): read-only access — may
     #   view the approval page (data, comments, history) but the decision
     #   form and send-back panel are hidden, and POST is rejected.
+    # Delegated Staff: staff member assigned by manager to perform sub-review.
+    active_delegation = (
+        task.delegations.filter(status="pending")
+        .select_related("delegated_to", "delegated_by")
+        .first()
+    )
+    is_delegated_staff = bool(
+        active_delegation and active_delegation.delegated_to == request.user
+    )
+    completed_delegation = (
+        task.delegations.filter(status="completed")
+        .select_related("delegated_to", "delegated_by")
+        .order_by("-completed_at")
+        .first()
+    )
+
     is_assignee = task.assigned_to == request.user or (
         task.assigned_group and task.assigned_group in request.user.groups.all()
     )
@@ -1983,10 +2011,15 @@ def approve_submission(request, task_id):
     is_reviewer = request.user.groups.filter(
         id__in=form_def.reviewer_groups.all()
     ).exists()
-    can_act = is_assignee or is_admin or request.user.is_superuser
+    can_act = is_assignee or is_admin or request.user.is_superuser or is_delegated_staff
     can_view = can_act or is_reviewer
     read_only = can_view and not can_act
-    acting_on_behalf = can_act and not is_assignee and not request.user.is_superuser
+    acting_on_behalf = (
+        can_act
+        and not is_assignee
+        and not request.user.is_superuser
+        and not is_delegated_staff
+    )
 
     if not can_view:
         messages.error(request, "You don't have permission to view this approval step.")
@@ -2031,8 +2064,175 @@ def approve_submission(request, task_id):
         decision = request.POST.get("decision")
         comments = request.POST.get("comments", "")
 
-        if decision not in ["approve", "reject", "send_back", "request_revision"]:
+        if decision not in [
+            "approve",
+            "reject",
+            "send_back",
+            "request_revision",
+            "delegate",
+            "complete_delegation",
+            "recall_delegation",
+        ]:
             messages.error(request, "Invalid decision.")
+            return redirect("forms_workflows:approve_submission", task_id=task_id)
+
+        # ── Action: Delegate to Staff ──
+        if decision == "delegate":
+            if not (is_assignee or is_admin or request.user.is_superuser):
+                messages.error(request, "Anda tidak memiliki wewenang untuk mendelegasikan tugas ini.")
+                return redirect("forms_workflows:approve_submission", task_id=task_id)
+
+            delegated_to_id = request.POST.get("delegated_to_id")
+            instructions = request.POST.get("instructions", "").strip()
+
+            if not delegated_to_id:
+                messages.error(request, "Silakan pilih staf penerima delegasi.")
+                return redirect("forms_workflows:approve_submission", task_id=task_id)
+
+            if not instructions:
+                messages.error(request, "Instruksi telaah untuk staf wajib diisi.")
+                return redirect("forms_workflows:approve_submission", task_id=task_id)
+
+            from django.contrib.auth import get_user_model
+            UserModel = get_user_model()
+            try:
+                target_user = UserModel.objects.get(pk=delegated_to_id)
+            except UserModel.DoesNotExist:
+                messages.error(request, "Staf penerima delegasi tidak ditemukan.")
+                return redirect("forms_workflows:approve_submission", task_id=task_id)
+
+            if target_user == request.user:
+                messages.error(request, "Anda tidak dapat mendelegasikan tugas ke diri sendiri.")
+                return redirect("forms_workflows:approve_submission", task_id=task_id)
+
+            task.delegations.filter(status="pending").update(
+                status="recalled", completed_at=timezone.now()
+            )
+
+            TaskDelegation.objects.create(
+                task=task,
+                delegated_by=request.user,
+                delegated_to=target_user,
+                instructions=instructions,
+                status="pending",
+            )
+
+            AuditLog.objects.create(
+                action="delegate",
+                object_type="ApprovalTask",
+                object_id=task.id,
+                user=request.user,
+                user_ip=get_client_ip(request),
+                changes={
+                    "delegated_to": target_user.username,
+                    "instructions": instructions,
+                },
+            )
+
+            messages.success(
+                request,
+                f"Tugas persetujuan berhasil didelegasikan kepada {target_user.get_full_name() or target_user.username} "
+                f"untuk telaah awal sebelum eksekusi.",
+            )
+            return redirect("forms_workflows:approval_inbox")
+
+        # ── Action: Complete Delegated Staff Review ──
+        if decision == "complete_delegation":
+            if not is_delegated_staff or not active_delegation:
+                messages.error(request, "Anda bukan staf penerima delegasi untuk tugas ini.")
+                return redirect("forms_workflows:approve_submission", task_id=task_id)
+
+            staff_notes = request.POST.get("staff_notes", "").strip()
+            if not staff_notes:
+                messages.error(request, "Catatan / rekomendasi hasil telaah staf wajib diisi.")
+                return redirect("forms_workflows:approve_submission", task_id=task_id)
+
+            staff_sig = (
+                request.POST.get("staff_signature")
+                or request.POST.get("e_signature_stamp")
+                or ""
+            ).strip()
+
+            active_delegation.status = "completed"
+            active_delegation.completed_at = timezone.now()
+            active_delegation.staff_notes = staff_notes
+            active_delegation.staff_signature = staff_sig
+            active_delegation.save()
+
+            # Record in submission form_data for review sheet display
+            submission.form_data = submission.form_data or {}
+            del_history = list(submission.form_data.get("delegation_history") or [])
+            del_history.append({
+                "task_id": task.id,
+                "stage_name": task.display_label,
+                "delegated_by": active_delegation.delegated_by.get_full_name() or active_delegation.delegated_by.username,
+                "delegated_to": request.user.get_full_name() or request.user.username,
+                "instructions": active_delegation.instructions,
+                "staff_notes": staff_notes,
+                "has_paraf": bool(staff_sig),
+                "completed_at": timezone.now().strftime("%d %b %Y, %H:%M WIB"),
+            })
+            submission.form_data["delegation_history"] = del_history
+            submission.save(update_fields=["form_data"])
+
+            AuditLog.objects.create(
+                action="delegation_complete",
+                object_type="ApprovalTask",
+                object_id=task.id,
+                user=request.user,
+                user_ip=get_client_ip(request),
+                changes={
+                    "staff_notes": staff_notes,
+                    "delegated_by": active_delegation.delegated_by.username,
+                },
+            )
+
+            messages.success(
+                request,
+                f"Telaah staf berhasil diselesaikan. Tugas telah dikembalikan ke atasan "
+                f"({active_delegation.delegated_by.get_full_name() or active_delegation.delegated_by.username}) untuk persetujuan akhir.",
+            )
+            return redirect("forms_workflows:approval_inbox")
+
+        # ── Action: Recall Delegation ──
+        if decision == "recall_delegation":
+            if active_delegation and (
+                active_delegation.delegated_by == request.user
+                or request.user.is_superuser
+                or is_admin
+            ):
+                active_delegation.status = "recalled"
+                active_delegation.completed_at = timezone.now()
+                active_delegation.save()
+
+                AuditLog.objects.create(
+                    action="delegation_recall",
+                    object_type="ApprovalTask",
+                    object_id=task.id,
+                    user=request.user,
+                    user_ip=get_client_ip(request),
+                    changes={"recalled_by": request.user.username},
+                )
+                messages.info(
+                    request,
+                    "Delegasi tugas berhasil ditarik kembali. Anda dapat langsung meninjau dan mengeksekusi persetujuan.",
+                )
+            return redirect("forms_workflows:approve_submission", task_id=task_id)
+
+        # ── Guard: Prevent direct approval if actively delegated to staff ──
+        if decision == "approve" and active_delegation and not is_delegated_staff:
+            messages.warning(
+                request,
+                f"Tugas ini sedang ditelaah oleh staf ({active_delegation.delegated_to.get_full_name() or active_delegation.delegated_to.username}). "
+                "Tarik kembali delegasi jika Anda ingin menyetujui langsung tanpa menunggu telaah staf.",
+            )
+            return redirect("forms_workflows:approve_submission", task_id=task_id)
+
+        if decision == "approve" and is_delegated_staff:
+            messages.warning(
+                request,
+                "Sebagai staf penerima delegasi, gunakan tombol 'Selesaikan Telaah Staf' untuk menyerahkan hasil telaah ke atasan.",
+            )
             return redirect("forms_workflows:approve_submission", task_id=task_id)
 
         # Guardrail: For SPK (permohonan-kontrak) at Stage 3 (Sales Support), manual approval is blocked
@@ -2281,6 +2481,34 @@ def approve_submission(request, task_id):
         if direksi_sig and decision == "approve":
             submission.form_data = submission.form_data or {}
             submission.form_data["ttd_direksi_image"] = direksi_sig
+            submission.save(update_fields=["form_data"])
+
+        # Capture E-Signature / Digital Approval Stamp for Pengajuan Biaya & multi-stage workflows
+        e_sig = (
+            request.POST.get("e_signature_stamp")
+            or request.POST.get("approval_stamp")
+            or request.POST.get("signature_data")
+            or ""
+        ).strip()
+        if decision == "approve":
+            submission.form_data = submission.form_data or {}
+            stamps = dict(submission.form_data.get("e_signatures") or {})
+            stage_order = task.workflow_stage.order if task.workflow_stage else (task.stage_number or 1)
+            stage_key = f"stage_{stage_order}"
+
+            signer_display = request.user.get_full_name() or request.user.username
+            now_str = timezone.now().strftime("%d %b %Y, %H:%M WIB")
+            stamps[stage_key] = {
+                "approver_name": signer_display,
+                "approver_username": request.user.username,
+                "stage_name": task.workflow_stage.name if task.workflow_stage else f"Stage {stage_order}",
+                "stage_order": stage_order,
+                "stamped_at": now_str,
+                "stamp_type": "digital_signature_stamp",
+                "signature_image": e_sig if (e_sig and e_sig.startswith("data:image")) else None,
+                "is_stamped": True,
+            }
+            submission.form_data["e_signatures"] = stamps
             submission.save(update_fields=["form_data"])
 
         # Update task
@@ -2534,6 +2762,44 @@ def approve_submission(request, task_id):
             logger.error("Error rendering document template in approve view: %s", exc)
             rendered_doc_html = None
 
+    # Prepare HRMS-enriched delegation candidate list
+    from django.contrib.auth import get_user_model
+    UserModel = get_user_model()
+    raw_candidates = (
+        UserModel.objects.filter(is_active=True)
+        .exclude(id=request.user.id)
+        .select_related("employee_profile")
+        .order_by("first_name", "username")
+    )
+    user_ep = getattr(request.user, "employee_profile", None)
+    delegation_candidates = []
+    for u in raw_candidates:
+        ep = getattr(u, "employee_profile", None)
+        pos = getattr(ep, "position", "") if ep else ""
+        dept = getattr(ep, "department", "") if ep else ""
+        nik = getattr(ep, "nik", "") if ep else ""
+        is_subordinate = False
+        is_same_dept = False
+        if ep:
+            if ep.supervisor_1 == request.user or ep.supervisor_2 == request.user:
+                is_subordinate = True
+            if user_ep and user_ep.department and ep.department == user_ep.department:
+                is_same_dept = True
+        delegation_candidates.append({
+            "user": u,
+            "id": u.id,
+            "name": u.get_full_name() or u.username,
+            "username": u.username,
+            "position": pos or "Staff / Karyawan",
+            "department": dept or "Umum",
+            "nik": nik,
+            "is_subordinate": is_subordinate,
+            "is_same_dept": is_same_dept,
+        })
+    delegation_candidates.sort(
+        key=lambda c: (not c["is_subordinate"], not c["is_same_dept"], c["name"])
+    )
+
     return render(
         request,
         "django_forms_workflows/approve.html",
@@ -2580,6 +2846,11 @@ def approve_submission(request, task_id):
             "read_only": read_only,
             "acting_on_behalf": acting_on_behalf,
             "assignee_display": assignee_display,
+            # Sub-review / HRMS Delegation support
+            "active_delegation": active_delegation,
+            "is_delegated_staff": is_delegated_staff,
+            "completed_delegation": completed_delegation,
+            "delegation_candidates": delegation_candidates,
         },
     )
 
@@ -4568,6 +4839,7 @@ def _resolve_form_data_urls(form_data):
             resolved[key] = [{**f, "url": get_file_url(f)} for f in value]
         else:
             resolved[key] = value
+    resolved.setdefault("e_signatures", resolved.get("e_signatures") or {})
     return resolved
 
 
@@ -5207,10 +5479,15 @@ def approval_inbox_ajax(request):
     elif request.user.is_superuser:
         qs = ApprovalTask.objects.filter(status="pending")
     else:
+        delegated_task_ids = TaskDelegation.objects.filter(
+            delegated_to=request.user,
+            status="pending",
+        ).values_list("task_id", flat=True)
         qs = ApprovalTask.objects.filter(status="pending").filter(
             models.Q(assigned_to=request.user)
             | models.Q(assigned_group__in=user_groups)
-        )
+            | models.Q(id__in=delegated_task_ids)
+        ).distinct()
 
     qs = qs.exclude(submission__status="draft")
     records_total = qs.count()
@@ -5275,7 +5552,11 @@ def approval_inbox_ajax(request):
         "assigned_group",
         "assigned_to",
         "sub_workflow_instance",
-    ).prefetch_related("submission__form_definition__workflows")[start : start + length]
+    ).prefetch_related(
+        "submission__form_definition__workflows",
+        "delegations__delegated_to",
+        "delegations__delegated_by",
+    )[start : start + length]
 
     # --- Serialise ---
     data = []
@@ -5291,6 +5572,47 @@ def approval_inbox_ajax(request):
         # format change happens in one place.
         stage_name = task.display_label
 
+        # Check sub-review delegation status
+        active_del = next((d for d in task.delegations.all() if d.status == "pending"), None)
+        completed_del = next((d for d in task.delegations.all() if d.status == "completed"), None)
+
+        if active_del and active_del.delegated_to_id == request.user.id:
+            del_by_name = active_del.delegated_by.get_full_name() or active_del.delegated_by.username
+            step_badge = (
+                f'<span class="badge bg-warning text-dark me-1" title="Tugas delegasi telaah awal dari {escape(del_by_name)}">'
+                f'<i class="bi bi-person-gear"></i> Delegasi dari: {escape(del_by_name)}</span><br>'
+            )
+            action_btn = (
+                f'<a href="{approve_url}" class="btn btn-sm btn-warning text-dark fw-semibold">'
+                f'<i class="bi bi-journal-check"></i> Telaah Delegasi</a>'
+            )
+        elif active_del:
+            del_to_name = active_del.delegated_to.get_full_name() or active_del.delegated_to.username
+            step_badge = (
+                f'<span class="badge bg-secondary me-1" title="Sedang ditelaah oleh staf {escape(del_to_name)}">'
+                f'<i class="bi bi-hourglass-split"></i> Didelegasikan ke: {escape(del_to_name)}</span><br>'
+            )
+            action_btn = (
+                f'<a href="{approve_url}" class="btn btn-sm btn-outline-primary">'
+                f'<i class="bi bi-eye"></i> Pantau / Aksi</a>'
+            )
+        elif completed_del:
+            del_to_name = completed_del.delegated_to.get_full_name() or completed_del.delegated_to.username
+            step_badge = (
+                f'<span class="badge bg-info text-white me-1" title="Telaah staf ({escape(del_to_name)}) telah selesai. Siap dieksekusi.">'
+                f'<i class="bi bi-check2-all"></i> Telaah Staf Selesai</span><br>'
+            )
+            action_btn = (
+                f'<a href="{approve_url}" class="btn btn-sm btn-primary fw-semibold">'
+                f'<i class="bi bi-check2-circle"></i> Eksekusi Approval</a>'
+            )
+        else:
+            step_badge = ""
+            action_btn = (
+                f'<a href="{approve_url}" class="btn btn-sm btn-primary">'
+                f'<i class="bi bi-check-circle"></i> Review</a>'
+            )
+
         row = {
             "DT_RowId": f"row_{task.id}",
             "checkbox": (
@@ -5299,13 +5621,10 @@ def approval_inbox_ajax(request):
                 else ""
             ),
             "category": _cat_html(getattr(sub.form_definition, "category", None)),
-            "actions": (
-                f'<a href="{approve_url}" class="btn btn-sm btn-primary">'
-                f'<i class="bi bi-check-circle"></i> Review</a>'
-            ),
+            "actions": action_btn,
             "form": escape((sub.form_data or {}).get("nomor_spk") or sub.form_definition.name),
             "submitter": escape(_submitter_label(sub)),
-            "step_num": escape(stage_name),
+            "step_num": step_badge + escape(stage_name),
             # Prefer the individual when both are set. The reassign view
             # (post-fix) always clears `assigned_group` when setting
             # `assigned_to`, but defending here covers any task that was
