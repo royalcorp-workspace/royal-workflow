@@ -4751,3 +4751,57 @@ class StampedContractDocument(models.Model):
         return f"StampedDoc Sub #{self.submission_id} [{self.status}]"
 
 
+class TelegramNotificationConfig(models.Model):
+    """
+    Configuration for Telegram Bot Notifications.
+    Manageable directly via Django Admin.
+    """
+
+    name = models.CharField(
+        max_length=150,
+        default="Default Telegram Bot",
+        help_text="Nama konfigurasi atau label tujuan notifikasi",
+    )
+    bot_token = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Token Bot dari @BotFather (contoh: 7123456789:AAH...)",
+    )
+    chat_id = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="ID Chat pengguna atau ID Grup Telegram (contoh: -100123456789)",
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Centang untuk mengaktifkan notifikasi Telegram otomatis.",
+    )
+    send_on_submission = models.BooleanField(
+        default=True,
+        help_text="Kirim notifikasi saat ada formulir baru diajukan.",
+    )
+    send_on_approval_request = models.BooleanField(
+        default=True,
+        help_text="Kirim notifikasi permintaan persetujuan ke reviewer.",
+    )
+    send_on_reminder = models.BooleanField(
+        default=True,
+        help_text="Kirim pengingat otomatis jika persetujuan belum direspons.",
+    )
+    send_on_approved = models.BooleanField(
+        default=True,
+        help_text="Kirim notifikasi saat pengajuan disetujui penuh.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Telegram Configuration"
+        verbose_name_plural = "Telegram Configurations"
+
+    def __str__(self):
+        status = "Aktif" if self.is_active else "Nonaktif"
+        return f"{self.name} [{status}]"
+
+
+

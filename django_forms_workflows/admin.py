@@ -3269,7 +3269,10 @@ if admin.site._registry.get(User):
         user_admin.search_fields = ["username", "first_name", "last_name", "email"]
 
 
-from .models import StampedContractDocument
+from .models import StampedContractDocument, TelegramNotificationConfig
+from django_forms_workflows.services.telegram_service import send_telegram_message
+from django.contrib import messages
+from django.http import HttpResponseRedirect
 
 
 @admin.register(StampedContractDocument)
@@ -3288,4 +3291,82 @@ class StampedContractDocumentAdmin(admin.ModelAdmin):
     search_fields = ("submission__id", "provider_document_id", "file_name", "error_message")
     readonly_fields = ("created_at", "updated_at", "stamped_at")
     raw_id_fields = ("submission",)
+
+
+@admin.register(TelegramNotificationConfig)
+class TelegramNotificationConfigAdmin(admin.ModelAdmin):
+    list_display = (
+        "name",
+        "chat_id",
+        "is_active",
+        "send_on_submission",
+        "send_on_approval_request",
+        "send_on_reminder",
+        "send_on_approved",
+        "updated_at",
+    )
+    list_filter = (
+        "is_active",
+        "send_on_submission",
+        "send_on_approval_request",
+        "send_on_reminder",
+        "send_on_approved",
+    )
+    search_fields = ("name", "chat_id")
+    actions = ["test_telegram_connection"]
+
+    fieldsets = (
+        (
+            "Kredensial Telegram Bot",
+            {
+                "fields": ("name", "bot_token", "chat_id", "is_active"),
+                "description": (
+                    "Dapatkan Bot Token dari <b>@BotFather</b> di Telegram. "
+                    "Chat ID bisa berupa ID akun personal Anda atau ID Grup Telegram (diawali tanda minus, misal: <code>-100123456789</code>)."
+                ),
+            },
+        ),
+        (
+            "Event Pemicu Notifikasi Otomatis",
+            {
+                "fields": (
+                    "send_on_submission",
+                    "send_on_approval_request",
+                    "send_on_reminder",
+                    "send_on_approved",
+                ),
+                "description": "Pilih jenis alur kerja yang akan otomatis mengirimkan notifikasi ke chat/grup Telegram ini.",
+            },
+        ),
+    )
+
+    def test_telegram_connection(self, request, queryset):
+        for config in queryset:
+            if not config.bot_token or not config.chat_id:
+                self.message_user(
+                    request,
+                    f"Gagal: Konfigurasi '{config.name}' belum memiliki Bot Token atau Chat ID.",
+                    level=messages.ERROR,
+                )
+                continue
+            text = (
+                f"🚀 *[VERIFIKASI SISTEM - DJANGO ADMIN]*\n\n"
+                f"Koneksi Telegram Bot untuk *{config.name}* BERHASIL terhubung ke Royal Workflow!"
+            )
+            ok = send_telegram_message(text, chat_id=config.chat_id, bot_token=config.bot_token)
+            if ok:
+                self.message_user(
+                    request,
+                    f"Sukses! Pesan uji coba berhasil dikirim ke Telegram ({config.chat_id}).",
+                    level=messages.SUCCESS,
+                )
+            else:
+                self.message_user(
+                    request,
+                    f"Gagal mengirim pesan uji coba ke Telegram ({config.chat_id}). Periksa token & chat ID.",
+                    level=messages.ERROR,
+                )
+
+    test_telegram_connection.short_description = "⚡ Uji Coba Kirim Pesan ke Telegram"
+
 

@@ -1,0 +1,310 @@
+{% load forms_workflows_tags %}
+
+<div class="smtp-review-container">
+  <style>
+    .smtp-review-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      margin-bottom: 1rem;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .smtp-review-card:hover {
+      border-color: #cbd5e1;
+      box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.06);
+    }
+    .smtp-card-header {
+      background-color: #f8fafc;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .smtp-card-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #0f172a;
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 0;
+    }
+    .smtp-card-body {
+      padding: 1rem 1.25rem;
+    }
+    .smtp-kv-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 1rem;
+    }
+    .smtp-kv-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    .smtp-kv-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #64748b;
+    }
+    .smtp-kv-value {
+      font-size: 13.5px;
+      color: #0f172a;
+      word-break: break-word;
+    }
+    .smtp-code-badge {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12.5px;
+      background-color: #f1f5f9;
+      color: #0f172a;
+      padding: 3px 8px;
+      border-radius: 5px;
+      border: 1px solid #e2e8f0;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .smtp-env-preview {
+      background-color: #0f172a;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 1rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      overflow-x: auto;
+      margin-top: 0.75rem;
+      position: relative;
+    }
+    .btn-copy-code {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      background-color: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #e2e8f0;
+      font-size: 11px;
+      border-radius: 4px;
+      padding: 3px 8px;
+      cursor: pointer;
+      transition: background-color 0.15s;
+    }
+    .btn-copy-code:hover {
+      background-color: rgba(255, 255, 255, 0.2);
+      color: #ffffff;
+    }
+  </style>
+
+  <!-- ==================== BAGIAN 1: INFORMASI TASK & ENVIRONMENT ==================== -->
+  <div class="smtp-review-card">
+    <div class="smtp-card-header">
+      <h6 class="smtp-card-title">
+        <i class="bi bi-hdd-network text-primary"></i>
+        <span>1. Informasi Task &amp; Target Environment</span>
+      </h6>
+      <div>
+        {% if form_data.target_environment == 'Production' %}
+          <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1 fw-semibold font-monospace" style="font-size: 11px;">
+            <i class="bi bi-shield-fill-exclamation me-1"></i>PRODUCTION (Live Server)
+          </span>
+        {% elif form_data.target_environment == 'Staging' %}
+          <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1 fw-semibold font-monospace" style="font-size: 11px;">
+            <i class="bi bi-cone-striped me-1"></i>STAGING (UAT)
+          </span>
+        {% else %}
+          <span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-1 fw-semibold font-monospace" style="font-size: 11px;">
+            <i class="bi bi-laptop me-1"></i>DEVELOPMENT (Sandbox)
+          </span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="smtp-card-body">
+      <div class="row g-3">
+        <div class="col-12 col-md-8">
+          <div class="smtp-kv-item">
+            <span class="smtp-kv-label">Nama Task</span>
+            <div class="smtp-kv-value fw-bold text-dark fs-6">{{ form_data.nama_task|default:"Konfigurasi Service SMTP & Environment Variables" }}</div>
+          </div>
+          <div class="smtp-kv-item mt-2">
+            <span class="smtp-kv-label">Deskripsi &amp; Lingkup Pekerjaan</span>
+            <div class="smtp-kv-value text-secondary">{{ form_data.deskripsi_task|default:"Menghubungkan Django core dengan mail provider perusahaan." }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="p-2.5 bg-light border rounded">
+            <div class="smtp-kv-item mb-2">
+              <span class="smtp-kv-label">Inisiator / PIC</span>
+              <span class="smtp-kv-value fw-semibold text-dark"><i class="bi bi-person-badge text-secondary me-1"></i>{{ form_data.inisiator_task|default:"IT DevOps Team" }}</span>
+            </div>
+            <div class="smtp-kv-item">
+              <span class="smtp-kv-label">Target Environment</span>
+              <span class="smtp-kv-value font-monospace">{{ form_data.target_environment|default:"Production" }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== BAGIAN 2: PARAMETER SMTP & ENVIRONMENT VARIABLES ==================== -->
+  <div class="smtp-review-card">
+    <div class="smtp-card-header">
+      <h6 class="smtp-card-title">
+        <i class="bi bi-envelope-gear text-primary"></i>
+        <span>2. Parameter Konfigurasi Service SMTP &amp; Environment Variables</span>
+      </h6>
+      <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1 fw-semibold font-monospace" style="font-size: 11px;">
+        <i class="bi bi-mailbox2 me-1"></i>{{ form_data.mail_provider|default:"SMTP Mail Provider" }}
+      </span>
+    </div>
+    <div class="smtp-card-body">
+      <div class="row g-3 mb-3">
+        <div class="col-sm-6 col-lg-3">
+          <div class="smtp-kv-item">
+            <span class="smtp-kv-label">EMAIL_HOST</span>
+            <div><span class="smtp-code-badge"><i class="bi bi-server text-secondary"></i> {{ form_data.email_host|default:"smtp.office365.com" }}</span></div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <div class="smtp-kv-item">
+            <span class="smtp-kv-label">EMAIL_PORT</span>
+            <div><span class="smtp-code-badge"><i class="bi bi-ethernet text-secondary"></i> Port {{ form_data.email_port|default:"587" }}</span></div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <div class="smtp-kv-item">
+            <span class="smtp-kv-label">Protokol Keamanan</span>
+            <div>
+              <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 fw-semibold">
+                <i class="bi bi-lock-fill me-1"></i>{{ form_data.email_security|default:"TLS (STARTTLS)" }}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+          <div class="smtp-kv-item">
+            <span class="smtp-kv-label">EMAIL_TIMEOUT</span>
+            <div><span class="smtp-code-badge">{{ form_data.email_timeout|default:"10" }} Detik</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 pt-2 border-top">
+        <div class="col-12 col-md-4">
+          <div class="smtp-kv-item">
+            <span class="smtp-kv-label">EMAIL_HOST_USER</span>
+            <div><span class="smtp-code-badge font-monospace"><i class="bi bi-person-check text-secondary"></i> {{ form_data.email_host_user|default:"notifications@royalcorp.co.id" }}</span></div>
+          </div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="smtp-kv-item">
+            <span class="smtp-kv-label">DEFAULT_FROM_EMAIL</span>
+            <div class="smtp-kv-value fw-semibold text-dark" style="font-size: 13px;">{{ form_data.default_from_email|default:"Royal Workflow <no-reply@royalcorp.co.id>" }}</div>
+          </div>
+        </div>
+        <div class="col-12 col-md-4">
+          <div class="smtp-kv-item">
+            <span class="smtp-kv-label">SERVER_EMAIL (Error Reports)</span>
+            <div class="smtp-kv-value text-secondary" style="font-size: 13px;">{{ form_data.server_email|default:"admin-alerts@royalcorp.co.id" }}</div>
+          </div>
+        </div>
+      </div>
+
+      {# Collapsible .env Snippet Preview #}
+      <div class="mt-3 pt-2">
+        <div class="d-flex align-items-center justify-content-between mb-1">
+          <span class="text-uppercase tracking-wider text-muted fw-bold" style="font-size: 10.5px;">
+            <i class="bi bi-filetype-raw me-1 text-primary"></i>Snippet Variabel Lingkungan (.env)
+          </span>
+          <button type="button" class="btn btn-sm btn-link text-decoration-none p-0 text-primary" style="font-size: 11.5px;" onclick="copyEnvSnippet(this)">
+            <i class="bi bi-clipboard me-1"></i>Salin .env
+          </button>
+        </div>
+        <div class="smtp-env-preview" id="smtpEnvCodeBlock">EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST={{ form_data.email_host|default:"smtp.office365.com" }}
+EMAIL_PORT={{ form_data.email_port|default:"587" }}
+EMAIL_HOST_USER={{ form_data.email_host_user|default:"username" }}
+EMAIL_HOST_PASSWORD=******
+EMAIL_USE_TLS={% if form_data.email_security == 'SSL' %}False{% else %}True{% endif %}
+EMAIL_USE_SSL={% if form_data.email_security == 'SSL' %}True{% else %}False{% endif %}
+DEFAULT_FROM_EMAIL={{ form_data.default_from_email|default:"Royal Workflow <notifications@royalcorp.co.id>" }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== BAGIAN 3: VERIFIKASI PENGUJIAN & KEAMANAN ==================== -->
+  <div class="smtp-review-card mb-0">
+    <div class="smtp-card-header">
+      <h6 class="smtp-card-title">
+        <i class="bi bi-shield-check text-success"></i>
+        <span>3. Status Pengujian Koneksi &amp; Keamanan</span>
+      </h6>
+      <div>
+        {% if form_data.test_status == 'Verified' or 'Berhasil' in form_data.test_status %}
+          <span class="badge bg-success text-white px-2.5 py-1.5 fw-semibold d-inline-flex align-items-center gap-1 font-monospace" style="font-size: 11.5px;">
+            <i class="bi bi-check-circle-fill"></i>
+            <span>Koneksi Terverifikasi</span>
+          </span>
+        {% elif form_data.test_status == 'Pending' or 'Menunggu' in form_data.test_status %}
+          <span class="badge bg-warning text-dark px-2.5 py-1.5 fw-semibold d-inline-flex align-items-center gap-1 font-monospace" style="font-size: 11.5px;">
+            <i class="bi bi-clock-history"></i>
+            <span>Menunggu Pengujian</span>
+          </span>
+        {% else %}
+          <span class="badge bg-danger text-white px-2.5 py-1.5 fw-semibold d-inline-flex align-items-center gap-1 font-monospace" style="font-size: 11.5px;">
+            <i class="bi bi-x-circle-fill"></i>
+            <span>Gagal / Terkendala</span>
+          </span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="smtp-card-body">
+      <div class="row g-3">
+        <div class="col-12 col-md-5">
+          <div class="p-3 bg-light rounded border h-100">
+            <div class="smtp-kv-item mb-2.5">
+              <span class="smtp-kv-label">Status Handshake &amp; Auth</span>
+              <div class="fw-bold text-success d-flex align-items-center gap-1.5 mt-0.5">
+                <i class="bi bi-patch-check-fill fs-5"></i>
+                <span>{{ form_data.test_status|default:"Berhasil Terverifikasi (Connection Verified)" }}</span>
+              </div>
+            </div>
+            <div class="smtp-kv-item pt-2 border-top">
+              <span class="smtp-kv-label">Email Penerima Uji Coba</span>
+              <div class="smtp-kv-value font-monospace fw-semibold text-dark mt-0.5">
+                <i class="bi bi-send text-primary me-1"></i>{{ form_data.test_recipient_email|default:"admin@royalcorp.co.id" }}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-md-7">
+          <div class="smtp-kv-item h-100">
+            <span class="smtp-kv-label">Catatan Teknis Implementasi &amp; Keamanan</span>
+            <div class="p-3 bg-white border rounded text-secondary small mt-1 h-100" style="white-space: pre-wrap; font-size: 12.5px; line-height: 1.6;">{{ form_data.catatan_implementasi|default:"Seluruh variabel EMAIL_* dimuat via environment variable (.env) tanpa hardcode secret. Port 587 STARTTLS telah diuji sukses." }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function copyEnvSnippet(btn) {
+  const codeEl = document.getElementById('smtpEnvCodeBlock');
+  if (!codeEl) return;
+  const text = codeEl.innerText.trim();
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check-lg text-success me-1"></i>Tersalin!';
+    setTimeout(() => { btn.innerHTML = orig; }, 2000);
+  });
+}
+</script>

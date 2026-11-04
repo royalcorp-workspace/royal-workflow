@@ -179,7 +179,27 @@ FORMS_WORKFLOWS = {
     'SITE_NAME': 'Royal Workflow',
 }
 
-EMAIL_BACKEND = 'django.core.mail.backends.locmem.EmailBackend'
+# Email & SMTP Configuration (supports EMAIL_* and MAIL_* environment variables)
+EMAIL_BACKEND = os.getenv(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.smtp.EmailBackend' if (os.getenv('EMAIL_HOST') or os.getenv('MAIL_HOST')) else 'django.core.mail.backends.locmem.EmailBackend'
+)
+EMAIL_HOST = os.getenv('EMAIL_HOST') or os.getenv('MAIL_HOST', 'localhost')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT') or os.getenv('MAIL_PORT', '587'))
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER') or os.getenv('MAIL_USERNAME', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD') or os.getenv('MAIL_PASSWORD', '')
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 'yes')
+EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'False').lower() in ('true', '1', 'yes')
+EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', '10'))
+
+_default_from_name = os.getenv('MAIL_FROM_NAME', FORMS_WORKFLOWS.get('SITE_NAME', 'Royal Workflow'))
+_default_from_addr = os.getenv('DEFAULT_FROM_EMAIL') or os.getenv('MAIL_FROM_ADDRESS', 'notifications@royalcorp.co.id')
+if '<' in _default_from_addr:
+    DEFAULT_FROM_EMAIL = _default_from_addr
+else:
+    DEFAULT_FROM_EMAIL = f"{_default_from_name} <{_default_from_addr}>"
+SERVER_EMAIL = os.getenv('SERVER_EMAIL', _default_from_addr)
+
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = False
 CELERY_BROKER_URL = 'memory://'
@@ -205,4 +225,11 @@ EMATERAI_POS_LLX = float(os.getenv('EMATERAI_POS_LLX', '270.64'))
 EMATERAI_POS_LLY = float(os.getenv('EMATERAI_POS_LLY', '119.0'))
 EMATERAI_POS_URX = float(os.getenv('EMATERAI_POS_URX', '324.64'))
 EMATERAI_POS_URY = float(os.getenv('EMATERAI_POS_URY', '171.0'))
+
+# Telegram Bot Notification Configuration
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
+TELEGRAM_NOTIFICATIONS_ENABLED = os.getenv('TELEGRAM_NOTIFICATIONS_ENABLED', 'True').lower() in ('true', '1', 'yes')
+TELEGRAM_API_TIMEOUT = int(os.getenv('TELEGRAM_API_TIMEOUT', '10'))
+
 

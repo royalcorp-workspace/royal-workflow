@@ -51,6 +51,7 @@ def custom_logout(request):
 
 urlpatterns = [
     path('', RedirectView.as_view(url='/dashboard/', permanent=False), name='root-redirect'),
+    path('favicon.ico', RedirectView.as_view(url='/static/images/logos/ras.png', permanent=False), name='favicon'),
     path('dashboard/', analytics_dashboard, name='dashboard'),
     path('admin/', admin.site.urls),
 
