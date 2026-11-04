@@ -161,7 +161,7 @@ class Command(BaseCommand):
             slug="permohonan-kontrak",
             defaults={
                 "category": category,
-                "name": "Surat Permohonan Kontrak & Pencairan Kontrak",
+                "name": "Kontrak Toko",
                 "description": clean_description,
                 "enable_multi_step": True,
                 "form_steps": form_steps,
@@ -173,9 +173,10 @@ class Command(BaseCommand):
                 "is_listed": True,
             },
         )
-        if form.description != clean_description:
+        if form.name != "Kontrak Toko" or form.description != clean_description:
+            form.name = "Kontrak Toko"
             form.description = clean_description
-            form.save(update_fields=["description"])
+            form.save(update_fields=["name", "description"])
 
         # Assign form access groups: strictly Sales Staff only (initiators)
         self._set_form_groups(

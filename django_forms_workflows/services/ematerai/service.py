@@ -220,10 +220,10 @@ class EMeteraiService:
         doc = SimpleDocTemplate(
             buffer,
             pagesize=A4,
-            leftMargin=36,
-            rightMargin=36,
-            topMargin=26,
-            bottomMargin=26,
+            leftMargin=45,
+            rightMargin=45,
+            topMargin=34,
+            bottomMargin=34,
             title=str(spk_title),
             author=perusahaan or "PT Royal Abadi Sejahtera",
         )
@@ -234,43 +234,47 @@ class EMeteraiService:
             "SPKTitle",
             parent=styles["Heading1"],
             fontName="Times-Bold",
-            fontSize=13,
-            leading=16,
+            fontSize=12.5,
+            leading=15,
             alignment=1,  # Center
             textColor=colors.HexColor("#111827"),
             spaceAfter=2,
+            keepWithNext=True,
         )
         subtitle_style = ParagraphStyle(
             "SPKSubtitle",
             parent=styles["Normal"],
             fontName="Times-Bold",
-            fontSize=10.5,
-            leading=13,
+            fontSize=10,
+            leading=12.5,
             alignment=1,  # Center
             textColor=colors.HexColor("#111827"),
-            spaceAfter=10,
+            spaceAfter=8,
+            keepWithNext=True,
         )
         bab_heading_style = ParagraphStyle(
             "SPKBabHeading",
             parent=styles["Normal"],
             fontName="Times-Bold",
             fontSize=9.5,
-            leading=11.5,
+            leading=12,
             alignment=1,  # Center
             textColor=colors.HexColor("#111827"),
-            spaceBefore=6,
+            spaceBefore=6.5,
             spaceAfter=2,
+            keepWithNext=True,
         )
         pasal_heading_style = ParagraphStyle(
             "SPKPasalHeading",
             parent=styles["Normal"],
             fontName="Times-Bold",
             fontSize=9.5,
-            leading=11.5,
+            leading=12,
             alignment=1,  # Center
             textColor=colors.HexColor("#111827"),
             spaceBefore=3.5,
             spaceAfter=1.5,
+            keepWithNext=True,
         )
         body_style = ParagraphStyle(
             "SPKBody",
@@ -458,12 +462,12 @@ class EMeteraiService:
                 ("BACKGROUND", (0, 0), (-1, 1), colors.HexColor("#f1f5f9")),
                 ("ALIGN", (0, 0), (-1, 1), "CENTER"),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("TOPPADDING", (0, 0), (-1, -1), 1.5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
+                ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
                 ("LEFTPADDING", (0, 0), (-1, -1), 3),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 3),
             ])
-            return Table(t_data, colWidths=[130, 45, 92, 45, 92, 119], style=t_matrix_style, hAlign="CENTER")
+            return Table(t_data, colWidths=[120, 45, 90, 45, 90, 115], repeatRows=2, style=t_matrix_style, hAlign="CENTER")
 
         def format_rupiah(val):
             if val is None or val == "":
@@ -568,7 +572,7 @@ class EMeteraiService:
                 with open(logo_path, "rb") as lf:
                     raw_stream = io.BytesIO(lf.read())
                 rl_logo = RLImage(raw_stream, width=fit_w, height=fit_h)
-                t_logo = Table([[rl_logo]], colWidths=[523], style=[
+                t_logo = Table([[rl_logo]], colWidths=[505], style=[
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                     ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                     ('LEFTPADDING', (0, 0), (-1, -1), 0),
@@ -576,7 +580,7 @@ class EMeteraiService:
                     ('TOPPADDING', (0, 0), (-1, -1), 0),
                     ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
                 ])
-                return [t_logo, Spacer(1, 6)]
+                return [t_logo, Spacer(1, 5)]
             except Exception as e:
                 logger.warning("Failed to construct logo flowable: %s", e)
                 return []
@@ -604,7 +608,7 @@ class EMeteraiService:
             [Paragraph("Email", cell_style), Paragraph(":", cell_center_style), Paragraph(no_email, cell_style)],
             [Paragraph(f"Selanjutnya disebut sebagai <b>PIHAK KEDUA</b> Dealer produk Springbed merk <b>“{brand}”</b>", body_style), Paragraph("", cell_style), Paragraph("", cell_style)],
         ]
-        t_parties = Table(parties_data, colWidths=[90, 12, 421])
+        t_parties = Table(parties_data, colWidths=[85, 12, 408])
         t_parties.setStyle(
             TableStyle(
                 [
@@ -612,10 +616,10 @@ class EMeteraiService:
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
                     ("SPAN", (0, 3), (2, 3)),
                     ("SPAN", (0, 10), (2, 10)),
-                    ("TOPPADDING", (0, 0), (-1, -1), 0.75),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0.75),
-                    ("BOTTOMPADDING", (0, 3), (-1, 3), 2),
-                    ("BOTTOMPADDING", (0, 10), (-1, 10), 2),
+                    ("TOPPADDING", (0, 0), (-1, -1), 1),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                    ("BOTTOMPADDING", (0, 3), (-1, 3), 2.5),
+                    ("BOTTOMPADDING", (0, 10), (-1, 10), 2.5),
                     ("LEFTPADDING", (0, 0), (-1, -1), 0),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                 ]
@@ -700,7 +704,7 @@ class EMeteraiService:
                 Paragraph("Sesuai Skema", cell_center_style),
                 Paragraph("Diverifikasi setiap akhir bulan kalender", cell_center_style),
             ])
-        t_target = Table(target_table_data, colWidths=[130, 95, 80, 218], hAlign="CENTER")
+        t_target = Table(target_table_data, colWidths=[125, 90, 75, 215], repeatRows=1, hAlign="CENTER")
         t_target.setStyle(
             TableStyle(
                 [
@@ -708,8 +712,8 @@ class EMeteraiService:
                     ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#94a3b8")),
                     ("ALIGN", (0, 0), (-1, -1), "CENTER"),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("TOPPADDING", (0, 0), (-1, -1), 1.2),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1.2),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
                     ("LEFTPADDING", (0, 0), (-1, -1), 4),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                 ]
@@ -778,16 +782,16 @@ class EMeteraiService:
                     Paragraph(tip, cell_center_style),
                     Paragraph(ket, cell_center_style),
                 ])
-        t_disc = Table(disc_table_data, colWidths=[130, 80, 95, 218], hAlign="CENTER")
+        t_disc = Table(disc_table_data, colWidths=[125, 75, 90, 215], repeatRows=1, hAlign="CENTER")
         t_disc.setStyle(
             TableStyle(
                 [
                     ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f8fafc")),
                     ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#94a3b8")),
-                    ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("TOPPADDING", (0, 0), (-1, -1), 1.5),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
                     ("LEFTPADDING", (0, 0), (-1, -1), 4),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                 ]
@@ -849,10 +853,10 @@ class EMeteraiService:
         elements.append(Paragraph("Skema discount untuk penjualan Produk yang berlaku untuk Pihak Kedua dalam Perjanjian ini adalah sebagai berikut :", body_style))
         elements.append(t_disc)
 
-        # BATAS RESMI HALAMAN 1 -> PINDAH KE HALAMAN 2
-        # Menggunakan CondPageBreak(300) agar jika konten telah mengalir ke halaman 2,
-        # tidak memicu halaman kosong baru yang prematur.
-        elements.append(CondPageBreak(300))
+        # BATAS RESMI ALIRAN HALAMAN ADAPTIF:
+        # Menggunakan CondPageBreak(250) agar jika sisa ruang di halaman saat ini tidak cukup
+        # memuat Pasal Insentif & Tabel Matriks secara utuh, ReportLab secara cerdas mengalirkannya ke halaman berikutnya.
+        elements.append(CondPageBreak(250))
 
         # ==================== HALAMAN 2 ====================
         elements.extend(get_page_header_logo())
@@ -1008,8 +1012,8 @@ class EMeteraiService:
         # Area Tanda Tangan Pihak Pertama
         direksi_mid_table = Table(
             [[direksi_ttd_flowable]],
-            colWidths=[205],
-            rowHeights=[52],
+            colWidths=[200],
+            rowHeights=[50],
             hAlign='CENTER',
         )
         direksi_mid_table.setStyle(
@@ -1039,7 +1043,7 @@ class EMeteraiService:
         meterai_slot_table = Table(
             [[meterai_slot_p]],
             colWidths=[85],
-            rowHeights=[52],
+            rowHeights=[50],
             hAlign='CENTER',
         )
         meterai_slot_table.setStyle(
@@ -1098,15 +1102,15 @@ class EMeteraiService:
                 )
             else:
                 # Fresh / draft / unsigned document: leave blank space for signature
-                toko_ttd_content = Spacer(1, 52)
+                toko_ttd_content = Spacer(1, 50)
         else:
             toko_ttd_content = toko_ttd_flowable
 
         # Area Tanda Tangan Pihak Kedua (Bersih tanpa border)
         toko_mid_table = Table(
             [[toko_ttd_content]],
-            colWidths=[205],
-            rowHeights=[52],
+            colWidths=[200],
+            rowHeights=[50],
             hAlign='CENTER',
         )
         toko_mid_table.setStyle(
@@ -1131,12 +1135,12 @@ class EMeteraiService:
             Paragraph("<font size='7' color='#475569'>Pemilik Toko</font>", cell_center_style),
         ]
 
-        # Tabel Penandatanganan 3 Kolom Simetris: Pihak Pertama (215) | Posisi Materai (93) | Pihak Kedua (215) = 523pt
+        # Tabel Penandatanganan 3 Kolom Simetris: Pihak Pertama (207) | Posisi Materai (91) | Pihak Kedua (207) = 505pt
         sig_table_data = [
             [direksi_cell_content, meterai_cell_content, toko_cell_content]
         ]
 
-        t_sig = Table(sig_table_data, colWidths=[215, 93, 215], hAlign='CENTER')
+        t_sig = Table(sig_table_data, colWidths=[207, 91, 207], hAlign='CENTER')
         t_sig.setStyle(
             TableStyle(
                 [
