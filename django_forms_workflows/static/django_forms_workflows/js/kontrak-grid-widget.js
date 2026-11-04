@@ -3112,7 +3112,7 @@
             const el = extractFieldElement(fn);
             if (el) {
                 const col = document.createElement('div');
-                col.className = 'col-md-3 col-sm-6';
+                col.className = 'col-md-6 col-12';
                 el.classList.remove('col-md-3', 'col-md-4', 'col-md-6', 'col-md-12');
                 col.appendChild(el);
                 rowDates.appendChild(col);
@@ -3142,7 +3142,7 @@
         const pencairanEl = extractFieldElement('jenis_pencairan_insentif');
         if (pencairanEl) {
             const col = document.createElement('div');
-            col.className = 'col-md-6';
+            col.className = 'col-12 col-md-12';
             pencairanEl.classList.remove('col-md-3', 'col-md-4', 'col-md-6', 'col-md-12');
             col.appendChild(pencairanEl);
             rowPencairan.appendChild(col);
