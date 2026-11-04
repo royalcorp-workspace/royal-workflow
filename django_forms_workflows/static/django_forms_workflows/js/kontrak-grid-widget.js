@@ -2703,9 +2703,19 @@
         if (form.dataset.supportConditionalSetup) return;
         form.dataset.supportConditionalSetup = 'true';
 
-        const origToggleInput = form.querySelector('[name="is_support_provided"]');
+        let origToggleInput = form.querySelector('[name="is_support_provided"]');
         if (!origToggleInput) {
-            console.warn('[KontrakSupportToggle] is_support_provided not found in form.');
+            origToggleInput = form.querySelector('[name="is_sales_support"]');
+        }
+        if (!origToggleInput) {
+            origToggleInput = document.createElement('input');
+            origToggleInput.type = 'hidden';
+            origToggleInput.name = 'is_support_provided';
+            origToggleInput.value = 'false';
+            form.appendChild(origToggleInput);
+        }
+        // If form uses modern clause cards system, don't overwrite with legacy toggle
+        if (form.querySelector('#cardSalesSupport') || form.querySelector('#toggleSalesSupportSwitch') || form.dataset.formSlug === 'permohonan-kontrak') {
             return;
         }
 
@@ -3106,6 +3116,26 @@
         }
         hiddenIsSalesSupport.value = 'false';
 
+        // Ensure real hidden input is_support_provided exists
+        let hiddenIsSupportProvided = form.querySelector('input[name="is_support_provided"]');
+        if (!hiddenIsSupportProvided) {
+            hiddenIsSupportProvided = document.createElement('input');
+            hiddenIsSupportProvided.type = 'hidden';
+            hiddenIsSupportProvided.name = 'is_support_provided';
+            form.appendChild(hiddenIsSupportProvided);
+        }
+        hiddenIsSupportProvided.value = 'false';
+
+        // Ensure real hidden input persen_support exists
+        let hiddenPersenSupport = form.querySelector('input[type="hidden"][name="persen_support"]');
+        if (!hiddenPersenSupport) {
+            hiddenPersenSupport = document.createElement('input');
+            hiddenPersenSupport.type = 'hidden';
+            hiddenPersenSupport.name = 'persen_support';
+            form.appendChild(hiddenPersenSupport);
+        }
+        hiddenPersenSupport.value = '0';
+
         // Ensure real hidden input komponen_biaya_support exists
         let hiddenKompSupport = form.querySelector('input[type="hidden"][name="komponen_biaya_support"]');
         if (!hiddenKompSupport) {
@@ -3254,6 +3284,20 @@
             if (drawer) drawer.style.display = isSupport ? 'block' : 'none';
 
             hiddenIsSalesSupport.value = isSupport ? 'true' : 'false';
+            if (hiddenIsSupportProvided) {
+                hiddenIsSupportProvided.value = isSupport ? 'true' : 'false';
+                hiddenIsSupportProvided.checked = isSupport;
+            }
+
+            const inputPersen = card0.querySelector('#input_persen_support');
+            if (hiddenPersenSupport) {
+                if (isSupport) {
+                    hiddenPersenSupport.value = (inputPersen && inputPersen.value) ? inputPersen.value : '5';
+                    if (inputPersen && !inputPersen.value) inputPersen.value = '5';
+                } else {
+                    hiddenPersenSupport.value = '0';
+                }
+            }
 
             const badgeStatus = card0.querySelector('#badgeSupportStatus');
             if (badgeStatus) {
@@ -3268,10 +3312,23 @@
             
             // Backward compatibility toggle
             const legacyToggle = form.querySelector('input[name="is_support_provided"]');
-            if (legacyToggle) legacyToggle.checked = isSupport;
+            if (legacyToggle) {
+                legacyToggle.checked = isSupport;
+                legacyToggle.value = isSupport ? 'true' : 'false';
+            }
 
-            const selectedKomponen = Array.from(card0.querySelectorAll('input[name="komponen_biaya_support_chk"]:checked')).map(c => c.value);
+            const selectedKomponen = Array.from(card0.querySelectorAll('.support-chip-input:checked, input[name="komponen_biaya_support_chk"]:checked')).map(c => c.value);
             hiddenKompSupport.value = JSON.stringify(selectedKomponen);
+
+            // Synchronize frontend required attributes to prevent blocking submit when OFF
+            if (!isSupport) {
+                if (inputPersen) {
+                    inputPersen.removeAttribute('required');
+                    inputPersen.setCustomValidity?.('');
+                }
+                if (hiddenPersenSupport) hiddenPersenSupport.removeAttribute('required');
+                if (hiddenKompSupport) hiddenKompSupport.removeAttribute('required');
+            }
 
             updateClauseCardBadges(isSupport);
 
@@ -3282,6 +3339,7 @@
                 window.renderSummaryTab(form);
             }
         }
+        window.syncSalesSupportState = syncSalesSupportState;
 
         const mainSwitch = card0.querySelector('#toggleSalesSupportSwitch');
         if (mainSwitch) {
@@ -4344,11 +4402,15 @@
     }
 
     function collectFormData(form) {
+        if (typeof window.syncSalesSupportState === 'function') {
+            window.syncSalesSupportState();
+        }
         const data = {};
         const elements = form.querySelectorAll('input, select, textarea');
         elements.forEach(el => {
             const name = el.name;
             if (!name || name === 'csrfmiddlewaretoken' || name === 'action') return;
+            if (name === 'komponen_biaya_support_chk' || name === 'tipe_kontrak_switch') return;
             if (name === 'komponen_biaya') {
                 if (!Array.isArray(data.komponen_biaya)) {
                     data.komponen_biaya = [];
@@ -4366,6 +4428,19 @@
                 data[name] = el.value;
             }
         });
+
+        const toggleSwitch = form.querySelector('#toggleSalesSupportSwitch');
+        if (toggleSwitch) {
+            const isSupport = Boolean(toggleSwitch.checked);
+            data.is_sales_support = isSupport ? 'true' : 'false';
+            data.is_support_provided = isSupport;
+            data.has_support = isSupport;
+            const inputPersen = form.querySelector('#input_persen_support');
+            data.persen_support = isSupport ? (inputPersen?.value || '5') : '0';
+            const selectedChips = Array.from(form.querySelectorAll('.support-chip-input:checked, input[name="komponen_biaya_support_chk"]:checked')).map(c => c.value);
+            data.komponen_biaya_support = JSON.stringify(selectedChips);
+        }
+
         return data;
     }
 
@@ -4655,6 +4730,9 @@
 
         // Clear on successful form submission
         form.addEventListener('submit', function (e) {
+            if (typeof window.syncSalesSupportState === 'function') {
+                window.syncSalesSupportState();
+            }
             const submitter = e.submitter || document.activeElement;
             const isDraftAction = submitter && (
                 submitter.value === 'draft' || 

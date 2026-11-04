@@ -1331,6 +1331,10 @@ class Command(BaseCommand):
                 "field_name": "is_sales_support",
                 "field_label": "Tipe Kontrak",
                 "field_type": "radio",
+                "choices": [
+                    {"value": "false", "label": "Standar"},
+                    {"value": "true", "label": "Sales Support"},
+                ],
                 "width": "full",
                 "order": 14,
                 "step_number": 2,

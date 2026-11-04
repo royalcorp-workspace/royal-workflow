@@ -831,6 +831,8 @@ class DynamicForm(forms.Form):
 
         elif field_def.field_type == "radio":
             choices = self._resolve_choices(field_def)
+            if not choices and field_def.field_name in ("is_sales_support", "is_support_provided"):
+                choices = [("false", "Standar"), ("true", "Sales Support")]
             self.fields[field_def.field_name] = forms.ChoiceField(
                 choices=choices, widget=forms.RadioSelect, **field_args
             )
@@ -1382,8 +1384,22 @@ class DynamicForm(forms.Form):
 
         # Permohonan Kontrak: Conditional Support Logic & Payload Sanitization
         if self.form_definition and self.form_definition.slug == "permohonan-kontrak":
-            is_support = bool(cleaned_data.get("is_support_provided"))
+            # 1. Clear any ChoiceField invalid choice errors on support toggle fields
+            if "is_sales_support" in self._errors:
+                del self._errors["is_sales_support"]
+            if "is_support_provided" in self._errors:
+                del self._errors["is_support_provided"]
+
+            raw_supp = (
+                cleaned_data.get("is_support_provided")
+                or cleaned_data.get("is_sales_support")
+                or self.data.get("is_support_provided")
+                or self.data.get("is_sales_support")
+            )
+            is_support = str(raw_supp).strip().lower() in ("true", "1", "yes", "on")
+
             cleaned_data["is_support_provided"] = is_support
+            cleaned_data["is_sales_support"] = "true" if is_support else "false"
             cleaned_data["has_support"] = is_support
 
             support_field_names = [
@@ -1394,6 +1410,8 @@ class DynamicForm(forms.Form):
                 "komponen_biaya",
                 "pengecualian_ketentuan_support",
                 "tier_support",
+                "persen_support",
+                "komponen_biaya_support",
             ]
 
             if not is_support:
@@ -1410,10 +1428,23 @@ class DynamicForm(forms.Form):
                 cleaned_data["syarat_pencairan"] = ""
                 cleaned_data["komponen_biaya"] = ""
                 cleaned_data["pengecualian_ketentuan_support"] = ""
+                cleaned_data["persen_support"] = 0
+                cleaned_data["komponen_biaya_support"] = "[]"
             else:
                 tier_val = cleaned_data.get("tier_support")
                 if not tier_val or str(tier_val).strip() in ("", "[]"):
                     cleaned_data["tier_support"] = "[]"
+
+                # If persen_support is empty or 0, default to 5.0
+                if not cleaned_data.get("persen_support"):
+                    raw_persen = self.data.get("persen_support") or "5"
+                    try:
+                        cleaned_data["persen_support"] = float(raw_persen)
+                    except (ValueError, TypeError):
+                        cleaned_data["persen_support"] = 5.0
+
+                if not cleaned_data.get("komponen_biaya_support"):
+                    cleaned_data["komponen_biaya_support"] = self.data.get("komponen_biaya_support") or "[]"
 
         return cleaned_data
 
