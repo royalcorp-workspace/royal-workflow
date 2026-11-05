@@ -608,8 +608,7 @@ class Command(BaseCommand):
                 <tr><td style="width: 130px; vertical-align: top;">Nama</td><td style="width: 15px; vertical-align: top;">:</td><td style="font-weight: bold;">{nama_pemilik}</td></tr>
                 <tr><td style="vertical-align: top;">Pemilik Tk.</td><td style="vertical-align: top;">:</td><td style="font-weight: bold;">{nama_toko}</td></tr>
                 <tr><td style="vertical-align: top;">Alamat</td><td style="vertical-align: top;">:</td><td>{alamat_toko}</td></tr>
-                <tr><td style="vertical-align: top; width: 130px;">NPWP</td><td style="vertical-align: top; width: 15px;">:</td><td>{nomor_npwp}</td></tr>
-                <tr><td style="vertical-align: top;">NIK</td><td style="vertical-align: top;">:</td><td>{nomor_nik}</td></tr>
+                <tr><td style="vertical-align: top; width: 130px;">NIK / NPWP</td><td style="vertical-align: top; width: 15px;">:</td><td>{nik_npwp_display}</td></tr>
                 <tr><td style="vertical-align: top;">Email</td><td style="vertical-align: top;">:</td><td>{email}</td></tr>
             </table>
 
@@ -630,7 +629,7 @@ class Command(BaseCommand):
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 2</div>
             <p style="text-align: justify; margin-bottom: 16px;">
-                Omzet penjualan {brand} PIHAK KEDUA dihitung berdasarkan harga setelah dikurangi potongan retur, discount dan potongan – potongan lainnya (harga netto), berdasarkan price list yang berlaku mulai tanggal 1 Februari 2023 dan mengikuti perubahannya. (Harga tidak mengikat)
+                Omzet penjualan <strong>{brand}</strong> <strong>PIHAK KEDUA</strong> dihitung berdasarkan harga setelah dikurangi potongan retur, discount dan potongan – potongan lainnya (harga netto), berdasarkan price list yang berlaku mulai tanggal 1 Februari 2023 dan mengikuti perubahannya. (Harga tidak mengikat)
             </p>
 
             <!-- BAB II (11 PASAL VERSION) -->
@@ -671,12 +670,12 @@ class Command(BaseCommand):
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">{pasal_insentif_num}</div>
             <p style="text-align: justify; margin-bottom: 6px;">
-                (1) Pihak Pertama memberikan Insentif kepada Pihak Kedua saat perjanjian ini berakhir, atau ketika target penjualan sudah terpenuhi (mana yang lebih dulu tercapai) dan seluruh kewajiban pembayaran Pihak Kedua kepada Pihak Pertama telah selesai atau LUNAS. Adapun perhitungan insentif adalah sebagai berikut :
+                (1) <strong>Pihak Pertama</strong> memberikan Insentif kepada <strong>Pihak Kedua</strong> saat perjanjian ini berakhir, atau ketika target penjualan sudah terpenuhi (mana yang lebih dulu tercapai) dan seluruh kewajiban pembayaran <strong>Pihak Kedua</strong> kepada <strong>Pihak Pertama</strong> telah selesai atau <strong>LUNAS</strong>. Adapun perhitungan insentif adalah sebagai berikut :
             </p>
             <div style="margin: 8px auto; width: 100%; text-align: center;">{incentive_matrix_table}</div>
             <p style="text-align: justify; margin-bottom: 6px;">
-                Insentif yang akan diberikan seperti perhitungan pada tabel di atas.<br>
-                (2) Pencairan Insentif yang menjadi hak Pihak Kedua dapat diberikan melalui <strong>{jenis_pencairan_insentif}</strong>.
+                <strong>Insentif yang akan diberikan seperti perhitungan pada tabel di atas.</strong><br>
+                (2) Pencairan Insentif yang menjadi hak <strong>Pihak Kedua</strong> dapat diberikan melalui <strong>{jenis_pencairan_insentif}</strong>.
             </p>
 
             <!-- BAB III -->
@@ -686,18 +685,18 @@ class Command(BaseCommand):
             
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">{pasal_top_num}</div>
             <p style="text-align: justify; margin-bottom: 8px;">
-                Wajib melaksanakan Pembayaran kepada Pihak Pertama paling lambat <strong>{top}</strong> hari setelah tanggal pengiriman (selanjutnya disebut “Jangka Waktu Pembayaran”).
+                Wajib melaksanakan Pembayaran kepada <strong>Pihak Pertama</strong> paling lambat <strong>{top} hari</strong> setelah tanggal pengiriman (selanjutnya disebut “Jangka Waktu Pembayaran”).
             </p>
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">{pasal_ket_top_num}</div>
             <div style="text-align: justify; margin-bottom: 8px;">
                 <p style="margin-bottom: 3px; text-indent: -18px; padding-left: 18px;">a. Pihak Pertama dalam hal ini dapat menghilangkan diskon TOP jika Pihak Kedua tidak membayar tagihan sesuai dengan jangka waktu pembayaran yang telah diberikan (TOP).</p>
-                <p style="margin-bottom: 0; text-indent: -18px; padding-left: 18px;">b. Jika terjadi gagal bayar atau bad debt maka Pihak Pertama berhak menyita asset dari Pihak Kedua jika diperlukan.</p>
+                <p style="margin-bottom: 0; text-indent: -18px; padding-left: 18px;">b. Jika terjadi gagal bayar atau <em>bad debt</em> maka Pihak Pertama berhak menyita asset dari Pihak Kedua jika diperlukan.</p>
             </div>
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">{pasal_bayar_num}</div>
             <p style="text-align: justify; margin-bottom: 8px;">
-                Sistem pembayaran melalui Transfer atau buka Cek/Giro yang telah di tulis nama <strong>{perusahaan}</strong> dengan Nomer Rekening sesuai yang ada pada Faktur dan Kontra Bon. Serta <strong>TIDAK DIPERKENANKAN</strong> membayar secara TUNAI kepada Salesman/Collector/Kepala Depo/ASM/BM atau menitip pembayaran kepada Supir maupun Karyawan lainnya.
+                Sistem pembayaran melalui Transfer atau buka Cek/Giro yang telah di tulis nama <strong>{perusahaan}</strong> dengan Nomer Rekening sesuai yang ada pada Faktur dan Kontra Bon. Serta <strong>TIDAK DIPERKENANKAN</strong> membayar secara <strong>TUNAI</strong> kepada Salesman/Collector/Kepala Depo/ASM/BM atau menitip pembayaran kepada Supir maupun Karyawan lainnya.
             </p>
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">{pasal_rek_num}</div>
@@ -743,7 +742,7 @@ class Command(BaseCommand):
             </p>
 
             <p style="text-align: justify; margin-bottom: 16px;">
-                DENGAN DEMIKIAN,Para Pihak telah menandatangani Perjanjian ini dalam 2 (dua) rangkap yang masing-masing berlaku sebagai asli, bermaterai cukup dan berkekuatan hukum yang sama yang dapat dipergunakan secara sah sebagai bukti adanya kesepakatan diantara Para Pihak.
+                <strong>DENGAN DEMIKIAN</strong>, Para Pihak telah menandatangani Perjanjian ini dalam 2 (dua) rangkap yang masing-masing berlaku sebagai asli, bermaterai cukup dan berkekuatan hukum yang sama yang dapat dipergunakan secara sah sebagai bukti adanya kesepakatan diantara Para Pihak.
             </p>
 
             <!-- BLOK TANDA TANGAN -->
@@ -842,8 +841,7 @@ class Command(BaseCommand):
                 <tr><td style="width: 130px; vertical-align: top;">Nama</td><td style="width: 15px; vertical-align: top;">:</td><td style="font-weight: bold;">{nama_pemilik}</td></tr>
                 <tr><td style="vertical-align: top;">Pemilik Tk.</td><td style="vertical-align: top;">:</td><td style="font-weight: bold;">{nama_toko}</td></tr>
                 <tr><td style="vertical-align: top;">Alamat</td><td style="vertical-align: top;">:</td><td>{alamat_toko}</td></tr>
-                <tr><td style="vertical-align: top; width: 130px;">NPWP</td><td style="vertical-align: top; width: 15px;">:</td><td>{nomor_npwp}</td></tr>
-                <tr><td style="vertical-align: top;">NIK</td><td style="vertical-align: top;">:</td><td>{nomor_nik}</td></tr>
+                <tr><td style="vertical-align: top; width: 130px;">NIK / NPWP</td><td style="vertical-align: top; width: 15px;">:</td><td>{nik_npwp_display}</td></tr>
                 <tr><td style="vertical-align: top;">Email</td><td style="vertical-align: top;">:</td><td>{email}</td></tr>
             </table>
 
@@ -864,7 +862,7 @@ class Command(BaseCommand):
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 2</div>
             <p style="text-align: justify; margin-bottom: 16px;">
-                Omzet penjualan {brand} PIHAK KEDUA dihitung berdasarkan harga setelah dikurangi potongan retur, discount dan potongan – potongan lainnya (harga netto), berdasarkan price list yang berlaku mulai tanggal 1 Februari 2023 dan mengikuti perubahannya. (Harga tidak mengikat)
+                Omzet penjualan <strong>{brand}</strong> <strong>PIHAK KEDUA</strong> dihitung berdasarkan harga setelah dikurangi potongan retur, discount dan potongan – potongan lainnya (harga netto), berdasarkan price list yang berlaku mulai tanggal 1 Februari 2023 dan mengikuti perubahannya. (Harga tidak mengikat)
             </p>
 
             <!-- BAB II: KONTRAK + SUPPORT PROMOSI (12 PASAL) -->
@@ -910,7 +908,7 @@ class Command(BaseCommand):
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 7</div>
             <p style="text-align: justify; margin-bottom: 6px;">
-                Pihak Pertama memberikan kompensasi Insentive Reward kepada Pihak Kedua saat perjanjian ini berakhir dan seluruh kewajiban Pihak Kedua kepada Pihak Pertama telah selesai atau LUNAS.<br>
+                <strong>Pihak Pertama</strong> memberikan kompensasi Insentive Reward kepada <strong>Pihak Kedua</strong> saat perjanjian ini berakhir dan seluruh kewajiban <strong>Pihak Kedua</strong> kepada <strong>Pihak Pertama</strong> telah selesai atau <strong>LUNAS</strong>.<br>
                 Adapun rincian perhitungan insentif adalah sebagai berikut :
             </p>
             <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 4px; padding: 8px 12px; margin-bottom: 10px; text-align: justify; font-size: 13px; line-height: 1.5;">
@@ -949,17 +947,17 @@ class Command(BaseCommand):
             
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 8</div>
             <p style="text-align: justify; margin-bottom: 12px;">
-                Wajib melaksanakan Pembayaran kepada Pihak Pertama paling lambat <strong>{top}</strong> hari setelah tanggal pengiriman (selanjutnya disebut “Jangka Waktu Pembayaran”).
+                Wajib melaksanakan Pembayaran kepada <strong>Pihak Pertama</strong> paling lambat <strong>{top} hari</strong> setelah tanggal pengiriman (selanjutnya disebut “Jangka Waktu Pembayaran”).
             </p>
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 9</div>
             <p style="text-align: justify; margin-bottom: 12px;">
-                Sistem pembayaran melalui Transfer atau buka Cek/Giro yang telah di tulis nama <strong>{perusahaan}</strong> dengan Nomer Rekening ({rekening_perusahaan}) sesuai yang ada pada Faktur dan Kontra Bon. Serta <strong>TIDAK DIPERKENANKAN</strong> membayar secara TUNAI kepada Salesman/Collector/Kepala Depo/ASM/BM atau menitip pembayaran kepada Supir maupun Karyawan lainnya.
+                Sistem pembayaran melalui Transfer atau buka Cek/Giro yang telah di tulis nama <strong>{perusahaan}</strong> dengan Nomer Rekening ({rekening_perusahaan}) sesuai yang ada pada Faktur dan Kontra Bon. Serta <strong>TIDAK DIPERKENANKAN</strong> membayar secara <strong>TUNAI</strong> kepada Salesman/Collector/Kepala Depo/ASM/BM atau menitip pembayaran kepada Supir maupun Karyawan lainnya.
             </p>
 
             <div style="text-align: center; font-weight: bold; margin-bottom: 4px; text-decoration: underline;">Pasal 10</div>
             <p style="text-align: justify; margin-bottom: 6px;">
-                Pembayaran dianggap sah apabila dana telah masuk ke rekening {perusahaan}, dengan nomer rekening sbb :
+                Pembayaran dianggap sah apabila dana telah masuk ke rekening <strong>{perusahaan}</strong>, dengan nomer rekening sbb :
             </p>
             <div style="text-align: center; margin: 8px 0;">
                 <table style="margin: 0 auto; border-collapse: collapse; border: none; font-size: 13.5px; font-weight: bold;">
@@ -1005,7 +1003,7 @@ class Command(BaseCommand):
             </p>
 
             <p style="text-align: justify; margin-bottom: 24px;">
-                DENGAN DEMIKIAN,Para Pihak telah menandatangani Perjanjian ini dalam 2 (dua) rangkap yang masing-masing berlaku sebagai asli, bermaterai cukup dan berkekuatan hukum yang sama yang dapat dipergunakan secara sah sebagai bukti adanya kesepakatan diantara Para Pihak.
+                <strong>DENGAN DEMIKIAN</strong>, Para Pihak telah menandatangani Perjanjian ini dalam 2 (dua) rangkap yang masing-masing berlaku sebagai asli, bermaterai cukup dan berkekuatan hukum yang sama yang dapat dipergunakan secara sah sebagai bukti adanya kesepakatan diantara Para Pihak.
             </p>
 
             <!-- BLOK TANDA TANGAN -->

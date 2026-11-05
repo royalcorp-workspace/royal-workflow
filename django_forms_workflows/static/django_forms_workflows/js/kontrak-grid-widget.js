@@ -359,6 +359,15 @@
      * -------------------------------------------------------------------------- */
     function lockReadonlyFields(form) {
         const targetReadonlyFields = ['nama_toko', 'nama_pemilik', 'alamat_toko', 'no_telepon', 'kota', 'nomor_spk'];
+        const cabangSelect = form.querySelector('[name="cabang"]');
+        if (cabangSelect) {
+            cabangSelect.classList.add('jde-readonly-locked', 'field-readonly');
+            cabangSelect.style.setProperty('background-color', '#e2e8f0', 'important');
+            cabangSelect.style.setProperty('cursor', 'not-allowed', 'important');
+            cabangSelect.style.setProperty('pointer-events', 'none', 'important');
+            cabangSelect.setAttribute('tabindex', '-1');
+        }
+
         targetReadonlyFields.forEach(fieldName => {
             const el = form.querySelector(`[name="${fieldName}"]`);
             if (el) {
@@ -737,7 +746,7 @@
                         setFieldValue(form, 'email', c.email);
                         if (typeof form._validateEmail === 'function') form._validateEmail(false);
                     }
-                    if (c.cabang) setFieldValue(form, 'cabang', c.cabang);
+                    // JDE lookup HANYA mengisi data toko, TIDAK BOLEH menimpa Cabang pemohon maupun nomor SPK
                     lockReadonlyFields(form);
 
                     alertBox.className = 'jde-lookup-alert alert alert-success d-block';
@@ -1259,12 +1268,38 @@
 
         lockReadonlyFields(form);
 
+        let branchSeqCache = {};
+        let isFetchingSeq = false;
+
+        async function fetchBranchSequence(cabVal, brandVal) {
+            const cleanCab = (cabVal || 'PUSAT').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+            if (branchSeqCache[cleanCab]) {
+                return branchSeqCache[cleanCab];
+            }
+            if (isFetchingSeq) return null;
+            isFetchingSeq = true;
+            try {
+                const res = await fetch(`/forms/${formSlug}/next-spk-number/?cabang=${encodeURIComponent(cleanCab)}&brand=${encodeURIComponent(brandVal || 'LADY')}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success && data.sequence_str) {
+                        branchSeqCache[cleanCab] = data.sequence_str;
+                        return data.sequence_str;
+                    }
+                }
+            } catch (err) {
+                console.warn('[updateSPK] Gagal mengambil nomor urut SPK dari server:', err);
+            } finally {
+                isFetchingSeq = false;
+            }
+            return null;
+        }
+
         function updateSPK() {
             const brandVal = (brandSelect && brandSelect.value ? brandSelect.value : '').trim();
             const cabangVal = (cabangSelect && cabangSelect.value ? cabangSelect.value : '').trim();
             const compVal = (perusahaanSelect && perusahaanSelect.value ? perusahaanSelect.value : '').trim();
 
-            // If Brand or Cabang has not been selected, keep Nomor SPK blank
             if (!brandVal || !cabangVal) {
                 spkInput.value = '';
                 spkInput.placeholder = '—';
@@ -1278,7 +1313,6 @@
             const bUpper = brandVal.toUpperCase();
             const cUpper = compVal.toUpperCase();
             
-            // Clean Brand Code (5 Official Brands: LADY, ROYAL, SERENITY, ELITE, CLASSIC)
             let brandCode = 'LADY';
             if (bUpper.includes('LADY')) {
                 brandCode = 'LADY';
@@ -1294,7 +1328,6 @@
                 brandCode = brandVal.split(' ')[0].toUpperCase().replace(/[^A-Z0-9]/g, '') || 'LADY';
             }
 
-            // PT Code (RAS, ACA, BCP, BM, CAM)
             let ptCode = 'RAS';
             if (cUpper.includes('PRIMATARA') || cUpper.includes('BANGUN CIPTA') || cUpper === 'BCP') {
                 ptCode = 'BCP';
@@ -1311,15 +1344,32 @@
             const ROMAN_MONTHS = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
             const monthRoman = ROMAN_MONTHS[month] || String(month);
 
-            // Extract existing sequence if present, otherwise default to 001
-            let seq = '001';
-            const match = (spkInput.value || '').match(/^(?:No\.\s*)?(\d{1,4})\//i) || (spkInput.value || '').match(/No\.\s*(\d+)/i) || (spkInput.value || '').match(/-(\d+)$/);
-            if (match) {
-                const n = parseInt(match[1], 10);
-                seq = String(n).padStart(3, '0');
+            const cabClean = (cabangVal || 'PUSAT').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'PUSAT';
+
+            // Check if current spkInput already has a valid sequence (excluding default 001 if cache exists)
+            let seq = branchSeqCache[cabClean] || null;
+            if (!seq) {
+                const match = (spkInput.value || '').match(/^(?:No\.\s*)?(\d{1,4})\//i) || (spkInput.value || '').match(/No\.\s*(\d+)/i) || (spkInput.value || '').match(/-(\d+)$/);
+                if (match) {
+                    const n = parseInt(match[1], 10);
+                    if (n > 1) {
+                        seq = String(n).padStart(3, '0');
+                        branchSeqCache[cabClean] = seq;
+                    }
+                }
             }
 
-            const cabClean = (cabangVal || 'PUSAT').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'PUSAT';
+            if (!seq) {
+                seq = '001';
+                fetchBranchSequence(cabangVal, brandVal).then(srvSeq => {
+                    if (srvSeq && srvSeq !== '001') {
+                        spkInput.value = `${srvSeq}/SK-${ptCode}/${cabClean}/${brandCode}/${monthRoman}/${year}`;
+                        spkInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        spkInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+            }
+
             spkInput.value = `${seq}/SK-${ptCode}/${cabClean}/${brandCode}/${monthRoman}/${year}`;
             spkInput.dispatchEvent(new Event('input', { bubbles: true }));
             spkInput.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1644,12 +1694,67 @@
                 });
             });
 
+            function validateTargetTierScheme(showWarning = true) {
+                const curRows = getRows();
+                let hasValid = false;
+
+                if (Array.isArray(curRows)) {
+                    for (let i = 0; i < curRows.length; i++) {
+                        const r = curRows[i];
+                        const tbRaw = String(r.target_bulanan || '').replace(/[^0-9]/g, '');
+                        const tbNum = parseInt(tbRaw, 10) || 0;
+                        const incNum = parseFloat(String(r.incentive_pct || '').replace(',', '.')) || 0;
+                        if (tbNum > 0 && incNum > 0) {
+                            hasValid = true;
+                            break;
+                        }
+                    }
+                }
+
+                let errBox = container.querySelector('#targetTierError');
+                const firstTr = container.querySelector('tbody tr');
+                const firstTbInput = firstTr ? firstTr.querySelector('[data-key="target_bulanan"]') : null;
+                const firstIncInput = firstTr ? firstTr.querySelector('[data-key="incentive_pct"]') : null;
+
+                if (!hasValid) {
+                    if (showWarning) {
+                        if (!errBox) {
+                            errBox = document.createElement('div');
+                            errBox.id = 'targetTierError';
+                            errBox.className = 'alert alert-danger py-2 px-3 small mt-2 d-flex align-items-center mb-0';
+                            errBox.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2 fs-6"></i> <span><strong>Wajib Diisi:</strong> Wajib mengisi minimal 1 tier target penjualan bulanan dan reward insentif dengan nilai lebih dari 0.</span>';
+                            container.appendChild(errBox);
+                        }
+                        if (firstTbInput) firstTbInput.classList.add('is-invalid');
+                        if (firstIncInput) firstIncInput.classList.add('is-invalid');
+                    }
+                    return false;
+                } else {
+                    if (errBox) errBox.remove();
+                    container.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+                    return true;
+                }
+            }
+            form._validateTargetTierScheme = validateTargetTierScheme;
+
+            // Trigger real-time re-validation if warning is active
+            container.querySelectorAll('input').forEach(inp => {
+                inp.addEventListener('input', () => {
+                    if (container.querySelector('#targetTierError')) {
+                        validateTargetTierScheme(true);
+                    }
+                });
+            });
+
             container.querySelectorAll('.btn-delete-row').forEach(btn => {
                 btn.addEventListener('click', () => {
                     const idx = parseInt(btn.closest('tr').dataset.index);
                     rows.splice(idx, 1);
                     saveRows(rows);
                     render();
+                    if (container.querySelector('#targetTierError') || (typeof form._validateTargetTierScheme === 'function')) {
+                        form._validateTargetTierScheme(true);
+                    }
                 });
             });
 
@@ -4256,6 +4361,19 @@
                             }
                         });
                     }
+
+                    // Validasi Wajib Minimal 1 Tier Valid pada Target & Incentive Scheme (Pasal 3)
+                    if (typeof form._validateTargetTierScheme === 'function') {
+                        const isTierValid = form._validateTargetTierScheme(true);
+                        if (!isTierValid) {
+                            hasError = true;
+                            errorDetails.push('<strong>Target & Incentive Scheme (Pasal 3)</strong> wajib memiliki minimal 1 tier valid (Target Bulanan > 0 dan Incentive > 0%).');
+                            const targetContainer = form.querySelector('.kontrak-target-incentive-wrapper') || form.querySelector('[data-grid="target_incentive"]');
+                            if (targetContainer && !firstInvalid) {
+                                firstInvalid = targetContainer.querySelector('[data-key="target_bulanan"]') || targetContainer;
+                            }
+                        }
+                    }
                 }
 
                 if (hasError) {
@@ -4489,6 +4607,23 @@
             btnPreviewSPK.dataset.wizardBound = 'true';
             btnPreviewSPK.addEventListener('click', function(e) {
                 e.preventDefault();
+                if (typeof form._validateTargetTierScheme === 'function') {
+                    const isTierValid = form._validateTargetTierScheme(true);
+                    if (!isTierValid) {
+                        if (window.switchWizardStep) {
+                            window.switchWizardStep(1, false);
+                        }
+                        const targetContainer = form.querySelector('.kontrak-target-incentive-wrapper') || form.querySelector('[data-grid="target_incentive"]');
+                        if (targetContainer) {
+                            const firstTb = targetContainer.querySelector('[data-key="target_bulanan"]');
+                            if (firstTb) {
+                                firstTb.focus();
+                                firstTb.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                        }
+                        return;
+                    }
+                }
                 const spkTabBtn = form.querySelector('.kontrak-tab-btn[data-target="tab-spk"]');
                 if (spkTabBtn) {
                     spkTabBtn.click();
@@ -5018,6 +5153,26 @@
                     if (npwpInput) {
                         npwpInput.focus();
                         npwpInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                    return false;
+                }
+            }
+            if (typeof form._validateTargetTierScheme === 'function') {
+                const isTierValid = form._validateTargetTierScheme(true);
+                if (!isTierValid) {
+                    e.preventDefault();
+                    const overlay = document.getElementById('loadingOverlay');
+                    if (overlay) overlay.classList.remove('active');
+                    if (window.switchWizardStep) {
+                        window.switchWizardStep(1, false);
+                    }
+                    const targetContainer = form.querySelector('.kontrak-target-incentive-wrapper') || form.querySelector('[data-grid="target_incentive"]');
+                    if (targetContainer) {
+                        const firstTb = targetContainer.querySelector('[data-key="target_bulanan"]');
+                        if (firstTb) {
+                            firstTb.focus();
+                            firstTb.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
                     }
                     return false;
                 }

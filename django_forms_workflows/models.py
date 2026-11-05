@@ -1128,9 +1128,9 @@ class DocumentTemplate(models.Model):
         context["catatan_lain"] = form_data.get("catatan_lain") or ""
         context["jenis_pajak"] = "Exclude Ppn"
 
-        # Separate NIK and NPWP with backward compatibility
-        nik = form_data.get("nomor_nik")
-        npwp = form_data.get("nomor_npwp")
+        # Separate NIK and NPWP with unified NIK / NPWP display
+        nik = str(form_data.get("nomor_nik") or "").strip()
+        npwp = str(form_data.get("nomor_npwp") or "").strip()
         if not nik and not npwp and form_data.get("nomor_identitas"):
             old_id = str(form_data.get("nomor_identitas", "")).strip()
             old_type = str(form_data.get("jenis_identitas", "NIK")).upper()
@@ -1138,10 +1138,21 @@ class DocumentTemplate(models.Model):
                 npwp = old_id
             else:
                 nik = old_id
+        if nik and npwp and nik not in ("—", "-") and npwp not in ("—", "-"):
+            nik_npwp_display = f"{nik} / {npwp}"
+        elif nik and nik not in ("—", "-"):
+            nik_npwp_display = nik
+        elif npwp and npwp not in ("—", "-"):
+            nik_npwp_display = npwp
+        else:
+            nik_npwp_display = "—"
         context["nomor_nik"] = nik or "—"
         context["nomor_npwp"] = npwp or "—"
-        context["nomor_identitas"] = f"{npwp} / {nik}" if (npwp and nik) else (npwp or nik or "—")
+        context["nik_npwp_display"] = nik_npwp_display
+        context["nomor_identitas"] = nik_npwp_display
         context["email"] = form_data.get("email") or "—"
+        context["nama_pemilik"] = (form_data.get("nama_pemilik") or context.get("nama_pemilik") or "Pemilik Toko").strip().upper()
+        context["nama_toko"] = (form_data.get("nama_toko") or context.get("nama_toko") or "Mitra Toko").strip().upper()
 
         # Ensure official SPK number format
         spk_val = form_data.get("nomor_spk") or ""

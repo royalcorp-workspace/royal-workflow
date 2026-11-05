@@ -639,32 +639,40 @@ def form_submit(request, slug):
                     get_next_branch_spk_sequence,
                     resolve_company_profile,
                 )
-                cabang = submission.form_data.get("cabang") or "Bandung"
+                import re
+                cabang = submission.form_data.get("cabang") or "PUSAT"
                 brand = submission.form_data.get("brand") or "LADY"
                 perusahaan = submission.form_data.get("perusahaan")
                 current_spk = str(submission.form_data.get("nomor_spk") or "").strip()
+                m_curr = re.match(r"^(?:No\.\s*)?(\d+)/", current_spk) if current_spk else None
 
-                already_taken = False
-                if current_spk and not ("OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-") or "____" in current_spk):
-                    already_taken = FormSubmission.objects.filter(
-                        form_definition=form_def,
-                        form_data__nomor_spk=current_spk,
-                    ).exclude(id=submission.id).exclude(status="draft").exists()
+                from django.db import transaction
+                with transaction.atomic():
+                    FormDefinition.objects.select_for_update().get(pk=form_def.pk)
+                    latest_seq = get_next_branch_spk_sequence(cabang, timezone.now().year, form_slug=form_def.slug)
+                    
+                    already_taken = False
+                    if current_spk and not ("OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-") or "____" in current_spk):
+                        already_taken = FormSubmission.objects.filter(
+                            form_definition=form_def,
+                            form_data__nomor_spk=current_spk,
+                        ).exclude(id=submission.id).exclude(status="draft").exists()
 
-                if not current_spk or already_taken or "OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-") or "____" in current_spk:
-                    from django.db import transaction
-                    with transaction.atomic():
-                        FormDefinition.objects.select_for_update().get(pk=form_def.pk)
-                        seq = get_next_branch_spk_sequence(cabang, timezone.now().year, form_slug=form_def.slug)
-                        comp_prof = resolve_company_profile(form_data=submission.form_data, user=request.user)
-                        submission.form_data["nomor_spk"] = format_official_spk_number(
-                            nomor=seq,
-                            brand=brand,
-                            cabang=cabang,
-                            date_val=timezone.now(),
-                            company_profile=comp_prof,
-                            perusahaan=perusahaan,
-                        )
+                    if already_taken or not current_spk or not m_curr or "OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-") or "____" in current_spk:
+                        assigned_seq = latest_seq
+                    else:
+                        curr_num = int(m_curr.group(1))
+                        assigned_seq = curr_num if curr_num >= latest_seq - 1 else latest_seq
+
+                    comp_prof = resolve_company_profile(form_data=submission.form_data, user=request.user)
+                    submission.form_data["nomor_spk"] = format_official_spk_number(
+                        nomor=assigned_seq,
+                        brand=brand,
+                        cabang=cabang,
+                        date_val=timezone.now(),
+                        company_profile=comp_prof,
+                        perusahaan=perusahaan,
+                    )
 
                 if not submission.form_data.get("kota_penandatanganan"):
                     submission.form_data["kota_penandatanganan"] = resolve_default_signing_city(
@@ -780,6 +788,29 @@ def form_submit(request, slug):
                 signing_city = resolve_default_signing_city(user_or_none)
                 if signing_city:
                     initial_data.setdefault("kota_penandatanganan", signing_city)
+                if form_def.slug == "permohonan-kontrak":
+                    from .company_profiles import (
+                        get_next_branch_spk_sequence,
+                        format_official_spk_number,
+                        resolve_company_profile,
+                    )
+                    cabang = initial_data.get("cabang") or (ep.branch if ep and ep.branch else "PUSAT")
+                    initial_data["cabang"] = cabang
+                    brand = initial_data.get("brand") or "LADY"
+                    today = timezone.now().date()
+                    seq = get_next_branch_spk_sequence(cabang, today.year, form_slug=form_def.slug)
+                    comp_prof = resolve_company_profile(form_data=initial_data, user=user_or_none)
+                    initial_data.setdefault(
+                        "nomor_spk",
+                        format_official_spk_number(
+                            nomor=seq,
+                            brand=brand,
+                            cabang=cabang,
+                            date_val=today,
+                            company_profile=comp_prof,
+                            perusahaan=initial_data.get("perusahaan"),
+                        ),
+                    )
             form = DynamicForm(
                 form_definition=form_def, user=user_or_none, initial_data=initial_data
             )
@@ -1104,12 +1135,21 @@ def form_auto_save(request, slug):
                 get_next_branch_spk_sequence,
                 resolve_company_profile,
             )
+            import re
             brand = data.get("brand") or "LADY"
-            cabang = data.get("cabang") or "Tangerang"
+            cabang = data.get("cabang") or "PUSAT"
             perusahaan = data.get("perusahaan")
             today = timezone.now().date()
             current_spk = str(data.get("nomor_spk", "")).strip()
-            if not current_spk or "OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-") or "____" in current_spk:
+            m_curr = re.match(r"^(?:No\.\s*)?(\d+)/", current_spk) if current_spk else None
+            need_assign = not current_spk or "OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-") or "____" in current_spk
+            if not need_assign and m_curr:
+                curr_num = int(m_curr.group(1))
+                if curr_num <= 1:
+                    seq = get_next_branch_spk_sequence(cabang, today.year, form_slug=form_def.slug)
+                    if seq > 1:
+                        need_assign = True
+            if need_assign:
                 seq = get_next_branch_spk_sequence(cabang, today.year, form_slug=form_def.slug)
                 comp_prof = resolve_company_profile(form_data=data, user=request.user)
                 data["nomor_spk"] = format_official_spk_number(
@@ -3237,6 +3277,50 @@ def form_preview_pdf(request, slug):
         logger.warning("WeasyPrint preview fallback failed for %s: %s", slug, weasy_err)
 
     return HttpResponseBadRequest("Unable to generate PDF preview at this time.")
+
+
+@login_required
+def form_next_spk_number(request, slug):
+    """
+    Return the next SPK number sequence for the given branch and year.
+    Used by the form wizard to display accurate sequence on load and branch change.
+    """
+    from django.http import JsonResponse
+    from .company_profiles import (
+        get_next_branch_spk_sequence,
+        format_official_spk_number,
+        resolve_company_profile,
+    )
+
+    form_def = get_object_or_404(FormDefinition, slug=slug)
+    ep = getattr(request.user, "employee_profile", None)
+    user_branch = ep.branch if ep and ep.branch else "PUSAT"
+
+    cabang = request.GET.get("cabang") or user_branch
+    brand = request.GET.get("brand") or "LADY"
+    year_str = request.GET.get("year")
+    try:
+        year = int(year_str) if year_str else timezone.now().year
+    except (ValueError, TypeError):
+        year = timezone.now().year
+
+    next_seq = get_next_branch_spk_sequence(cabang=cabang, year=year, form_slug=form_def.slug)
+    comp_prof = resolve_company_profile(form_data={"cabang": cabang, "brand": brand}, user=request.user)
+    nomor_spk = format_official_spk_number(
+        nomor=next_seq,
+        brand=brand,
+        cabang=cabang,
+        date_val=timezone.now().date(),
+        company_profile=comp_prof,
+    )
+    return JsonResponse({
+        "success": True,
+        "sequence": next_seq,
+        "sequence_str": f"{next_seq:03d}",
+        "nomor_spk": nomor_spk,
+        "cabang": cabang,
+        "year": year,
+    })
 
 
 @login_required
