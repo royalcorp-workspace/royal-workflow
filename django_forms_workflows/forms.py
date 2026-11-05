@@ -1382,8 +1382,14 @@ class DynamicForm(forms.Form):
                         ),
                     )
 
-        # Permohonan Kontrak: Conditional Support Logic & Payload Sanitization
+        # Permohonan Kontrak: Conditional Support Logic & Strict Email Validation
         if self.form_definition and self.form_definition.slug == "permohonan-kontrak":
+            # Strict Email Validation (RFC compliant with min 2 chars TLD required)
+            email_val = str(cleaned_data.get("email") or self.data.get("email") or "").strip()
+            if email_val:
+                strict_email_regex = r"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$"
+                if not re.match(strict_email_regex, email_val):
+                    self.add_error("email", "Format email tidak valid (harus menyertakan domain lengkap, contoh: nama@domain.com).")
             # 1. Clear any ChoiceField invalid choice errors on support toggle fields
             if "is_sales_support" in self._errors:
                 del self._errors["is_sales_support"]

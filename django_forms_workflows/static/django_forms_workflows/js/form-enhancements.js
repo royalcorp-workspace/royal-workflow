@@ -725,6 +725,10 @@ class FormEnhancements {
      * Create step navigation buttons
      */
     createStepNavigation() {
+        if (this.form.dataset.formSlug === 'permohonan-kontrak' || this.form.querySelector('.wizard-step-pane')) {
+            console.log('[FormEnhancements] permohonan-kontrak detected. createStepNavigation skipped.');
+            return;
+        }
         // If wizard buttons already exist in the form footer, wire them directly
         const existingNext = this.form.querySelector('#btnWizardNext');
         const existingPrev = this.form.querySelector('#btnWizardPrev');

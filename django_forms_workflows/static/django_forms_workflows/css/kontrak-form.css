@@ -777,116 +777,103 @@ table.clause-table td.cell-currency {
 
 /* ── 2. Responsive Bottom Action Buttons Navigation ── */
 
-/* Tablet & Medium Screens (768px - 991.98px) */
-@media (max-width: 991.98px) and (min-width: 768px) {
-    .form-wizard-footer {
-        flex-wrap: wrap !important;
-        gap: 12px !important;
-        padding: 16px 0 !important;
-    }
-    .footer-left-actions {
-        display: flex !important;
-        align-items: center !important;
-        gap: 8px !important;
-    }
-    .footer-right-actions {
-        display: flex !important;
-        align-items: center !important;
-        gap: 8px !important;
-        flex-wrap: wrap !important;
-        margin-left: auto !important;
-    }
+/* Kontainer Utama Footer Wizard */
+.unified-wizard-footer,
+.form-wizard-footer {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 12px !important;
+    width: 100% !important;
+    margin-top: 2rem !important;
+    padding-top: 1.25rem !important;
+    border-top: 1px solid #e2e8f0 !important;
+    box-sizing: border-box !important;
+    clear: both !important;
 }
 
-/* Mobile Devices (< 768px) - 2-Tier Balanced Grid */
-@media (max-width: 767.98px) {
+/* Grup Tombol Kiri & Kanan */
+.unified-wizard-footer .footer-group-left,
+.unified-wizard-footer .footer-group-right,
+.form-wizard-footer .footer-left-actions,
+.form-wizard-footer .footer-right-actions {
+    display: inline-flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.unified-wizard-footer .footer-group-right,
+.form-wizard-footer .footer-right-actions {
+    margin-left: auto !important;
+    justify-content: flex-end !important;
+}
+
+/* Reset semua tombol di dalam footer agar tidak float / block */
+.unified-wizard-footer button,
+.unified-wizard-footer a,
+.unified-wizard-footer .btn,
+.form-wizard-footer button,
+.form-wizard-footer a,
+.form-wizard-footer .btn {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    float: none !important;
+    margin: 0 !important;
+    white-space: nowrap !important;
+    height: 38px !important;
+}
+
+.unified-wizard-footer .btn.d-none,
+.unified-wizard-footer a.d-none,
+.form-wizard-footer .btn.d-none,
+.form-wizard-footer a.d-none {
+    display: none !important;
+}
+
+/* Responsif Tablet & Mobile: Layar <= 850px */
+@media screen and (max-width: 850px) {
+    .unified-wizard-footer,
     .form-wizard-footer {
-        display: grid !important;
-        grid-template-columns: 1fr 1fr !important;
+        flex-direction: column-reverse !important;
+        align-items: stretch !important;
         gap: 10px !important;
-        padding: 14px 0 calc(14px + var(--sab, 0px)) 0 !important;
-        margin-top: 18px !important;
-        width: 100% !important;
     }
 
-    .footer-left-actions,
-    .footer-right-actions {
-        display: contents !important;
+    .unified-wizard-footer .footer-group-right,
+    .unified-wizard-footer .footer-group-left,
+    .form-wizard-footer .footer-right-actions,
+    .form-wizard-footer .footer-left-actions {
+        width: 100% !important;
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: stretch !important;
+        margin-left: 0 !important;
     }
 
-    /* Tier 1 Primary Action: 100% Full-Width on top */
-    .footer-right-actions .btn-wizard-next,
-    .footer-right-actions .btn-wizard-submit {
-        grid-column: 1 / -1 !important;
-        order: 1 !important;
+    /* Tombol Lanjut / Submit dibuat dominan full width pada mobile */
+    .unified-wizard-footer .footer-group-right #btnWizardNext,
+    .unified-wizard-footer .footer-group-right #btnSubmitApplication,
+    .form-wizard-footer .footer-right-actions #btnWizardNext,
+    .form-wizard-footer .footer-right-actions #btnSubmitApplication {
         width: 100% !important;
-        height: 44px !important;
-        font-size: 14.5px !important;
-        font-weight: 600 !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        margin: 0 !important;
+        order: -1 !important; /* Tampil paling atas di kelompok aksi */
     }
 
-    /* Tier 2 Secondary Actions: Left Button (Back to list / Prev Step) */
-    .footer-left-actions .btn-back-to-forms,
-    .footer-left-actions .btn-wizard-prev {
-        grid-column: 1 / 2 !important;
-        order: 2 !important;
-        width: 100% !important;
-        height: 40px !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        font-size: 13px !important;
+    .unified-wizard-footer button,
+    .unified-wizard-footer a,
+    .unified-wizard-footer .btn,
+    .form-wizard-footer button,
+    .form-wizard-footer a,
+    .form-wizard-footer .btn {
+        flex: 1 1 auto !important;
         text-align: center !important;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-        margin: 0 !important;
-        padding: 6px 10px !important;
-    }
-
-    /* Tier 2 Secondary Actions: Right Button (Save Draft) */
-    .footer-right-actions .btn-save-draft {
-        grid-column: 2 / 3 !important;
-        order: 2 !important;
-        width: 100% !important;
-        height: 40px !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        font-size: 13px !important;
-        text-align: center !important;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-        margin: 0 !important;
-        padding: 6px 10px !important;
-    }
-
-    /* When Save Draft is not present or hidden, let Back / Prev take full width */
-    .form-wizard-footer:not(:has(.btn-save-draft:not(.d-none))) .footer-left-actions .btn-back-to-forms,
-    .form-wizard-footer:not(:has(.btn-save-draft:not(.d-none))) .footer-left-actions .btn-wizard-prev {
-        grid-column: 1 / -1 !important;
-    }
-
-    /* Ancillary actions (Preview SPK button, Discard Draft) */
-    .footer-right-actions .btn-preview-spk {
-        grid-column: 1 / -1 !important;
-        order: 3 !important;
-        width: 100% !important;
-        height: 38px !important;
-        margin: 0 !important;
-    }
-
-    .footer-right-actions .btn-discard-draft {
-        grid-column: 1 / -1 !important;
-        order: 4 !important;
-        width: 100% !important;
-        height: 36px !important;
-        margin: 0 !important;
     }
 }
 
@@ -1257,3 +1244,30 @@ table.clause-table td.cell-currency {
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
 }
 
+
+/* Proteksi Sembunyikan Field Bawaan Django untuk Rekening Perusahaan agar tidak memicu label duplikat */
+.field-rekening_perusahaan,
+#div_id_rekening_perusahaan,
+.field-wrapper:has(input[name="rekening_perusahaan"]),
+.field-bank_perusahaan,
+#div_id_bank_perusahaan,
+.field-wrapper:has(input[name="bank_perusahaan"]),
+.field-nomor_rekening_perusahaan,
+#div_id_nomor_rekening_perusahaan,
+.field-wrapper:has(input[name="nomor_rekening_perusahaan"]),
+.field-atas_nama_rekening,
+#div_id_atas_nama_rekening,
+.field-wrapper:has(input[name="atas_nama_rekening"]) {
+    display: none !important;
+}
+
+#companyBankContainer input[readonly] {
+    background-color: #f8fafc !important;
+    border-color: #cbd5e1 !important;
+    color: #1e293b !important;
+    font-weight: 500;
+}
+
+#companyBankContainer .form-label {
+    white-space: nowrap;
+}

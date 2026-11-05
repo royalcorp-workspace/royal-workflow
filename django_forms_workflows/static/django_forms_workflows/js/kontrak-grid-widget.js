@@ -205,6 +205,9 @@
             }
 
             hasRestoredDraft = true;
+            if (typeof form._syncRekeningPerusahaan === 'function') {
+                form._syncRekeningPerusahaan();
+            }
             try { renderSummaryTab(form); } catch (e) {}
             try { renderSPKTab(form); } catch (e) {}
         }
@@ -456,7 +459,7 @@
             'info_kontrak_lama', 'tanggal_mulai', 'tanggal_berakhir', 'durasi', 'grace_period',
             'top', 'target_incentive', 'jenis_pencairan_insentif',
             'discount_scheme',
-            'kota_penandatanganan', 'tanggal_penandatanganan', 'rekening_perusahaan'
+            'kota_penandatanganan', 'tanggal_penandatanganan', 'rekening_perusahaan', 'bank_perusahaan', 'nomor_rekening_perusahaan', 'atas_nama_rekening'
         ]);
 
         const STEP3_FIELDS = new Set([
@@ -1376,44 +1379,93 @@
         }
 
         // --- Rekening Perusahaan: Readonly & Autofill Master Profil Perusahaan ---
-        const rekeningInput = form.querySelector('[name="rekening_perusahaan"]');
-        if (rekeningInput) {
-            rekeningInput.readOnly = true;
-            rekeningInput.classList.add('field-readonly', 'bg-light');
-            rekeningInput.style.cursor = 'not-allowed';
-            rekeningInput.setAttribute('title', 'Nomor rekening resmi perusahaan terisi otomatis sesuai profil perusahaan (readonly)');
-            const wrapper = rekeningInput.closest('.field-wrapper') || rekeningInput.closest('.mb-3') || rekeningInput.parentElement;
-            if (wrapper) {
-                let helpText = wrapper.querySelector('.form-text');
-                if (!helpText) {
-                    helpText = document.createElement('div');
-                    helpText.className = 'form-text text-muted small mt-1';
-                    rekeningInput.parentNode.appendChild(helpText);
-                }
-                helpText.textContent = 'Terisi otomatis dari master profil perusahaan (readonly).';
+        function resolveCompanyBankDetails(compName, brandName) {
+            const c = (compName || '').toUpperCase();
+            const b = (brandName || '').toUpperCase();
+
+            if (c.includes('PRIMATARA') || c.includes('BANGUN CIPTA') || c === 'BCP') {
+                return {
+                    bank_name: 'BCA Cimahi – Bandung',
+                    bank_account_no: '139.9888.777 (IDR)',
+                    bank_account_name: 'PT. BANGUN CIPTA PRIMATARA',
+                    full_text: 'BCA Cimahi – Bandung 139.9888.777 (IDR) a/n PT. BANGUN CIPTA PRIMATARA'
+                };
             }
+            if (c.includes('BESTARI') || c === 'BM') {
+                return {
+                    bank_name: 'BCA Cimahi – Bandung',
+                    bank_account_no: '139 8075 888 (IDR)',
+                    bank_account_name: 'PT. BESTARI MULIA',
+                    full_text: 'BCA Cimahi – Bandung 139 8075 888 (IDR) a/n PT. BESTARI MULIA'
+                };
+            }
+            if (c.includes('CEMERLANG ABADI MULIA') || c.includes('ABADI MULIA') || c === 'CAM') {
+                return {
+                    bank_name: 'BCA Cimahi – Bandung',
+                    bank_account_no: '139 9183 888 (IDR)',
+                    bank_account_name: 'PT. CEMERLANG ABADI MULIA',
+                    full_text: 'BCA Cimahi – Bandung 139 9183 888 (IDR) a/n PT. CEMERLANG ABADI MULIA'
+                };
+            }
+            if (c.includes('ANUGRAH') || c === 'ACA' || (!c && (b.includes('LADY') || b.includes('ELITE') || b.includes('SERENITY')))) {
+                return {
+                    bank_name: 'BCA Cimahi – Bandung',
+                    bank_account_no: '139 9183 888 (IDR)',
+                    bank_account_name: 'PT. ANUGRAH CEMERLANG ABADI',
+                    full_text: 'BCA Cimahi – Bandung 139 9183 888 (IDR) a/n PT. ANUGRAH CEMERLANG ABADI'
+                };
+            }
+            // Default RAS
+            return {
+                bank_name: 'BCA Cimahi – Bandung',
+                bank_account_no: '139 8826 999 (IDR)',
+                bank_account_name: 'PT. ROYAL ABADI SEJAHTERA',
+                full_text: 'BCA Cimahi – Bandung 139 8826 999 (IDR) a/n PT. ROYAL ABADI SEJAHTERA'
+            };
         }
 
         function resolveRekeningPerusahaan(compName, brandName) {
-            const c = (compName || '').toUpperCase();
-            const b = (brandName || '').toUpperCase();
-            if (c.includes('PRIMATARA') || c.includes('BANGUN CIPTA') || c === 'BCP') {
-                return 'BCA Cimahi – Bandung 139.9888.777 (IDR) a/n PT. BANGUN CIPTA PRIMATARA';
-            }
-            if (c.includes('BESTARI') || c === 'BM') {
-                return 'BCA Cimahi – Bandung 139 8075 888 (IDR) a/n PT. BESTARI MULIA';
-            }
-            if (c.includes('CEMERLANG ABADI MULIA') || c.includes('ABADI MULIA') || c === 'CAM') {
-                return 'BCA Cimahi – Bandung 139 9183 888 (IDR) a/n PT. CEMERLANG ABADI MULIA';
-            }
-            if (c.includes('ANUGRAH') || c === 'ACA' || (!c && (b.includes('LADY') || b.includes('ELITE') || b.includes('SERENITY')))) {
-                return 'BCA Cimahi – Bandung 139 9183 888 (IDR) a/n PT. ANUGRAH CEMERLANG ABADI';
-            }
-            if (c.includes('SEJAHTERA') || c.includes('RAS') || c.includes('ROYAL') || b.includes('ROYAL') || b.includes('FOAM') || b.includes('CLASSIC')) {
-                return 'BCA Cimahi – Bandung 139 8826 999 (IDR) a/n PT. ROYAL ABADI SEJAHTERA';
-            }
-            return 'BCA Cimahi – Bandung 139 8826 999 (IDR) a/n PT. ROYAL ABADI SEJAHTERA';
+            return resolveCompanyBankDetails(compName, brandName).full_text;
         }
+
+        function syncRekeningPerusahaan() {
+            const compVal = (perusahaanSelect && perusahaanSelect.value) ? perusahaanSelect.value.trim() : '';
+            const brandVal = (brandSelect && brandSelect.value) ? brandSelect.value.trim() : '';
+            const details = resolveCompanyBankDetails(compVal, brandVal);
+
+            // 1. Sinkronisasi hidden / full string rekening_perusahaan
+            form.querySelectorAll('[name="rekening_perusahaan"]').forEach(inp => {
+                inp.value = details.full_text;
+                inp.dataset.autoFilled = 'true';
+            });
+
+            // 2. Sinkronisasi 3 input box terpisah di Card 4 (bank_perusahaan, nomor_rekening_perusahaan, atas_nama_rekening)
+            form.querySelectorAll('[name="bank_perusahaan"]').forEach(inp => {
+                inp.value = details.bank_name;
+                inp.title = details.bank_name;
+                inp.dataset.autoFilled = 'true';
+                inp.dispatchEvent(new Event('input', { bubbles: true }));
+                inp.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+
+            form.querySelectorAll('[name="nomor_rekening_perusahaan"]').forEach(inp => {
+                inp.value = details.bank_account_no;
+                inp.title = details.bank_account_no;
+                inp.dataset.autoFilled = 'true';
+                inp.dispatchEvent(new Event('input', { bubbles: true }));
+                inp.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+
+            form.querySelectorAll('[name="atas_nama_rekening"]').forEach(inp => {
+                inp.value = details.bank_account_name;
+                inp.title = details.bank_account_name;
+                inp.dataset.autoFilled = 'true';
+                inp.dispatchEvent(new Event('input', { bubbles: true }));
+                inp.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+        }
+        form._syncRekeningPerusahaan = syncRekeningPerusahaan;
+        form._resolveCompanyBankDetails = resolveCompanyBankDetails;
 
         function setSelectValue(selectEl, targetText) {
             if (!selectEl || !selectEl.options) return;
@@ -1445,16 +1497,7 @@
             }
         }
 
-        function syncRekeningPerusahaan() {
-            if (!rekeningInput) return;
-            const compVal = (perusahaanSelect && perusahaanSelect.value) ? perusahaanSelect.value.trim() : '';
-            const brandVal = (brandSelect && brandSelect.value) ? brandSelect.value.trim() : '';
-            const targetRek = resolveRekeningPerusahaan(compVal, brandVal);
-            rekeningInput.value = targetRek;
-            rekeningInput.dataset.autoFilled = 'true';
-            rekeningInput.dispatchEvent(new Event('input', { bubbles: true }));
-            rekeningInput.dispatchEvent(new Event('change', { bubbles: true }));
-        }
+        
 
         if (perusahaanSelect) {
             perusahaanSelect.addEventListener('change', () => {
@@ -1478,9 +1521,37 @@
             brandSelect.addEventListener('change', onBrandChanged);
             brandSelect.addEventListener('input', onBrandChanged);
         }
-        if (rekeningInput) {
-            syncRekeningPerusahaan();
+                // Defensive check: if #companyBankContainer is missing in DOM, inject it into Card 4 immediately
+        let bankContainer = document.getElementById('companyBankContainer');
+        if (!bankContainer) {
+            const card4Body = form.querySelector('[data-card-id="card-4"] .spk-clause-body') ||
+                              form.querySelector('.card-tata-cara-pembayaran .spk-clause-body') ||
+                              Array.from(form.querySelectorAll('.spk-clause-card')).find(cardEl => (cardEl.textContent || '').includes('Tata Cara'))?.querySelector('.spk-clause-body');
+            if (card4Body) {
+                const fallbackWrap = document.createElement('div');
+                fallbackWrap.className = 'mt-1';
+                fallbackWrap.innerHTML = `
+                    <label class="form-label fw-semibold text-dark mb-1">Rekening Perusahaan</label>
+                    <div class="row g-2" id="companyBankContainer">
+                        <div class="col-12 col-md-4">
+                            <label class="form-label small fw-semibold text-secondary mb-1">Nama Bank</label>
+                            <input type="text" class="form-control form-control-sm bg-light" name="bank_perusahaan" readonly style="cursor: not-allowed;" placeholder="Bank">
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <label class="form-label small fw-semibold text-secondary mb-1">Nomor Rekening</label>
+                            <input type="text" class="form-control form-control-sm bg-light" name="nomor_rekening_perusahaan" readonly style="cursor: not-allowed;" placeholder="No. Rekening">
+                        </div>
+                        <div class="col-12 col-md-5">
+                            <label class="form-label small fw-semibold text-secondary mb-1">Atas Nama (A/N)</label>
+                            <input type="text" class="form-control form-control-sm bg-light" name="atas_nama_rekening" readonly style="cursor: not-allowed;" placeholder="Atas Nama">
+                        </div>
+                    </div>
+                `;
+                card4Body.appendChild(fallbackWrap);
+            }
         }
+        syncRekeningPerusahaan();
+
 
         // Run immediately to generate official SPK number
         updateSPK();
@@ -2016,8 +2087,8 @@
             },
             mthmt: {
                 komponen: 'MTHMT',
-                nilai: '',
-                tipe: '',
+                nilai: '0%',
+                tipe: 'Persentase',
                 keterangan: 'Program Thematic Yang Berlaku',
                 matches: (k) => ['thematic', 'mtht', 'mthmt'].includes(String(k || '').trim().toLowerCase())
             },
@@ -2051,7 +2122,21 @@
                             return { ...r, komponen: 'MTOP', keterangan: (r.keterangan === '—' || !r.keterangan) ? 'TOP' : r.keterangan };
                         }
                         if (['THEMATIC', 'MTHT'].includes(kompUpper)) {
-                            return { ...r, komponen: 'MTHMT', nilai: '', tipe: '', keterangan: 'Program Thematic Yang Berlaku' };
+                            return {
+                                ...r,
+                                komponen: 'MTHMT',
+                                nilai: (r.nilai !== undefined && r.nilai !== null && r.nilai !== '—' && r.nilai !== '') ? r.nilai : '0%',
+                                tipe: (r.tipe && r.tipe !== '—') ? r.tipe : 'Persentase',
+                                keterangan: (r.keterangan && r.keterangan !== '—') ? r.keterangan : 'Program Thematic Yang Berlaku'
+                            };
+                        }
+                        if (kompUpper === 'MTHMT') {
+                            return {
+                                ...r,
+                                nilai: (r.nilai !== undefined && r.nilai !== null && r.nilai !== '—' && r.nilai !== '') ? r.nilai : '0%',
+                                tipe: (r.tipe && r.tipe !== '—') ? r.tipe : 'Persentase',
+                                keterangan: (r.keterangan && r.keterangan !== '—') ? r.keterangan : 'Program Thematic Yang Berlaku'
+                            };
                         }
                         return r;
                     });
@@ -2159,10 +2244,8 @@
                 const isFixed = FIXED_KOMPONEN.some(fk => fk.toLowerCase() === kompClean.toLowerCase());
                 const isMthmt = ['THEMATIC', 'MTHT', 'MTHMT'].includes(kompUpper);
                 const isNominal = (r.tipe === 'Nominal');
-                let displayVal = r.nilai || '';
-                if (isMthmt) {
-                    displayVal = '';
-                } else if (isNominal) {
+                let displayVal = (r.nilai !== undefined && r.nilai !== null) ? r.nilai : '';
+                if (isNominal) {
                     displayVal = formatRupiah(parseRupiah(r.nilai));
                 }
 
@@ -2191,16 +2274,6 @@
                                        tabindex="-1"
                                        style="cursor: not-allowed; background-color: #f1f5f9 !important;"
                                        title="Nilai diskon baku terkunci">
-                            ` : (isMthmt ? `
-                                <input type="text"
-                                       class="cell-input text-center bg-light text-muted border-0"
-                                       data-key="nilai"
-                                       value=""
-                                       readonly
-                                       tabindex="-1"
-                                       style="cursor: not-allowed; background-color: #f1f5f9 !important;"
-                                       placeholder="—"
-                                       title="Nilai Thematic ditentukan program khusus">
                             ` : `
                                 <input type="text"
                                        inputmode="${isNominal ? 'numeric' : 'decimal'}"
@@ -2209,7 +2282,7 @@
                                        data-tipe="${isNominal ? 'Nominal' : 'Persentase'}"
                                        value="${escapeHtml(String(displayVal))}"
                                        placeholder="${isNominal ? 'Misal: 50.000' : 'Misal: 10%'}">
-                            `)}
+                            `}
                         </td>
                         <td>
                             ${isFixed ? `
@@ -2221,22 +2294,12 @@
                                        tabindex="-1"
                                        style="cursor: not-allowed; background-color: #f1f5f9 !important;"
                                        title="Tipe diskon baku terkunci">
-                            ` : (isMthmt ? `
-                                <input type="text"
-                                       class="cell-input text-center bg-light text-muted border-0"
-                                       data-key="tipe"
-                                       value=""
-                                       readonly
-                                       tabindex="-1"
-                                       style="cursor: not-allowed; background-color: #f1f5f9 !important;"
-                                       placeholder="—"
-                                       title="Tipe Thematic ditentukan program khusus">
                             ` : `
                                 <select class="cell-input select-tipe-diskon text-center" data-key="tipe">
                                     <option value="Persentase" ${!isNominal ? 'selected' : ''}>Persentase</option>
                                     <option value="Nominal" ${isNominal ? 'selected' : ''}>Nominal</option>
                                 </select>
-                            `)}
+                            `}
                         </td>
                         <td>
                             ${isFixed ? `
@@ -2248,18 +2311,9 @@
                                        tabindex="-1"
                                        style="cursor: not-allowed; background-color: #f1f5f9 !important;"
                                        title="Keterangan diskon baku terkunci">
-                            ` : (isMthmt ? `
-                                <input type="text"
-                                       class="cell-input text-center bg-light text-muted border-0"
-                                       data-key="keterangan"
-                                       value="${escapeHtml(r.keterangan || 'Sesuai Program Thematic yang berlaku')}"
-                                       readonly
-                                       tabindex="-1"
-                                       style="cursor: not-allowed; background-color: #f1f5f9 !important;"
-                                       title="Keterangan program Thematic">
                             ` : `
-                                <input type="text" class="cell-input" data-key="keterangan" value="${escapeHtml(r.keterangan || '')}" placeholder="Catatan syarat">
-                            `)}
+                                <input type="text" class="cell-input" data-key="keterangan" value="${escapeHtml(r.keterangan || (isMthmt ? 'Program Thematic Yang Berlaku' : ''))}" placeholder="Catatan syarat">
+                            `}
                         </td>
                         <td class="text-center">
                             ${isFixed ? `
@@ -2313,9 +2367,8 @@
                 const r = rows[idx];
                 const kompClean = String(r.komponen || '').trim();
                 const isFixed = FIXED_KOMPONEN.some(fk => fk.toLowerCase() === kompClean.toLowerCase());
-                const isMthmt = ['thematic', 'mtht', 'mthmt'].includes(kompClean.toLowerCase());
-                if (isFixed || isMthmt) {
-                    return; // Baris fixed (MD1, MD2, MTOP) & MTHMT terkunci dari edit nilai/tipe
+                if (isFixed) {
+                    return; // Baris fixed (MD1, MD2, MTOP) terkunci dari edit nilai/tipe
                 }
 
                 const nilaiInput = tr.querySelector('[data-key="nilai"]');
@@ -3217,28 +3270,105 @@
         if (discountGridBlock) card3.body.appendChild(discountGridBlock);
 
         // 4. Card 4: Tata Cara & Ketentuan Pembayaran (BAB III - Pasal 7, 8, 9, 10)
-        const card4 = createClauseCard('BAB III', 'badge-bab3', 'Tata Cara & Ketentuan Pembayaran (Pasal 7, 8, 9, 10)', 'Jangka waktu pembayaran (TOP), sistem transaksi resmi, dan rekening bank perusahaan.');
+        const card4 = createClauseCard('BAB III', 'badge-bab3', 'Tata Cara & Ketentuan Pembayaran (Pasal 7, 8, 9, 10)', '');
+        card4.card.dataset.cardId = 'card-4';
+        card4.card.classList.add('card-tata-cara-pembayaran');
         
         const rowBayar = document.createElement('div');
-        rowBayar.className = 'row g-3 mb-2';
-        ['top', 'rekening_perusahaan'].forEach(fn => {
-            const el = extractFieldElement(fn);
-            if (el) {
-                const col = document.createElement('div');
-                col.className = (fn === 'top') ? 'col-md-4' : 'col-md-8';
-                el.classList.remove('col-md-3', 'col-md-4', 'col-md-6', 'col-md-12');
-                col.appendChild(el);
-                rowBayar.appendChild(col);
-                if (fn === 'rekening_perusahaan') {
-                    const inp = el.querySelector('input') || el;
-                    if (inp && inp.tagName === 'INPUT') {
-                        inp.readOnly = true;
-                        inp.classList.add('field-readonly', 'bg-light');
-                        inp.style.cursor = 'not-allowed';
-                    }
+        rowBayar.className = 'row g-3 mb-2 align-items-start';
+
+        // 1. TOP (Term of Payment) - Flex cerdas & sejajar sempurna dengan Rekening Perusahaan
+        const elTop = extractFieldElement('top');
+        if (elTop) {
+            const colTop = document.createElement('div');
+            colTop.className = 'col-12 col-md-3';
+            colTop.style.cssText = 'min-width: 180px; max-width: 240px;';
+            elTop.classList.remove('col-md-3', 'col-md-4', 'col-md-6', 'col-md-12');
+
+            // Header Utama Level 1: sejajar dengan "Rekening Perusahaan"
+            const topHeader = document.createElement('div');
+            topHeader.className = 'form-label fw-semibold text-dark mb-1 text-nowrap';
+            topHeader.innerHTML = 'TOP (Term of Payment) <span class="text-danger">*</span>';
+
+            // Sub-label Level 2: sejajar dengan "Nama Bank", "Nomor Rekening", "Atas Nama (A/N)"
+            let topLabel = elTop.querySelector('label');
+            if (topLabel) {
+                topLabel.className = 'form-label small fw-semibold text-secondary mb-1 text-nowrap';
+                topLabel.textContent = 'Hari Kerja';
+            } else {
+                topLabel = document.createElement('label');
+                topLabel.className = 'form-label small fw-semibold text-secondary mb-1 text-nowrap';
+                topLabel.textContent = 'Hari Kerja';
+                elTop.prepend(topLabel);
+            }
+
+            // Input Level 3: selebar 100% kolom (tanpa batas 160px) & placeholder ringkas "60"
+            const topInput = elTop.querySelector('input');
+            if (topInput) {
+                topInput.classList.add('form-control-sm', 'w-100');
+                topInput.placeholder = '60';
+                topInput.style.removeProperty('max-width');
+                topInput.style.width = '100%';
+            }
+
+            // Hapus helper text bawah agar bersih & tidak duplikat dengan sub-label
+            const topHelp = elTop.querySelector('.form-text');
+            if (topHelp) topHelp.remove();
+
+            colTop.appendChild(topHeader);
+            colTop.appendChild(elTop);
+            rowBayar.appendChild(colTop);
+        }
+
+        // 2. Rekening Perusahaan - mengisi seluruh sisa ruang (col-12 col-md-9 flex-grow-1)
+        const colRek = document.createElement('div');
+        colRek.className = 'col-12 col-md-9 flex-grow-1';
+
+        // Pastikan input hidden untuk rekening_perusahaan ada di form untuk payload backend
+        let hiddenRek = form.querySelector('input[type="hidden"][name="rekening_perusahaan"]');
+        if (!hiddenRek) {
+            hiddenRek = document.createElement('input');
+            hiddenRek.type = 'hidden';
+            hiddenRek.name = 'rekening_perusahaan';
+            form.appendChild(hiddenRek);
+        }
+
+        // HAPUS total wrapper Django untuk rekening_perusahaan dan 3 field bank dari DOM agar label Django tidak pernah muncul ganda
+        ['rekening_perusahaan', 'bank_perusahaan', 'nomor_rekening_perusahaan', 'atas_nama_rekening'].forEach(fName => {
+            const el = extractFieldElement(fName);
+            if (el && !el.closest('#companyBankContainer')) {
+                const inp = el.querySelector(`input[name="${fName}"]`);
+                if (inp && fName === 'rekening_perusahaan' && inp !== hiddenRek) {
+                    inp.type = 'hidden';
+                    form.appendChild(inp);
                 }
+                el.remove();
             }
         });
+
+        // Satu label utama tunggal yang bersih: "Rekening Perusahaan"
+        // Proporsi kolom: Bank (4), No. Rekening (3), Atas Nama (5) untuk memberi ruang maksimal pada nama PT panjang
+        const bankBlock = document.createElement('div');
+        bankBlock.className = 'mb-1';
+        bankBlock.innerHTML = `
+            <label class="form-label fw-semibold text-dark mb-1">Rekening Perusahaan</label>
+            <div class="row g-2" id="companyBankContainer">
+                <div class="col-12 col-md-4">
+                    <label class="form-label small fw-semibold text-secondary mb-1">Nama Bank</label>
+                    <input type="text" class="form-control form-control-sm bg-light" name="bank_perusahaan" readonly style="cursor: not-allowed;" placeholder="Bank" title="">
+                </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-semibold text-secondary mb-1">Nomor Rekening</label>
+                    <input type="text" class="form-control form-control-sm bg-light" name="nomor_rekening_perusahaan" readonly style="cursor: not-allowed;" placeholder="No. Rekening" title="">
+                </div>
+                <div class="col-12 col-md-5">
+                    <label class="form-label small fw-semibold text-secondary mb-1">Atas Nama (A/N)</label>
+                    <input type="text" class="form-control form-control-sm bg-light" name="atas_nama_rekening" readonly style="cursor: not-allowed;" placeholder="Atas Nama" title="">
+                </div>
+            </div>
+        `;
+        colRek.appendChild(bankBlock);
+        rowBayar.appendChild(colRek);
         card4.body.appendChild(rowBayar);
 
         // 5. Card 5: Ketentuan Akhir & Tempat Pengesahan (BAB IV & Penutup)
@@ -3756,13 +3886,75 @@
     /* --------------------------------------------------------------------------
      * 7. Wizard Footer Actions & Interactive Stepper Header Navigation
      * -------------------------------------------------------------------------- */
-    function setupWizardFooter(form) {
+            function setupWizardFooter(form) {
+        // Ambil elemen seluruh tombol yang relevan di form
+        const btnBackToForms = form.querySelector('#btnBackToForms') || Array.from(form.querySelectorAll('a, button')).find(el => (el.textContent || '').includes('Kembali ke Riwayat'));
         const btnPrev = form.querySelector('#btnWizardPrev') || document.getElementById('btnWizardPrev') || form.querySelector('.btn-wizard-prev') || document.querySelector('.btn-wizard-prev');
         const btnNext = form.querySelector('#btnWizardNext') || document.getElementById('btnWizardNext') || form.querySelector('.btn-wizard-next') || document.querySelector('.btn-wizard-next');
         const btnNextText = form.querySelector('#btnWizardNextText') || document.getElementById('btnWizardNextText');
-        const btnBackToForms = form.querySelector('#btnBackToForms') || document.getElementById('btnBackToForms');
         const btnPreviewSPK = form.querySelector('#btnPreviewSPK') || document.getElementById('btnPreviewSPK');
-        const btnSubmit = form.querySelector('#btnSubmitApplication') || document.getElementById('btnSubmitApplication');
+        const btnSubmit = form.querySelector('#btnSubmitApplication') || document.getElementById('btnSubmitApplication') || form.querySelector('button[type="submit"][value="submit"]');
+
+        const serverDiscardBtn = form.querySelector('#btnDiscardDraft');
+        const localDiscardBtn = form.querySelector('#btnLocalDiscardDraft');
+        const btnDiscard = serverDiscardBtn || localDiscardBtn;
+        const btnSaveDraft = form.querySelector('#btnSaveDraft') || form.querySelector('.btn-save-draft') || form.querySelector('button[value="draft"]');
+
+        // Hapus kontainer footer lama / wrapper bawaan Django yang rusak
+        form.querySelectorAll('#unifiedWizardFooter, .unified-wizard-footer, .form-wizard-footer, .step-navigation').forEach(el => el.remove());
+
+        // Buat kontainer tunggal baru dengan inline-style defensif (agar tidak bisa ditimpa CSS lain)
+        const footerContainer = document.createElement('div');
+        footerContainer.id = 'unifiedWizardFooter';
+        footerContainer.className = 'unified-wizard-footer form-wizard-footer';
+        footerContainer.setAttribute('style', `
+            display: flex !important;
+            flex-direction: row !important;
+            justify-content: space-between !important;
+            align-items: center !important;
+            flex-wrap: wrap !important;
+            gap: 12px !important;
+            width: 100% !important;
+            margin-top: 24px !important;
+            padding-top: 16px !important;
+            border-top: 1px solid #e2e8f0 !important;
+            box-sizing: border-box !important;
+            clear: both !important;
+        `);
+
+        const leftGroup = document.createElement('div');
+        leftGroup.className = 'footer-group-left footer-left-actions';
+        leftGroup.setAttribute('style', 'display: inline-flex !important; align-items: center !important; gap: 8px !important; flex-wrap: wrap !important;');
+
+        const rightGroup = document.createElement('div');
+        rightGroup.className = 'footer-group-right footer-right-actions';
+        rightGroup.setAttribute('style', 'display: inline-flex !important; align-items: center !important; gap: 8px !important; flex-wrap: wrap !important; margin-left: auto !important;');
+
+        // Masukkan tombol ke group masing-masing:
+        if (btnBackToForms) leftGroup.appendChild(btnBackToForms);
+        if (btnPrev) leftGroup.appendChild(btnPrev);
+
+        if (btnDiscard) rightGroup.appendChild(btnDiscard);
+        if (btnSaveDraft) rightGroup.appendChild(btnSaveDraft);
+        if (btnNext) rightGroup.appendChild(btnNext);
+        if (btnPreviewSPK) rightGroup.appendChild(btnPreviewSPK);
+        if (btnSubmit) rightGroup.appendChild(btnSubmit);
+
+        // Bersihkan inline style disruptif dari masing-masing tombol:
+        [btnBackToForms, btnPrev, btnDiscard, btnSaveDraft, btnNext, btnPreviewSPK, btnSubmit].forEach(el => {
+            if (el) {
+                el.style.float = 'none';
+                el.style.position = 'static';
+                el.style.margin = '0';
+                if (!el.classList.contains('d-none')) {
+                    el.style.display = 'inline-flex';
+                }
+            }
+        });
+
+        footerContainer.appendChild(leftGroup);
+        footerContainer.appendChild(rightGroup);
+        form.appendChild(footerContainer);
 
         // Ensure form and buttons have HTML5 native validation disabled to prevent silent aborts
         if (form) {
@@ -3797,6 +3989,7 @@
             if (visible) {
                 el.classList.remove('d-none');
                 el.style.removeProperty('display');
+                el.style.display = 'inline-flex';
             } else {
                 el.classList.add('d-none');
                 el.style.setProperty('display', 'none', 'important');
@@ -4548,12 +4741,19 @@
     }
 
     function showDiscardDraftButton(form, show) {
-        const footerActions = form.querySelector('.footer-right-actions') || form.querySelector('.form-wizard-footer');
-        if (!footerActions) return;
+        const rightGroup = form.querySelector('.footer-group-right') || form.querySelector('.footer-right-actions') || form.querySelector('#unifiedWizardFooter');
+        if (!rightGroup) return;
 
-        const serverDiscardBtn = footerActions.querySelector('#btnDiscardDraft');
+        const serverDiscardBtn = form.querySelector('#btnDiscardDraft');
         if (serverDiscardBtn) {
-            // Server button already exists, no need to add duplicate
+            if (serverDiscardBtn.parentNode !== rightGroup) {
+                const btnSaveDraft = rightGroup.querySelector('#btnSaveDraft') || rightGroup.querySelector('#btnWizardNext');
+                if (btnSaveDraft) {
+                    rightGroup.insertBefore(serverDiscardBtn, btnSaveDraft);
+                } else {
+                    rightGroup.prepend(serverDiscardBtn);
+                }
+            }
             return;
         }
 
@@ -4568,13 +4768,21 @@
                 e.preventDefault();
                 await discardDraft(form);
             });
-            const btnSaveDraft = footerActions.querySelector('#btnSaveDraft') || footerActions.querySelector('#btnWizardNext');
+            const btnSaveDraft = rightGroup.querySelector('#btnSaveDraft') || rightGroup.querySelector('#btnWizardNext');
             if (btnSaveDraft) {
-                footerActions.insertBefore(btnDiscard, btnSaveDraft);
+                rightGroup.insertBefore(btnDiscard, btnSaveDraft);
             } else {
-                footerActions.prepend(btnDiscard);
+                rightGroup.prepend(btnDiscard);
             }
         } else {
+            if (btnDiscard.parentNode !== rightGroup) {
+                const btnSaveDraft = rightGroup.querySelector('#btnSaveDraft') || rightGroup.querySelector('#btnWizardNext');
+                if (btnSaveDraft) {
+                    rightGroup.insertBefore(btnDiscard, btnSaveDraft);
+                } else {
+                    rightGroup.prepend(btnDiscard);
+                }
+            }
             if (show) {
                 btnDiscard.classList.remove('d-none');
             } else {

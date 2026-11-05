@@ -498,9 +498,9 @@ class EMeteraiService:
         pihak_1_nama = comp_prof["director_name"]
         pihak_1_jabatan = f"{comp_prof['director_title']} {perusahaan}"
         pihak_1_alamat = comp_prof["factory_address"]
-        rekening_bank = comp_prof["bank_name"]
-        rekening_no = comp_prof["bank_account_no"]
-        rekening_an = comp_prof["bank_account_name"]
+        rekening_bank = form_data.get("bank_perusahaan") or comp_prof["bank_name"]
+        rekening_no = form_data.get("nomor_rekening_perusahaan") or comp_prof["bank_account_no"]
+        rekening_an = form_data.get("atas_nama_rekening") or comp_prof["bank_account_name"]
         rekening_display = form_data.get("rekening_perusahaan") or f"{rekening_bank} {rekening_no} a/n {rekening_an}"
         domisili_pn = comp_prof["court_jurisdiction"]
         logo_path = get_company_logo_abs_path(company_name=perusahaan, submission=submission, user=submission.submitter)
@@ -759,22 +759,18 @@ class EMeteraiService:
                     komp_upper = "MTHMT"
 
                 is_mthmt = (komp_upper == "MTHMT")
-                if is_mthmt:
-                    val = ""
-                    tip = ""
-                    ket = r.get("keterangan") or "Program Thematic Yang Berlaku"
+                val_raw = r.get("nilai")
+                if val_raw is not None and str(val_raw).strip() not in ("", "—", "-"):
+                    val = str(val_raw).strip()
+                    if not val.endswith("%") and str(r.get("tipe", "")).lower() == "persentase":
+                        val += "%"
                 else:
-                    val_raw = r.get("nilai")
-                    if val_raw is not None and str(val_raw).strip() not in ("", "—", "-"):
-                        val = str(val_raw).strip()
-                        if not val.endswith("%") and str(r.get("tipe", "")).lower() == "persentase":
-                            val += "%"
-                    else:
-                        val = "—"
-                    tip = str(r.get("tipe") or "Persentase") if val != "—" else "—"
-                    ket = r.get("keterangan") or ("TOP" if komp_upper == "MTOP" else "—")
-                    if komp_upper == "MTOP" and val == "—":
-                        ket = "—"
+                    val = "—"
+                tip = str(r.get("tipe") or "Persentase") if val != "—" else "—"
+                default_ket = "Program Thematic Yang Berlaku" if is_mthmt else ("TOP" if komp_upper == "MTOP" else "—")
+                ket = r.get("keterangan") or default_ket
+                if komp_upper == "MTOP" and val == "—":
+                    ket = "—"
 
                 disc_table_data.append([
                     Paragraph(komp, cell_style),
