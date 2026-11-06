@@ -149,51 +149,6 @@
         </div>
         {% endif %}
 
-        <!-- Approval Step Responses (fields filled in by each approver, separate from original submission) -->
-        {% if approval_step_sections and not hide_approval_history %}
-        <div class="card mb-4">
-            <div class="card-header bg-light">
-                <h5 class="mb-0"><i class="bi bi-pencil-square"></i> Approval Step Responses</h5>
-            </div>
-            <div class="card-body p-0">
-                {% for section in approval_step_sections %}
-                <div {% if not forloop.last %}class="border-bottom"{% endif %}>
-                    <div class="px-3 pt-3 pb-1 d-flex justify-content-between align-items-start flex-wrap gap-2">
-                        <div>
-                            <div class="d-flex align-items-center gap-2 mb-1">
-                                <h6 class="mb-0 fw-bold">{{ section.display_label|default:section.step_name }}</h6>
-                                {% if section.status == "approved" %}
-                                <span class="badge bg-success">&#10003; Approved</span>
-                                {% elif section.status == "rejected" %}
-                                <span class="badge bg-danger">&#10007; Rejected</span>
-                                {% endif %}
-                            </div>
-                            {% if section.completed_by %}
-                            <div class="text-muted small">
-                                by <strong>{{ section.completed_by }}</strong>{% if section.is_surrogate %} <span class="text-muted">(on behalf of {{ section.assigned_to }})</span>{% endif %}{% if section.completed_at %} &middot; {{ section.completed_at|date:"N j, Y \a\t g:i a" }}{% endif %}
-                            </div>
-                            {% endif %}
-                            {% if section.comments %}
-                            <p class="mb-0 mt-1 small fst-italic text-secondary">
-                                <span class="badge bg-warning text-dark me-1" title="This comment is visible to the submitter."><i class="bi bi-eye-fill"></i> Public</span>
-                                &#8220;{{ section.comments }}&#8221;
-                            </p>
-                            {% endif %}
-                        </div>
-                    </div>
-                    {% if section.fields %}
-                    <div class="px-3 pb-3">
-                        <table class="table table-bordered table-sm mb-0">
-                            {% include "django_forms_workflows/_form_data_rows.html" with form_data_ordered=section.fields %}
-                        </table>
-                    </div>
-                {% endif %}
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-
         <!-- Approval History -->
         {% if approval_tasks %}
 

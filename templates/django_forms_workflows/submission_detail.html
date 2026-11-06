@@ -416,93 +416,6 @@
     </div>
   </div>
 
-  {# ── Approval Step Responses (Fields completed by reviewers during stages) ── #}
-  {% if approval_step_sections and not hide_approval_history %}
-  <div class="doc-card mb-3 shadow-sm border">
-    <div class="doc-card-header bg-light py-2.5 px-3 d-flex align-items-center justify-content-between border-bottom">
-      <div class="d-flex align-items-center gap-2">
-        <i class="bi bi-ui-checks text-primary fs-5"></i>
-        <span class="doc-card-title fw-bold text-dark mb-0" style="font-size: 15px;">Approval Step Responses</span>
-      </div>
-      <span class="badge bg-secondary-subtle text-secondary border px-2.5 py-1 font-monospace" style="font-size: 11.5px;">
-        <i class="bi bi-check2-all me-1"></i>{{ approval_step_sections|length }} Completed Stages
-      </span>
-    </div>
-    <div class="doc-card-body p-0">
-      <div class="table-responsive">
-        <table class="table table-bordered table-hover table-striped align-middle mb-0" style="font-size: 13px;">
-          <thead class="table-light text-secondary border-bottom" style="font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em;">
-            <tr>
-              <th class="text-center py-2.5 px-2" style="width: 45px;">#</th>
-              <th class="py-2.5 px-3" style="min-width: 170px;">Tahapan Persetujuan</th>
-              <th class="py-2.5 px-3" style="min-width: 180px;">Reviewer / Approver</th>
-              <th class="text-center py-2.5 px-3" style="width: 130px;">Status</th>
-              <th class="py-2.5 px-3" style="width: 160px;">Waktu Respon</th>
-              <th class="py-2.5 px-3" style="min-width: 250px;">Catatan &amp; Detail Respon</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for section in approval_step_sections %}
-            <tr>
-              <td class="text-center text-muted fw-bold">{{ forloop.counter }}</td>
-              <td class="px-3 fw-bold text-dark">
-                {{ section.display_label|default:section.step_name }}
-              </td>
-              <td class="px-3">
-                <div class="fw-semibold text-dark">
-                  <i class="bi bi-person-check-fill text-success me-1"></i>{{ section.completed_by|default:"Reviewer" }}
-                </div>
-                {% if section.is_surrogate %}
-                  <div class="text-secondary small" style="font-size: 11px;">(on behalf of {{ section.assigned_to }})</div>
-                {% endif %}
-              </td>
-              <td class="text-center px-3">
-                {% if section.status == "approved" %}
-                  <span class="badge bg-success text-white px-2 py-1"><i class="bi bi-check-circle me-1"></i>Approved</span>
-                {% elif section.status == "rejected" %}
-                  <span class="badge bg-danger text-white px-2 py-1"><i class="bi bi-x-circle me-1"></i>Rejected</span>
-                {% else %}
-                  <span class="badge bg-secondary text-white px-2 py-1">{{ section.status|title }}</span>
-                {% endif %}
-              </td>
-              <td class="px-3 text-nowrap">
-                {% if section.completed_at %}
-                  <div class="fw-semibold text-dark">{{ section.completed_at|date:"d M Y, H:i" }} WIB</div>
-                {% else %}
-                  <span class="text-muted">—</span>
-                {% endif %}
-              </td>
-              <td class="px-3">
-                {% if section.comments %}
-                  <div class="p-2 bg-light border rounded small text-dark fst-italic mb-1" style="font-size: 12px; line-height: 1.4;">
-                    <i class="bi bi-chat-left-text text-muted me-1"></i>&#8220;{{ section.comments }}&#8221;
-                  </div>
-                {% endif %}
-                {% if section.fields %}
-                  <div class="row g-1 mt-1">
-                    {% for field in section.fields %}
-                      <div class="col-sm-6">
-                        <div class="p-1.5 bg-white border rounded small">
-                          <span class="text-muted d-block" style="font-size: 10.5px;">{{ field.label }}</span>
-                          <span class="fw-semibold text-dark" style="font-size: 11.5px;">{{ field.value|default:"—" }}</span>
-                        </div>
-                      </div>
-                    {% endfor %}
-                  </div>
-                {% endif %}
-                {% if not section.comments and not section.fields %}
-                  <span class="text-muted small">—</span>
-                {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-  {% endif %}
-
   {# ── Approval Timeline & Audit Log (Tabel Riwayat Persetujuan & Delegasi Wewenang) ── #}
   {% if approval_tasks %}
   <div class="doc-card mb-4 shadow-sm border" style="border-radius: 8px; overflow: hidden;">
@@ -762,14 +675,29 @@
                   {% endfor %}
 
                   {% if task.comments %}
-                    <div class="p-2 bg-light rounded border text-dark fst-italic" style="font-size: 12px; line-height: 1.45;">
+                    <div class="p-2 bg-light rounded border text-dark fst-italic mb-1.5" style="font-size: 12px; line-height: 1.45;">
                       <i class="bi bi-chat-quote text-muted me-1"></i>&#8220;{{ task.comments }}&#8221;
                     </div>
-                  {% elif task.status == 'skipped' %}
+                  {% endif %}
+
+                  {% if task.step_fields %}
+                    <div class="row g-1 mt-1 mb-1.5">
+                      {% for field in task.step_fields %}
+                        <div class="col-sm-6">
+                          <div class="p-1.5 bg-white border rounded small">
+                            <span class="text-muted d-block" style="font-size: 10px;">{{ field.label }}</span>
+                            <span class="fw-semibold text-dark" style="font-size: 11px;">{{ field.value|default:"—" }}</span>
+                          </div>
+                        </div>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+
+                  {% if task.status == 'skipped' %}
                     <div class="text-muted small fst-italic" style="font-size: 11px;">
                       <i class="bi bi-info-circle me-1"></i>Penugasan paralel ditutup otomatis karena tahapan telah diselesaikan oleh pejabat terkait.
                     </div>
-                  {% elif not task.delegations.all %}
+                  {% elif not task.comments and not task.step_fields and not task.delegations.all %}
                     <span class="text-muted small font-monospace">—</span>
                   {% endif %}
                 </td>

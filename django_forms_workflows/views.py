@@ -1716,6 +1716,13 @@ def submission_detail(request, submission_id):
         ).values_list("field_name", flat=True)
     )
     approval_step_sections = _build_approval_step_sections(submission)
+    task_fields_map = {
+        s["task_id"]: s.get("flat_fields") or s.get("fields", [])
+        for s in approval_step_sections
+        if s.get("task_id")
+    }
+    for t in approval_tasks:
+        t.step_fields = task_fields_map.get(t.id, [])
 
     # Elevated viewers (approvers / admins / superusers) may download PDFs of
     # post_approval forms even before the submission is fully approved.
@@ -4943,6 +4950,7 @@ def _build_approval_step_sections(submission):
 
         sections.append(
             {
+                "task_id": task.id,
                 "step_number": stage_order,
                 "step_name": step_name,
                 "display_label": task.display_label,
@@ -4956,6 +4964,9 @@ def _build_approval_step_sections(submission):
                 "is_surrogate": is_surrogate,
                 "comments": task.comments or "",
                 "fields": visible_fields,
+                "flat_fields": [
+                    f for f in flat_fields if f.get("_type") == "data" and f.get("value")
+                ],
             }
         )
 
