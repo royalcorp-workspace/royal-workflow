@@ -92,25 +92,25 @@ OFFICIAL_BRANDS = {
 
 
 def format_canonical_brand_name(brand_val: str) -> str:
-    """Format any brand input into its canonical official display name:
-    - Lady Americana
-    - Elite Springbed
-    - Serenity
-    - Royal Foam
-    - Classic
+    """Format any brand input into its canonical official uppercase display name:
+    - LADY AMERICANA
+    - ELITE SPRINGBED
+    - SERENITY
+    - ROYAL FOAM
+    - CLASSIC
     """
     b = str(brand_val or "").strip().upper()
     if "LADY" in b:
-        return "Lady Americana"
+        return "LADY AMERICANA"
     if "ELITE" in b:
-        return "Elite Springbed"
+        return "ELITE SPRINGBED"
     if "SERENITY" in b:
-        return "Serenity"
+        return "SERENITY"
     if "ROYAL" in b or "FOAM" in b:
-        return "Royal Foam"
+        return "ROYAL FOAM"
     if "CLASSIC" in b:
-        return "Classic"
-    return str(brand_val or "").strip()
+        return "CLASSIC"
+    return str(brand_val or "").strip().upper()
 
 
 def calculate_contract_duration(start_val, end_val) -> str:
@@ -815,6 +815,7 @@ def get_next_branch_spk_sequence(cabang: str, year: Optional[int] = None, form_s
     """
     Menghitung nomor urut sequence SPK berikutnya terisolasi per Cabang dan Tahun.
     Setiap cabang memulai nomor urut dari 1 (001) dan tidak melanjutkan cabang lain.
+    Nomor urut = MAX(sequence) + 1 berbasis (Cabang Pemohon + Tahun SPK).
     """
     import datetime
     import re
@@ -824,9 +825,9 @@ def get_next_branch_spk_sequence(cabang: str, year: Optional[int] = None, form_s
         year = datetime.date.today().year
 
     if not cabang:
-        cabang = "Tangerang"
+        cabang = "PUSAT"
 
-    cabang_clean = str(cabang).strip().upper()
+    cabang_clean = str(cabang).strip().upper().replace(" ", "")
 
     try:
         FormSubmission = apps.get_model("django_forms_workflows", "FormSubmission")
@@ -841,38 +842,28 @@ def get_next_branch_spk_sequence(cabang: str, year: Optional[int] = None, form_s
     except Exception:
         return 1
 
-    submissions = FormSubmission.objects.filter(
-        form_definition=form_def
-    ).exclude(status="draft").order_by("id")
+    submissions = FormSubmission.objects.filter(form_definition=form_def)
 
     max_seq = 0
-    pattern_official = re.compile(rf"^(?:No\.\s*)?(\d+)/SK-[^/]+/({re.escape(cabang_clean)})/[^/]+/[^/]+/({year})$", re.IGNORECASE)
-    pattern_general = re.compile(rf"^(?:No\.\s*)?(\d+)/.+/({year})$")
-
     for sub in submissions:
         data = sub.form_data or {}
-        sub_cabang = str(data.get("cabang") or "").strip().upper()
-        if sub_cabang != cabang_clean:
-            continue
-
         spk_str = str(data.get("nomor_spk") or "").strip()
-        if not spk_str:
+        if not spk_str or "OTOMATIS" in spk_str.upper() or "____" in spk_str:
             continue
 
-        m_off = pattern_official.match(spk_str)
-        if m_off:
-            try:
-                seq_num = int(m_off.group(1))
-                if seq_num > max_seq:
-                    max_seq = seq_num
-            except (ValueError, TypeError):
-                pass
+        created_year = sub.created_at.year if sub.created_at else year
+        if str(year) not in spk_str and created_year != year:
             continue
 
-        m_gen = pattern_general.match(spk_str)
-        if m_gen:
+        sub_cabang = str(data.get("cabang") or "").strip().upper().replace(" ", "")
+        cabang_matches = (sub_cabang == cabang_clean) or (f"/{cabang_clean}/" in spk_str.upper())
+        if not cabang_matches:
+            continue
+
+        m = re.match(r"^(?:No\.\s*)?(\d+)/", spk_str)
+        if m:
             try:
-                seq_num = int(m_gen.group(1))
+                seq_num = int(m.group(1))
                 if seq_num > max_seq:
                     max_seq = seq_num
             except (ValueError, TypeError):

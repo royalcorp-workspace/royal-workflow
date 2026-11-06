@@ -1065,12 +1065,12 @@ class DocumentTemplate(models.Model):
         context["pihak_pertama_jabatan"] = f"{comp_prof['director_title']} {comp_prof['display_name']}"
         context["pihak_pertama_alamat"] = comp_prof["factory_address"]
         context["perusahaan"] = comp_prof["display_name"]
-        context["bank_name"] = comp_prof["bank_name"]
-        context["bank_account_no"] = comp_prof["bank_account_no"]
-        context["bank_account_name"] = comp_prof["bank_account_name"]
+        context["bank_name"] = form_data.get("bank_perusahaan") or comp_prof["bank_name"]
+        context["bank_account_no"] = form_data.get("nomor_rekening_perusahaan") or comp_prof["bank_account_no"]
+        context["bank_account_name"] = form_data.get("atas_nama_rekening") or comp_prof["bank_account_name"]
         context["pengadilan_negeri"] = comp_prof["court_jurisdiction"]
         if not context.get("rekening_perusahaan"):
-            context["rekening_perusahaan"] = f"{comp_prof['bank_name']} {comp_prof['bank_account_no']} a/n {comp_prof['bank_account_name']}"
+            context["rekening_perusahaan"] = f"{context['bank_name']} {context['bank_account_no']} a/n {context['bank_account_name']}"
         # Standardisasi metode pembayaran baku (Non-Tunai Perbankan Resmi)
         context["metode_pembayaran"] = form_data.get("metode_pembayaran") or "Transfer / Cek / Giro"
         # Standardisasi syarat pencairan baku (Non-Input, Otomatis LUNAS)
@@ -1128,9 +1128,9 @@ class DocumentTemplate(models.Model):
         context["catatan_lain"] = form_data.get("catatan_lain") or ""
         context["jenis_pajak"] = "Exclude Ppn"
 
-        # Separate NIK and NPWP with backward compatibility
-        nik = form_data.get("nomor_nik")
-        npwp = form_data.get("nomor_npwp")
+        # Separate NIK and NPWP with unified NIK / NPWP display
+        nik = str(form_data.get("nomor_nik") or "").strip()
+        npwp = str(form_data.get("nomor_npwp") or "").strip()
         if not nik and not npwp and form_data.get("nomor_identitas"):
             old_id = str(form_data.get("nomor_identitas", "")).strip()
             old_type = str(form_data.get("jenis_identitas", "NIK")).upper()
@@ -1138,10 +1138,21 @@ class DocumentTemplate(models.Model):
                 npwp = old_id
             else:
                 nik = old_id
+        if nik and npwp and nik not in ("—", "-") and npwp not in ("—", "-"):
+            nik_npwp_display = f"{nik} / {npwp}"
+        elif nik and nik not in ("—", "-"):
+            nik_npwp_display = nik
+        elif npwp and npwp not in ("—", "-"):
+            nik_npwp_display = npwp
+        else:
+            nik_npwp_display = "—"
         context["nomor_nik"] = nik or "—"
         context["nomor_npwp"] = npwp or "—"
-        context["nomor_identitas"] = f"{npwp} / {nik}" if (npwp and nik) else (npwp or nik or "—")
+        context["nik_npwp_display"] = nik_npwp_display
+        context["nomor_identitas"] = nik_npwp_display
         context["email"] = form_data.get("email") or "—"
+        context["nama_pemilik"] = (form_data.get("nama_pemilik") or context.get("nama_pemilik") or "Pemilik Toko").strip().upper()
+        context["nama_toko"] = (form_data.get("nama_toko") or context.get("nama_toko") or "Mitra Toko").strip().upper()
 
         # Ensure official SPK number format
         spk_val = form_data.get("nomor_spk") or ""
@@ -1291,27 +1302,23 @@ class DocumentTemplate(models.Model):
                     d_komp_upper = "MTHMT"
 
                 is_mthmt = (d_komp_upper == "MTHMT")
-                if is_mthmt:
-                    d_val = ""
-                    d_tipe = ""
-                    d_ket = r.get("keterangan") or "Program Thematic Yang Berlaku"
+                d_tipe = r.get("tipe") or "Persentase"
+                d_val_raw = str(r.get("nilai") if r.get("nilai") is not None else "").strip()
+                if not d_val_raw or d_val_raw in ("—", "-"):
+                    d_val = "—"
+                    d_tipe = "—" if d_komp_upper == "MTOP" else d_tipe
+                elif "persen" in d_tipe.lower() or "%" in d_val_raw:
+                    clean_pct = d_val_raw.replace("%", "").strip()
+                    d_val = f"{clean_pct}%"
                 else:
-                    d_tipe = r.get("tipe") or "Persentase"
-                    d_val_raw = str(r.get("nilai") if r.get("nilai") is not None else "").strip()
-                    if not d_val_raw or d_val_raw in ("—", "-"):
-                        d_val = "—"
-                        d_tipe = "—" if d_komp_upper == "MTOP" else d_tipe
-                    elif "persen" in d_tipe.lower() or "%" in d_val_raw:
-                        clean_pct = d_val_raw.replace("%", "").strip()
-                        d_val = f"{clean_pct}%"
-                    else:
-                        try:
-                            d_val = f"Rp {int(round(float(re.sub(r'[^\d.-]', '', d_val_raw) or 0))):,}".replace(",", ".")
-                        except Exception:
-                            d_val = d_val_raw
-                    d_ket = r.get("keterangan") or ("TOP" if d_komp_upper == "MTOP" else "—")
-                    if d_komp_upper == "MTOP" and d_val == "—":
-                        d_ket = "—"
+                    try:
+                        d_val = f"Rp {int(round(float(re.sub(r'[^\d.-]', '', d_val_raw) or 0))):,}".replace(",", ".")
+                    except Exception:
+                        d_val = d_val_raw
+                default_ket = "Program Thematic Yang Berlaku" if is_mthmt else ("TOP" if d_komp_upper == "MTOP" else "—")
+                d_ket = r.get("keterangan") or default_ket
+                if d_komp_upper == "MTOP" and d_val == "—":
+                    d_ket = "—"
 
                 d_align_ket = "text-align: center;"
                 d_rows_html += f"""

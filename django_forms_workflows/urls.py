@@ -33,6 +33,7 @@ urlpatterns = [
     path("<slug:slug>/qr/", views.form_qr_code, name="form_qr_code"),
     path("<slug:slug>/auto-save/", views.form_auto_save, name="form_auto_save"),
     path("<slug:slug>/preview-pdf/", views.form_preview_pdf, name="form_preview_pdf"),
+    path("<slug:slug>/next-spk-number/", views.form_next_spk_number, name="form_next_spk_number"),
     # Batch import
     path(
         "<slug:slug>/batch-template/",

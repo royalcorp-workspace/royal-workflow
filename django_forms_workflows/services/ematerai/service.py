@@ -222,8 +222,8 @@ class EMeteraiService:
             pagesize=A4,
             leftMargin=45,
             rightMargin=45,
-            topMargin=34,
-            bottomMargin=34,
+            topMargin=26,
+            bottomMargin=26,
             title=str(spk_title),
             author=perusahaan or "PT Royal Abadi Sejahtera",
         )
@@ -261,7 +261,7 @@ class EMeteraiService:
             alignment=1,  # Center
             textColor=colors.HexColor("#111827"),
             spaceBefore=6.5,
-            spaceAfter=2,
+            spaceAfter=1.5,
             keepWithNext=True,
         )
         pasal_heading_style = ParagraphStyle(
@@ -284,7 +284,7 @@ class EMeteraiService:
             leading=12,
             alignment=4,  # Justified
             textColor=colors.HexColor("#111827"),
-            spaceAfter=2.5,
+            spaceAfter=2,
         )
         body_center_style = ParagraphStyle(
             "SPKBodyCenter",
@@ -294,7 +294,7 @@ class EMeteraiService:
             leading=12,
             alignment=1,  # Center
             textColor=colors.HexColor("#111827"),
-            spaceAfter=2.5,
+            spaceAfter=2,
         )
         th_style = ParagraphStyle(
             "SPKTableHeader",
@@ -498,23 +498,43 @@ class EMeteraiService:
         pihak_1_nama = comp_prof["director_name"]
         pihak_1_jabatan = f"{comp_prof['director_title']} {perusahaan}"
         pihak_1_alamat = comp_prof["factory_address"]
-        rekening_bank = comp_prof["bank_name"]
-        rekening_no = comp_prof["bank_account_no"]
-        rekening_an = comp_prof["bank_account_name"]
+        rekening_bank = form_data.get("bank_perusahaan") or comp_prof["bank_name"]
+        rekening_no = form_data.get("nomor_rekening_perusahaan") or comp_prof["bank_account_no"]
+        rekening_an = form_data.get("atas_nama_rekening") or comp_prof["bank_account_name"]
         rekening_display = form_data.get("rekening_perusahaan") or f"{rekening_bank} {rekening_no} a/n {rekening_an}"
         domisili_pn = comp_prof["court_jurisdiction"]
         logo_path = get_company_logo_abs_path(company_name=perusahaan, submission=submission, user=submission.submitter)
 
-        nama_toko = form_data.get("nama_toko") or "Mitra Toko"
-        nama_pemilik = form_data.get("nama_pemilik") or "Pemilik Toko"
-        alamat_toko = form_data.get("alamat_toko") or "-"
+        nama_toko = (form_data.get("nama_toko") or "Mitra Toko").strip().upper()
+        nama_pemilik = (form_data.get("nama_pemilik") or "Pemilik Toko").strip().upper()
+        alamat_toko = form_data.get("alamat_toko") or "—"
         kota_toko = form_data.get("kota") or form_data.get("cabang") or "Bandung"
-        no_npwp = form_data.get("nomor_npwp") or "—"
-        no_nik = form_data.get("nomor_nik") or form_data.get("nomor_identitas") or "—"
+        
+        no_npwp = str(form_data.get("nomor_npwp") or "").strip()
+        no_nik = str(form_data.get("nomor_nik") or form_data.get("nomor_identitas") or "").strip()
+        if no_nik and no_npwp and no_nik not in ("—", "-") and no_npwp not in ("—", "-"):
+            nik_npwp_val = f"{no_nik} / {no_npwp}"
+        elif no_nik and no_nik not in ("—", "-"):
+            nik_npwp_val = no_nik
+        elif no_npwp and no_npwp not in ("—", "-"):
+            nik_npwp_val = no_npwp
+        else:
+            nik_npwp_val = "—"
+
         no_email = form_data.get("email") or "—"
         jenis_pajak = form_data.get("jenis_pajak") or "Exclude PPN"
 
-        brand = form_data.get("brand") or "LADY"
+        brand = (form_data.get("brand") or "LADY").strip().upper()
+        if "LADY" in brand:
+            brand = "LADY AMERICANA"
+        elif "ELITE" in brand:
+            brand = "ELITE"
+        elif "SERENITY" in brand:
+            brand = "SERENITY"
+        elif "ROYAL" in brand or "FOAM" in brand:
+            brand = "ROYAL FOAM"
+        elif "CLASSIC" in brand:
+            brand = "CLASSIC"
         cabang = form_data.get("cabang") or "TANGERANG"
         tgl_mulai = format_date_indonesia(form_data.get("tanggal_mulai") or "01/10/2026")
         tgl_akhir = format_date_indonesia(form_data.get("tanggal_berakhir") or "30/09/2027")
@@ -594,32 +614,32 @@ class EMeteraiService:
         # Preamble
         elements.append(Paragraph("Yang bertanda tangan di bawah ini :", body_style))
 
-        # Identitas Para Pihak Table
+        # Identitas Para Pihak Table - Fixed widths & aligned colons (:) with 28pt indent
+        party_table_col_widths = [28, 82, 12, 383]
         parties_data = [
-            [Paragraph("Nama", cell_style), Paragraph(":", cell_center_style), Paragraph(f"<b>{pihak_1_nama}</b>", cell_bold_style)],
-            [Paragraph("Jabatan", cell_style), Paragraph(":", cell_center_style), Paragraph(f"<b>{pihak_1_jabatan}</b>", cell_bold_style)],
-            [Paragraph("Alamat", cell_style), Paragraph(":", cell_center_style), Paragraph(pihak_1_alamat, cell_style)],
-            [Paragraph(f"Selanjutnya disebut sebagai <b>PIHAK PERTAMA</b> selaku Produsen produk Springbed merk <b>“{brand}”</b>", body_style), Paragraph("", cell_style), Paragraph("", cell_style)],
-            [Paragraph("Nama", cell_style), Paragraph(":", cell_center_style), Paragraph(f"<b>{nama_pemilik}</b>", cell_bold_style)],
-            [Paragraph("Pemilik Tk.", cell_style), Paragraph(":", cell_center_style), Paragraph(f"<b>{nama_toko}</b>", cell_bold_style)],
-            [Paragraph("Alamat", cell_style), Paragraph(":", cell_center_style), Paragraph(f"{alamat_toko}, {kota_toko}", cell_style)],
-            [Paragraph("NPWP", cell_style), Paragraph(":", cell_center_style), Paragraph(no_npwp, cell_style)],
-            [Paragraph("NIK", cell_style), Paragraph(":", cell_center_style), Paragraph(no_nik, cell_style)],
-            [Paragraph("Email", cell_style), Paragraph(":", cell_center_style), Paragraph(no_email, cell_style)],
-            [Paragraph(f"Selanjutnya disebut sebagai <b>PIHAK KEDUA</b> Dealer produk Springbed merk <b>“{brand}”</b>", body_style), Paragraph("", cell_style), Paragraph("", cell_style)],
+            ["", Paragraph("Nama", cell_style), Paragraph(":", cell_center_style), Paragraph(f"<b>{pihak_1_nama}</b>", cell_bold_style)],
+            ["", Paragraph("Jabatan", cell_style), Paragraph(":", cell_center_style), Paragraph(f"<b>{pihak_1_jabatan}</b>", cell_bold_style)],
+            ["", Paragraph("Alamat", cell_style), Paragraph(":", cell_center_style), Paragraph(pihak_1_alamat, cell_style)],
+            [Paragraph(f"Selanjutnya disebut sebagai <b>PIHAK PERTAMA</b> selaku Produsen produk Springbed merk <b>“{brand}”</b>", body_style), "", "", ""],
+            ["", Paragraph("Nama", cell_style), Paragraph(":", cell_center_style), Paragraph(f"<b>{nama_pemilik}</b>", cell_bold_style)],
+            ["", Paragraph("Pemilik Tk.", cell_style), Paragraph(":", cell_center_style), Paragraph(f"<b>{nama_toko}</b>", cell_bold_style)],
+            ["", Paragraph("Alamat", cell_style), Paragraph(":", cell_center_style), Paragraph(f"{alamat_toko}, {kota_toko}" if kota_toko not in alamat_toko else alamat_toko, cell_style)],
+            ["", Paragraph("NIK / NPWP", cell_style), Paragraph(":", cell_center_style), Paragraph(nik_npwp_val, cell_style)],
+            ["", Paragraph("Email", cell_style), Paragraph(":", cell_center_style), Paragraph(no_email, cell_style)],
+            [Paragraph(f"Selanjutnya disebut sebagai <b>PIHAK KEDUA</b> Dealer produk Springbed merk <b>“{brand}”</b>", body_style), "", "", ""],
         ]
-        t_parties = Table(parties_data, colWidths=[85, 12, 408])
+        t_parties = Table(parties_data, colWidths=party_table_col_widths)
         t_parties.setStyle(
             TableStyle(
                 [
                     ("GRID", (0, 0), (-1, -1), 0, colors.transparent),
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("SPAN", (0, 3), (2, 3)),
-                    ("SPAN", (0, 10), (2, 10)),
-                    ("TOPPADDING", (0, 0), (-1, -1), 1),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-                    ("BOTTOMPADDING", (0, 3), (-1, 3), 2.5),
-                    ("BOTTOMPADDING", (0, 10), (-1, 10), 2.5),
+                    ("SPAN", (0, 3), (3, 3)),
+                    ("SPAN", (0, 9), (3, 9)),
+                    ("TOPPADDING", (0, 0), (-1, -1), 1.5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
+                    ("BOTTOMPADDING", (0, 3), (-1, 3), 4),
+                    ("BOTTOMPADDING", (0, 9), (-1, 9), 4),
                     ("LEFTPADDING", (0, 0), (-1, -1), 0),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                 ]
@@ -648,7 +668,7 @@ class EMeteraiService:
         elements.append(Paragraph("<u><b>Pasal 2</b></u>", pasal_heading_style))
         elements.append(
             Paragraph(
-                f"Omzet penjualan {brand} PIHAK KEDUA dihitung berdasarkan harga setelah dikurangi potongan retur, discount dan potongan – potongan lainnya (harga netto), "
+                f"Omzet penjualan <b>{brand}</b> <b>PIHAK KEDUA</b> dihitung berdasarkan harga setelah dikurangi potongan retur, discount dan potongan – potongan lainnya (harga netto), "
                 f"berdasarkan price list yang berlaku mulai tanggal 1 Februari 2023 dan mengikuti perubahannya. (Harga tidak mengikat)",
                 body_style,
             )
@@ -759,22 +779,18 @@ class EMeteraiService:
                     komp_upper = "MTHMT"
 
                 is_mthmt = (komp_upper == "MTHMT")
-                if is_mthmt:
-                    val = ""
-                    tip = ""
-                    ket = r.get("keterangan") or "Program Thematic Yang Berlaku"
+                val_raw = r.get("nilai")
+                if val_raw is not None and str(val_raw).strip() not in ("", "—", "-"):
+                    val = str(val_raw).strip()
+                    if not val.endswith("%") and str(r.get("tipe", "")).lower() == "persentase":
+                        val += "%"
                 else:
-                    val_raw = r.get("nilai")
-                    if val_raw is not None and str(val_raw).strip() not in ("", "—", "-"):
-                        val = str(val_raw).strip()
-                        if not val.endswith("%") and str(r.get("tipe", "")).lower() == "persentase":
-                            val += "%"
-                    else:
-                        val = "—"
-                    tip = str(r.get("tipe") or "Persentase") if val != "—" else "—"
-                    ket = r.get("keterangan") or ("TOP" if komp_upper == "MTOP" else "—")
-                    if komp_upper == "MTOP" and val == "—":
-                        ket = "—"
+                    val = "—"
+                tip = str(r.get("tipe") or "Persentase") if val != "—" else "—"
+                default_ket = "Program Thematic Yang Berlaku" if is_mthmt else ("TOP" if komp_upper == "MTOP" else "—")
+                ket = r.get("keterangan") or default_ket
+                if komp_upper == "MTOP" and val == "—":
+                    ket = "—"
 
                 disc_table_data.append([
                     Paragraph(komp, cell_style),
@@ -800,7 +816,7 @@ class EMeteraiService:
 
         def build_rek_block(perusahaan_name, rek_an, rek_bank, rek_no):
             rek_intro = Paragraph(
-                f"Pembayaran dianggap sah apabila dana telah masuk ke rekening {perusahaan_name}, dengan nomer rekening sbb :",
+                f"Pembayaran dianggap sah apabila dana telah masuk ke rekening <b>{perusahaan_name}</b>, dengan nomer rekening sbb :",
                 body_style,
             )
             rek_table_data = [
@@ -836,13 +852,19 @@ class EMeteraiService:
             komp_biaya_raw = form_data.get("komponen_biaya_support") or form_data.get("komponen_biaya")
             komp_biaya_text = format_komponen_biaya_legal_text(komp_biaya_raw)
             elements.append(Paragraph("<u><b>Pasal 4</b></u>", pasal_heading_style))
-            p4_supp = (
-                f"(1) Pihak Pertama memberikan support promosi yang meliputi biaya ({komp_biaya_text}) kepada Pihak Kedua sebesar <b>{pct_promo}%</b>. "
-                f"Support promosi tersebut <b>TIDAK</b> meliputi biaya Billboard, Pajak Billboard, dan Backdrop apabila Pihak Kedua membuka cabang baru atau toko baru.<br/>"
-                f"(2) Support promosi ini dapat dicairkan setelah pembayaran <b>LUNAS</b>.<br/>"
-                f"(3) Grace period selama 1 (satu) bulan dari masa kontrak berakhir, apabila Pihak Kedua belum mencapai target."
-            )
-            elements.append(Paragraph(p4_supp, body_style))
+            p4_table = Table([
+                [Paragraph("(1)", body_style), Paragraph(f"Pihak Pertama memberikan support promosi yang meliputi biaya ({komp_biaya_text}) kepada Pihak Kedua sebesar <b>{pct_promo}%</b>. Support promosi tersebut <b>TIDAK</b> meliputi biaya Billboard, Pajak Billboard, dan Backdrop apabila Pihak Kedua membuka cabang baru atau toko baru.", body_style)],
+                [Paragraph("(2)", body_style), Paragraph("Support promosi ini dapat dicairkan setelah pembayaran <b>LUNAS</b>.", body_style)],
+                [Paragraph("(3)", body_style), Paragraph("Grace period selama 1 (satu) bulan dari masa kontrak berakhir, apabila Pihak Kedua belum mencapai target.", body_style)],
+            ], colWidths=[18, 487], hAlign='LEFT')
+            p4_table.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 1),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]))
+            elements.append(p4_table)
 
         elements.append(Paragraph(f"<u><b>Pasal {4 + p_offset}</b></u>", pasal_heading_style))
         elements.append(
@@ -863,24 +885,24 @@ class EMeteraiService:
 
         elements.append(Paragraph(f"<u><b>Pasal {6 + p_offset}</b></u>", pasal_heading_style))
         p_insentif_intro = Paragraph(
-            "(1) Pihak Pertama memberikan Insentif kepada Pihak Kedua saat perjanjian ini berakhir, "
+            "(1) <b>Pihak Pertama</b> memberikan Insentif kepada <b>Pihak Kedua</b> saat perjanjian ini berakhir, "
             "atau ketika target penjualan sudah terpenuhi (mana yang lebih dulu tercapai) dan seluruh kewajiban "
-            "pembayaran Pihak Kedua kepada Pihak Pertama telah selesai atau LUNAS. "
+            "pembayaran <b>Pihak Kedua</b> kepada <b>Pihak Pertama</b> telah selesai atau <b>LUNAS</b>. "
             "Adapun perhitungan insentif adalah sebagai berikut :",
             body_style,
         )
         t_matrix = build_incentive_matrix_table(form_data)
         p_insentif_outro = Paragraph(
-            "Insentif yang akan diberikan seperti perhitungan pada tabel di atas.<br/>"
-            f"(2) Pencairan Insentif yang menjadi hak Pihak Kedua dapat diberikan melalui <b>{jenis_pencairan_insentif}</b>.",
+            "<b>Insentif yang akan diberikan seperti perhitungan pada tabel di atas.</b><br/>"
+            f"(2) Pencairan Insentif yang menjadi hak <b>Pihak Kedua</b> dapat diberikan melalui <b>{jenis_pencairan_insentif}</b>.",
             body_style,
         )
         elements.append(
             KeepTogether([
                 p_insentif_intro,
-                Spacer(1, 2),
+                Spacer(1, 4),
                 t_matrix,
-                Spacer(1, 2),
+                Spacer(1, 4),
                 p_insentif_outro,
             ])
         )
@@ -888,20 +910,32 @@ class EMeteraiService:
         # BAB III TATA CARA PEMBAYARAN
         elements.append(Paragraph("<b>BAB III<br/>TATA CARA PEMBAYARAN</b>", bab_heading_style))
         elements.append(Paragraph(f"<u><b>Pasal {7 + p_offset}</b></u>", pasal_heading_style))
-        elements.append(Paragraph(f"Wajib melaksanakan Pembayaran kepada Pihak Pertama paling lambat <b>{top}</b> hari setelah tanggal pengiriman (selanjutnya disebut “Jangka Waktu Pembayaran”).", body_style))
+        elements.append(
+            Paragraph(
+                f"Wajib melaksanakan Pembayaran kepada <b>Pihak Pertama</b> paling lambat <b>{top} hari</b> setelah tanggal pengiriman (selanjutnya disebut “Jangka Waktu Pembayaran”).",
+                body_style,
+            )
+        )
 
         elements.append(Paragraph(f"<u><b>Pasal {8 + p_offset}</b></u>", pasal_heading_style))
-        p_ket_top_text = (
-            "a. Pihak Pertama dalam hal ini dapat menghilangkan diskon TOP jika Pihak Kedua tidak membayar tagihan sesuai dengan jangka waktu pembayaran yang telah diberikan (TOP).<br/>"
-            "b. Jika terjadi gagal bayar atau bad debt maka Pihak Pertama berhak menyita asset dari Pihak Kedua jika diperlukan."
-        )
-        elements.append(Paragraph(p_ket_top_text, body_style))
+        t_pasal8 = Table([
+            [Paragraph("a.", body_style), Paragraph("Pihak Pertama dalam hal ini dapat menghilangkan diskon TOP jika Pihak Kedua tidak membayar tagihan sesuai dengan jangka waktu pembayaran yang telah diberikan (TOP).", body_style)],
+            [Paragraph("b.", body_style), Paragraph("Jika terjadi gagal bayar atau <i>bad debt</i> maka Pihak Pertama berhak menyita asset dari Pihak Kedua jika diperlukan.", body_style)],
+        ], colWidths=[18, 487], hAlign='LEFT')
+        t_pasal8.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 1),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ]))
+        elements.append(t_pasal8)
 
         elements.append(Paragraph(f"<u><b>Pasal {9 + p_offset}</b></u>", pasal_heading_style))
         elements.append(
             Paragraph(
                 f"Sistem pembayaran melalui Transfer atau buka Cek/Giro yang telah di tulis nama <b>{perusahaan}</b> "
-                f"dengan Nomer Rekening sesuai yang ada pada Faktur dan Kontra Bon. Serta <b>TIDAK DIPERKENANKAN</b> membayar secara TUNAI kepada Salesman/Collector/Kepala Depo/ASM/BM "
+                f"dengan Nomer Rekening sesuai yang ada pada Faktur dan Kontra Bon. Serta <b>TIDAK DIPERKENANKAN</b> membayar secara <b>TUNAI</b> kepada Salesman/Collector/Kepala Depo/ASM/BM "
                 f"atau menitip pembayaran kepada Supir maupun Karyawan lainnya.",
                 body_style,
             )

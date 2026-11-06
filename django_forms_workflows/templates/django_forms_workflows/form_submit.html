@@ -8,7 +8,7 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'django_forms_workflows/css/forms.css' %}">
-<link rel="stylesheet" href="{% static 'django_forms_workflows/css/kontrak-form.css' %}?v=20261104_v2">
+<link rel="stylesheet" href="{% static 'django_forms_workflows/css/kontrak-form.css' %}?v=20261105_fixfooter">
 <style>
     /* ── Enterprise Document UI Styling ── */
     .form-document-card {
@@ -285,8 +285,8 @@
                 </div>
 
                 {# Unified Button Bar inside <form> #}
-                <div class="d-flex justify-content-between align-items-center mt-4 pt-3 border-top w-100 form-wizard-footer">
-                    <div class="footer-left-actions d-flex gap-2 align-items-center">
+                <div id="unifiedWizardFooter" class="unified-wizard-footer form-wizard-footer">
+                    <div class="footer-group-left footer-left-actions">
                         <a href="{% url 'forms_workflows:form_submission_hub' form_def.slug %}" class="btn btn-outline-secondary btn-back-to-forms" id="btnBackToForms">
                             <i class="bi bi-arrow-left me-1"></i> <span class="d-none d-lg-inline">Kembali ke Riwayat Pengajuan</span><span class="d-inline d-lg-none">Riwayat</span>
                         </a>
@@ -296,7 +296,7 @@
                         </button>
                         {% endif %}
                     </div>
-                    <div class="footer-right-actions d-flex gap-2 align-items-center flex-wrap">
+                    <div class="footer-group-right footer-right-actions">
                         {% if not is_anonymous and is_draft and draft_id %}
                         <a href="{% url 'forms_workflows:discard_draft' draft_id %}" class="btn btn-outline-danger btn-sm btn-discard-draft" id="btnDiscardDraft">
                             <i class="bi bi-trash3 me-1"></i> Discard Draft
@@ -469,6 +469,9 @@
         if (formElement && typeof FormEnhancements !== 'undefined') {
             try {
                 const config = {{ form_enhancements_config|default:"{}"|safe }};
+                if (formElement.dataset.formSlug === 'permohonan-kontrak') {
+                    config.multiStepEnabled = false;
+                }
                 config.autoSaveInterval = 15000; // 15 seconds
                 const formEnhancements = new FormEnhancements(formElement, config);
                 window.formEnhancements = formEnhancements;
