@@ -427,13 +427,13 @@
           <i class="bi bi-journal-check fs-5"></i>
         </div>
         <div>
-          <h6 class="fw-bold text-dark mb-0" style="font-size: 15px;">Riwayat Persetujuan &amp; Delegasi Wewenang</h6>
-          <span class="text-muted" style="font-size: 11.5px;">Jejak audit alur pengesahan dokumen, telaah staf pendelegasian, dan pencatatan sistem</span>
+          <h6 class="fw-bold text-dark mb-0" style="font-size: 15px;">Riwayat Persetujuan</h6>
+          <span class="text-muted" style="font-size: 11.5px;">Log persetujuan tiket</span>
         </div>
       </div>
       <div>
         <span class="badge bg-light text-secondary border px-2.5 py-1.5 font-monospace" style="font-size: 11.5px;">
-          <i class="bi bi-list-check me-1"></i>{{ approval_tasks|length }} Total Entri Alur
+          <i class="bi bi-list-check me-1"></i>{{ approval_tasks|length }} Riwayat
         </span>
       </div>
     </div>
@@ -442,17 +442,14 @@
     <div class="bg-light py-2 px-3.5 border-bottom d-flex align-items-center justify-content-between flex-wrap gap-2">
       <div class="d-flex align-items-center gap-2 flex-wrap" id="auditFilterButtonGroup">
         <button type="button" class="btn btn-sm btn-primary fw-semibold px-3 py-1 shadow-xs active" id="btnFilterActive" onclick="setAuditFilter('active', this)">
-          <i class="bi bi-check2-circle me-1"></i>Persetujuan &amp; Delegasi ({{ active_tasks_count|default:"9" }})
+          <i class="bi bi-check2-circle me-1"></i>Persetujuan ({{ active_tasks_count|default:approval_tasks|length }})
         </button>
         <button type="button" class="btn btn-sm btn-outline-secondary px-3 py-1" id="btnFilterAll" onclick="setAuditFilter('all', this)">
-          <i class="bi bi-list-nested me-1"></i>Seluruh Riwayat ({{ approval_tasks|length }})
+          <i class="bi bi-list-nested me-1"></i>Semua ({{ approval_tasks|length }})
         </button>
         <button type="button" class="btn btn-sm btn-outline-secondary px-3 py-1" id="btnFilterSkipped" onclick="setAuditFilter('skipped', this)">
-          <i class="bi bi-gear-wide-connected me-1"></i>Penyesuaian Sistem ({{ skipped_tasks_count|default:"6" }})
+          <i class="bi bi-gear-wide-connected me-1"></i>Sistem ({{ skipped_tasks_count|default:"0" }})
         </button>
-      </div>
-      <div class="text-muted small d-none d-md-block" style="font-size: 11px;">
-        <i class="bi bi-info-circle text-primary me-1"></i>Klik opsi untuk menyaring tampilan riwayat
       </div>
     </div>
 
@@ -478,11 +475,11 @@
             <thead class="table-light text-secondary border-bottom" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;">
               <tr>
                 <th class="text-center py-2.5 px-2" style="width: 45px;">#</th>
-                <th class="py-2.5 px-3" style="width: 155px;">Waktu Eksekusi</th>
-                <th class="py-2.5 px-3" style="width: 190px;">Tahapan Alur</th>
-                <th class="py-2.5 px-3" style="width: 210px;">Pejabat / Pelaksana</th>
-                <th class="text-center py-2.5 px-3" style="width: 135px;">Keputusan</th>
-                <th class="py-2.5 px-3" style="min-width: 280px;">Catatan &amp; Pendelegasian Wewenang</th>
+                <th class="py-2.5 px-3" style="width: 155px;">WAKTU</th>
+                <th class="py-2.5 px-3" style="width: 190px;">TAHAP</th>
+                <th class="py-2.5 px-3" style="width: 210px;">APPROVER / USER</th>
+                <th class="text-center py-2.5 px-3" style="width: 135px;">STATUS</th>
+                <th class="py-2.5 px-3" style="min-width: 280px;">CATATAN</th>
               </tr>
             </thead>
             <tbody>
@@ -511,7 +508,7 @@
                   {% endif %}
                 </td>
                 <td class="px-3">
-                  <div class="fw-bold text-dark" style="font-size: 12.5px; line-height: 1.35;">Inisiasi Pengajuan Formulir</div>
+                  <div class="fw-bold text-dark" style="font-size: 12.5px; line-height: 1.35;">Pengajuan Dibuat</div>
                   <div class="text-muted small mt-1" style="font-size: 11px;">
                     <i class="bi bi-file-earmark-check text-primary me-1"></i>{{ submission.form_definition.name }}
                     {% if submission.form_data.cabang %}
@@ -552,7 +549,7 @@
                 </td>
                 <td class="px-3">
                   <div class="small text-dark" style="font-size: 12px; line-height: 1.4;">
-                    Dokumen pengajuan berhasil dibuat dan diajukan ke sistem untuk verifikasi berjenjang.
+                    Form diajukan
                   </div>
                 </td>
               </tr>
@@ -580,16 +577,6 @@
                 </td>
                 <td class="px-3">
                   <div class="fw-bold text-dark" style="font-size: 12.5px; line-height: 1.35;">{{ task.display_label }}</div>
-                  <div class="text-muted small mt-1" style="font-size: 11px;">
-                    <i class="bi bi-person-badge text-secondary me-1"></i>Target:
-                    {% if task.assigned_to %}
-                      {{ task.assigned_to.get_full_name|default:task.assigned_to.username }}
-                    {% elif task.assigned_group %}
-                      {{ task.assigned_group.name }}
-                    {% else %}
-                      —
-                    {% endif %}
-                  </div>
                 </td>
                 <td class="px-3">
                   {% if task.completed_by %}
@@ -705,17 +692,6 @@
               {% endfor %}
             </tbody>
           </table>
-        </div>
-
-        {# Footer Ringkas & Elegan #}
-        <div class="py-2.5 px-3.5 bg-light border-top d-flex align-items-center justify-content-between flex-wrap gap-2 text-muted small" style="font-size: 11px;">
-          <div class="d-flex align-items-center gap-1.5">
-            <i class="bi bi-shield-check text-success"></i>
-            <span>Seluruh catatan alur dan pendelegasian diverifikasi secara terintegrasi oleh sistem Royal Workflow.</span>
-          </div>
-          <div>
-            <span class="font-monospace">Audit Log Terverifikasi</span>
-          </div>
         </div>
       {% endif %}
     </div>
