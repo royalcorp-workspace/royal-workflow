@@ -14,6 +14,7 @@ from decimal import Decimal
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.files.storage import default_storage
+from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.db import models
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -1247,19 +1248,50 @@ def form_submission_hub(request, slug):
     # Order newest first
     submissions_qs = submissions_qs.select_related("submitter").order_by("-created_at")
 
-    # Pending approval tasks assigned to current user for these submissions
+    # Whitelist & parse per_page (default 15, options [15, 30, 50])
+    PER_PAGE_CHOICES = [15, 30, 50]
+    DEFAULT_PER_PAGE = 15
+    try:
+        per_page = int(request.GET.get("per_page", DEFAULT_PER_PAGE))
+        if per_page not in PER_PAGE_CHOICES:
+            per_page = DEFAULT_PER_PAGE
+    except (ValueError, TypeError):
+        per_page = DEFAULT_PER_PAGE
+
+    paginator = Paginator(submissions_qs, per_page)
+    page_number = request.GET.get("page", 1)
+    try:
+        page_obj = paginator.page(page_number)
+    except PageNotAnInteger:
+        page_obj = paginator.page(1)
+    except EmptyPage:
+        page_obj = paginator.page(paginator.num_pages)
+
+    elided_page_range = paginator.get_elided_page_range(
+        number=page_obj.number,
+        on_each_side=1,
+        on_ends=1,
+    )
+
+    # Query string preservation for pagination links (strip 'page')
+    query_params = request.GET.copy()
+    if "page" in query_params:
+        del query_params["page"]
+    query_params_no_page = query_params.urlencode()
+
+    # Pending approval tasks assigned to current user for submissions on active page only
     pending_tasks_sub_ids = set(
         ApprovalTask.objects.filter(
             status="pending",
-            submission__in=submissions_qs,
+            submission__in=page_obj.object_list,
         )
         .filter(models.Q(assigned_to=user) | models.Q(assigned_group__in=user_groups))
         .values_list("submission_id", flat=True)
     )
 
-    # Transform to unified table rows
+    # Transform to unified table rows (active page only)
     rows = []
-    for sub in submissions_qs:
+    for sub in page_obj.object_list:
         fd = sub.form_data or {}
 
         # 1. No. SPK (semi-bold)
@@ -1338,7 +1370,12 @@ def form_submission_hub(request, slug):
             "form_def": form_def,
             "can_submit": user_can_submit_form(user, form_def),
             "rows": rows,
-            "total_count": len(rows),
+            "total_count": paginator.count,
+            "page_obj": page_obj,
+            "paginator": paginator,
+            "elided_page_range": elided_page_range,
+            "per_page": per_page,
+            "query_params_no_page": query_params_no_page,
             "search_query": search_query,
             "status_filter": status_filter,
             "submit_url": reverse("forms_workflows:form_submit", kwargs={"slug": form_def.slug}),

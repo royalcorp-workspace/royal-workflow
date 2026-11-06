@@ -36,10 +36,9 @@
         var lengthHtml = '<div class="d-flex align-items-center gap-2 me-1">' +
             '<label class="text-muted small mb-0" style="font-size: 12px;">Show:</label>' +
             '<select class="form-select form-select-sm page-len-select" id="customLengthSelect">' +
-            '<option value="10">10</option>' +
-            '<option value="25">25</option>' +
+            '<option value="15">15</option>' +
+            '<option value="30">30</option>' +
             '<option value="50">50</option>' +
-            '<option value="100">100</option>' +
             '</select>' +
             '</div>';
         var $lengthSelect = $(lengthHtml);
@@ -218,7 +217,7 @@
         var statusFilter = $table.data('status') || '';
         var pageLenKey = $table.data('page-length-key') || 'my_submissions_page_len';
 
-        var savedPageLen = parseInt(localStorage.getItem(pageLenKey), 10) || 25;
+        var savedPageLen = parseInt(localStorage.getItem(pageLenKey), 10) || 15;
 
         // Custom extra column mapping if any
         var extraColTargets = [];
