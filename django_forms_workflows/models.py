@@ -982,10 +982,11 @@ class DocumentTemplate(models.Model):
                     ).first()
                 )
             if st_direksi_approved or submission.status == "approved":
+                fallback_dt = getattr(submission, "completed_at", None) or getattr(submission, "submitted_at", None) or getattr(submission, "created_at", None) or timezone.now()
                 approved_time = (
                     timezone.localtime(st_direksi_approved.completed_at).strftime("%d/%m/%Y")
                     if st_direksi_approved and st_direksi_approved.completed_at
-                    else timezone.localtime(submission.updated_at).strftime("%d/%m/%Y")
+                    else timezone.localtime(fallback_dt).strftime("%d/%m/%Y")
                 )
                 direksi_box = (
                     f'<div style="border: 1.5px solid #16a34a; border-radius: 6px; padding: 4px 6px; background: #f0fdf4; color: #166534; font-size: 10px; text-align: center; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; width: 100%; box-sizing: border-box;">'

@@ -428,6 +428,7 @@
     {# ── Filter Bar (Card Header) ── #}
     <div class="card-filter-header">
       <form method="get" class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-2 mb-0" id="filterForm">
+        <input type="hidden" name="per_page" id="hubFilterPerPage" value="{{ per_page }}">
         <div class="filter-search-wrapper">
           <i class="bi bi-search filter-search-icon"></i>
           <input type="text"
@@ -560,12 +561,74 @@
       </table>
     </div>
     
-    {% if rows %}
-    <div class="card-table-footer d-flex align-items-center justify-content-between text-muted small">
-      <span>Menampilkan <strong>{{ total_count }}</strong> data pengajuan</span>
-      <span class="text-secondary" style="font-size: 12px;">Sistem Terintegrasi Royal Workflow</span>
+    <div class="card-table-footer d-flex flex-column flex-md-row align-items-center justify-content-between gap-3 py-2.5 px-3 border-top bg-light text-muted small">
+      {# Sisi Kiri: Ringkasan Data & Dropdown Ukuran Halaman #}
+      <div class="d-flex align-items-center gap-2.5 flex-wrap">
+        <span>
+          {% if paginator.count > 0 %}
+            Menampilkan <strong>{{ page_obj.start_index }}–{{ page_obj.end_index }}</strong> dari <strong>{{ paginator.count }}</strong> pengajuan
+          {% else %}
+            Menampilkan <strong>0</strong> pengajuan
+          {% endif %}
+        </span>
+        <span class="text-secondary opacity-50">|</span>
+        <div class="d-flex align-items-center gap-1.5">
+          <label for="perPageSelect" class="text-secondary mb-0" style="font-size: 12px;">Tampilkan:</label>
+          <select id="perPageSelect" class="form-select form-select-sm" style="width: auto; padding: 2px 24px 2px 8px; font-size: 12px; cursor: pointer;">
+            <option value="15" {% if per_page == 15 %}selected{% endif %}>15</option>
+            <option value="30" {% if per_page == 30 %}selected{% endif %}>30</option>
+            <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+          </select>
+          <span class="text-secondary" style="font-size: 12px;">per hal</span>
+        </div>
+      </div>
+
+      {# Sisi Kanan: Navigasi Pagination (Otomatis Sembunyi Jika Data <= Batas Per Page) #}
+      {% if page_obj.has_other_pages %}
+      <nav aria-label="Navigasi Halaman Pengajuan">
+        <ul class="pagination pagination-sm mb-0">
+          {# Tombol Previous #}
+          {% if page_obj.has_previous %}
+            <li class="page-item">
+              <a class="page-link" href="?{% if query_params_no_page %}{{ query_params_no_page }}&{% endif %}page={{ page_obj.previous_page_number }}" aria-label="Sebelumnya">
+                <i class="bi bi-chevron-left" style="font-size: 11px;"></i>
+              </a>
+            </li>
+          {% else %}
+            <li class="page-item disabled">
+              <span class="page-link"><i class="bi bi-chevron-left" style="font-size: 11px;"></i></span>
+            </li>
+          {% endif %}
+
+          {# Nomor Halaman & Elipsis #}
+          {% for num in elided_page_range %}
+            {% if num == paginator.ELLIPSIS %}
+              <li class="page-item disabled"><span class="page-link">&hellip;</span></li>
+            {% elif num == page_obj.number %}
+              <li class="page-item active" aria-current="page"><span class="page-link fw-bold">{{ num }}</span></li>
+            {% else %}
+              <li class="page-item">
+                <a class="page-link" href="?{% if query_params_no_page %}{{ query_params_no_page }}&{% endif %}page={{ num }}">{{ num }}</a>
+              </li>
+            {% endif %}
+          {% endfor %}
+
+          {# Tombol Next #}
+          {% if page_obj.has_next %}
+            <li class="page-item">
+              <a class="page-link" href="?{% if query_params_no_page %}{{ query_params_no_page }}&{% endif %}page={{ page_obj.next_page_number }}" aria-label="Berikutnya">
+                <i class="bi bi-chevron-right" style="font-size: 11px;"></i>
+              </a>
+            </li>
+          {% else %}
+            <li class="page-item disabled">
+              <span class="page-link"><i class="bi bi-chevron-right" style="font-size: 11px;"></i></span>
+            </li>
+          {% endif %}
+        </ul>
+      </nav>
+      {% endif %}
     </div>
-    {% endif %}
 
   </div>
 
@@ -663,7 +726,29 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // 3. Handle Hapus Draf via AJAX Modal
+    // 3. Handle Sinkronisasi Dropdown perPageSelect dengan filterForm
+    const perPageSelect = document.getElementById('perPageSelect');
+    if (perPageSelect && filterForm) {
+        perPageSelect.addEventListener('change', function() {
+            let perPageInput = filterForm.querySelector('input[name="per_page"]');
+            if (!perPageInput) {
+                perPageInput = document.createElement('input');
+                perPageInput.type = 'hidden';
+                perPageInput.name = 'per_page';
+                filterForm.appendChild(perPageInput);
+            }
+            perPageInput.value = this.value;
+
+            // Reset page ke 1 saat per_page diubah
+            let pageInput = filterForm.querySelector('input[name="page"]');
+            if (pageInput) {
+                pageInput.value = '1';
+            }
+            filterForm.submit();
+        });
+    }
+
+    // 4. Handle Hapus Draf via AJAX Modal
     let targetDraftId = null;
     let targetRow = null;
     const discardModalEl = document.getElementById('hubDiscardDraftModal');

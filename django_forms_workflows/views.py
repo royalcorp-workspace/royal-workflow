@@ -14,6 +14,7 @@ from decimal import Decimal
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.files.storage import default_storage
+from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.db import models
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -1247,19 +1248,50 @@ def form_submission_hub(request, slug):
     # Order newest first
     submissions_qs = submissions_qs.select_related("submitter").order_by("-created_at")
 
-    # Pending approval tasks assigned to current user for these submissions
+    # Whitelist & parse per_page (default 15, options [15, 30, 50])
+    PER_PAGE_CHOICES = [15, 30, 50]
+    DEFAULT_PER_PAGE = 15
+    try:
+        per_page = int(request.GET.get("per_page", DEFAULT_PER_PAGE))
+        if per_page not in PER_PAGE_CHOICES:
+            per_page = DEFAULT_PER_PAGE
+    except (ValueError, TypeError):
+        per_page = DEFAULT_PER_PAGE
+
+    paginator = Paginator(submissions_qs, per_page)
+    page_number = request.GET.get("page", 1)
+    try:
+        page_obj = paginator.page(page_number)
+    except PageNotAnInteger:
+        page_obj = paginator.page(1)
+    except EmptyPage:
+        page_obj = paginator.page(paginator.num_pages)
+
+    elided_page_range = paginator.get_elided_page_range(
+        number=page_obj.number,
+        on_each_side=1,
+        on_ends=1,
+    )
+
+    # Query string preservation for pagination links (strip 'page')
+    query_params = request.GET.copy()
+    if "page" in query_params:
+        del query_params["page"]
+    query_params_no_page = query_params.urlencode()
+
+    # Pending approval tasks assigned to current user for submissions on active page only
     pending_tasks_sub_ids = set(
         ApprovalTask.objects.filter(
             status="pending",
-            submission__in=submissions_qs,
+            submission__in=page_obj.object_list,
         )
         .filter(models.Q(assigned_to=user) | models.Q(assigned_group__in=user_groups))
         .values_list("submission_id", flat=True)
     )
 
-    # Transform to unified table rows
+    # Transform to unified table rows (active page only)
     rows = []
-    for sub in submissions_qs:
+    for sub in page_obj.object_list:
         fd = sub.form_data or {}
 
         # 1. No. SPK (semi-bold)
@@ -1338,7 +1370,12 @@ def form_submission_hub(request, slug):
             "form_def": form_def,
             "can_submit": user_can_submit_form(user, form_def),
             "rows": rows,
-            "total_count": len(rows),
+            "total_count": paginator.count,
+            "page_obj": page_obj,
+            "paginator": paginator,
+            "elided_page_range": elided_page_range,
+            "per_page": per_page,
+            "query_params_no_page": query_params_no_page,
             "search_query": search_query,
             "status_filter": status_filter,
             "submit_url": reverse("forms_workflows:form_submit", kwargs={"slug": form_def.slug}),
@@ -1503,6 +1540,45 @@ def my_submissions(request):
     )
 
 
+def user_can_manage_ematerai(user, submission=None) -> bool:
+    """Check if the user has permission to manage (retry/stamp) e-Meterai on SPK submissions.
+
+    Allowed roles:
+    - Superusers
+    - Members of Admin Groups for the form definition
+    - Members of 'Sales Support', 'Administrator', or 'MIS' groups
+    - Users assigned to Stage 3 (Sales Support / Review & Koordinasi TTD Toko) for this submission
+    """
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+
+    # 1. Admin groups of the form definition
+    if submission and getattr(submission, "form_definition_id", None):
+        if user.groups.filter(id__in=submission.form_definition.admin_groups.all()).exists():
+            return True
+
+    # 2. Sales Support or Administrator / MIS groups
+    if user.groups.filter(
+        models.Q(name__icontains="sales support")
+        | models.Q(name__icontains="administrator")
+        | models.Q(name__icontains="mis")
+    ).exists():
+        return True
+
+    # 3. User assigned to Stage 3 (Sales Support) task
+    if submission:
+        has_support_task = submission.approval_tasks.filter(
+            models.Q(assigned_to=user) | models.Q(assigned_group__in=user.groups.all()),
+            models.Q(workflow_stage__order=3) | models.Q(workflow_stage__name__icontains="sales support")
+        ).exists()
+        if has_support_task:
+            return True
+
+    return False
+
+
 @login_required
 def submission_detail(request, submission_id):
     """View submission details"""
@@ -1513,12 +1589,20 @@ def submission_detail(request, submission_id):
     is_reviewer = request.user.groups.filter(
         id__in=form_def_early.reviewer_groups.all()
     ).exists()
-    can_view = (
-        submission.submitter == request.user
-        or request.user.is_superuser
+    is_approver_user = (
+        request.user.is_superuser
+        or is_reviewer
         or user_can_approve(request.user, submission)
         or request.user.groups.filter(id__in=form_def_early.admin_groups.all()).exists()
-        or is_reviewer
+        or submission.approval_tasks.filter(
+            models.Q(assigned_to=request.user)
+            | models.Q(assigned_group__in=request.user.groups.all())
+            | models.Q(completed_by=request.user)
+        ).exists()
+    )
+    can_view = (
+        submission.submitter == request.user
+        or is_approver_user
     )
 
     if not can_view:
@@ -1708,6 +1792,13 @@ def submission_detail(request, submission_id):
         ).values_list("field_name", flat=True)
     )
     approval_step_sections = _build_approval_step_sections(submission)
+    task_fields_map = {
+        s["task_id"]: s.get("flat_fields") or s.get("fields", [])
+        for s in approval_step_sections
+        if s.get("task_id")
+    }
+    for t in approval_tasks:
+        t.step_fields = task_fields_map.get(t.id, [])
 
     # Elevated viewers (approvers / admins / superusers) may download PDFs of
     # post_approval forms even before the submission is fully approved.
@@ -1736,6 +1827,47 @@ def submission_detail(request, submission_id):
     active_tasks_count = sum(1 for t in approval_tasks if t.status != "skipped")
     skipped_tasks_count = sum(1 for t in approval_tasks if t.status == "skipped")
 
+    # Build linear approval stages for visual stepper tracking in submission_detail
+    approval_stages = []
+    workflow_mode = "none"
+    current_stage_number = 1
+    if workflow:
+        stages = list(workflow.stages.order_by("order"))
+        if stages:
+            workflow_mode = "staged"
+            pending_task = approval_tasks.filter(status="pending").first()
+            if pending_task:
+                current_stage_number = pending_task.stage_number or 1
+            elif submission.status == "approved":
+                current_stage_number = len(stages)
+            else:
+                current_stage_number = 1
+
+            all_sub_tasks = list(approval_tasks)
+            tasks_by_stage = {}
+            for t in all_sub_tasks:
+                if t.workflow_stage_id:
+                    tasks_by_stage.setdefault(t.workflow_stage_id, []).append(t)
+
+            for i, stage in enumerate(stages, start=1):
+                stage_tasks = tasks_by_stage.get(stage.id, [])
+                approved_count = sum(1 for t in stage_tasks if t.status == "approved")
+                approval_stages.append(
+                    {
+                        "number": i,
+                        "name": stage.name,
+                        "approval_logic": stage.approval_logic,
+                        "total_stages": len(stages),
+                        "is_current": i == current_stage_number and submission.status not in ("approved", "rejected"),
+                        "is_completed": approved_count > 0 and not any(t.status == "pending" for t in stage_tasks),
+                        "is_rejected": any(t.status == "rejected" for t in stage_tasks),
+                        "is_pending": i > current_stage_number,
+                        "tasks": stage_tasks,
+                        "approved_count": approved_count,
+                        "total_count": len(stage_tasks),
+                    }
+                )
+
     return render(
         request,
         "django_forms_workflows/submission_detail.html",
@@ -1756,7 +1888,13 @@ def submission_detail(request, submission_id):
             "approval_field_names": approval_field_names,
             "approval_step_sections": approval_step_sections,
             "can_approve_pdf": can_approve_pdf,
+            "can_manage_ematerai": user_can_manage_ematerai(request.user, submission),
             "hide_approval_history": hide_approval_history,
+            "is_approver_user": is_approver_user,
+            "workflow_mode": workflow_mode,
+            "approval_stages": approval_stages,
+            "current_stage_number": current_stage_number,
+            "total_stages": len(approval_stages),
         },
     )
 
@@ -2051,8 +2189,17 @@ def approve_submission(request, task_id):
     is_reviewer = request.user.groups.filter(
         id__in=form_def.reviewer_groups.all()
     ).exists()
+    is_completed_by_me = (task.completed_by == request.user)
+    has_submission_history_access = (
+        submission.submitter == request.user
+        or submission.approval_tasks.filter(
+            models.Q(assigned_to=request.user)
+            | models.Q(assigned_group__in=request.user.groups.all())
+            | models.Q(completed_by=request.user)
+        ).exists()
+    )
     can_act = is_assignee or is_admin or request.user.is_superuser or is_delegated_staff
-    can_view = can_act or is_reviewer
+    can_view = can_act or is_reviewer or is_completed_by_me or has_submission_history_access
     read_only = can_view and not can_act
     acting_on_behalf = (
         can_act
@@ -2064,6 +2211,15 @@ def approve_submission(request, task_id):
     if not can_view:
         messages.error(request, "You don't have permission to view this approval step.")
         return redirect("forms_workflows:approval_inbox")
+
+    is_completed_task = (task.status != "pending")
+    if is_completed_task:
+        if request.method == "POST":
+            messages.warning(request, "Tugas ini telah selesai diproses.")
+            return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+        # GET request: allow past approver / reviewer to view in Read-Only mode
+        read_only = True
+        can_act = False
 
     if request.method == "POST" and read_only:
         messages.error(request, "You don't have permission to action this step.")
@@ -2077,10 +2233,6 @@ def approve_submission(request, task_id):
         assignee_display = f"group {task.assigned_group.name}"
     else:
         assignee_display = ""
-
-    if task.status != "pending":
-        messages.warning(request, "This task has already been processed.")
-        return redirect("forms_workflows:approval_inbox")
 
     # Check if this form has stage-scoped fields for the current task.
     has_approval_step_fields = (
@@ -2467,7 +2619,8 @@ def approve_submission(request, task_id):
                 )
                 _fd = _resolve_form_data_urls(submission.form_data)
                 _ctx = {
-                    "task": task,
+                    "can_manage_ematerai": user_can_manage_ematerai(request.user, submission),
+            "task": task,
                     "submission": submission,
                     "read_only": read_only,
                     "acting_on_behalf": acting_on_behalf,
@@ -2846,6 +2999,7 @@ def approve_submission(request, task_id):
         {
             "task": task,
             "submission": submission,
+            "can_manage_ematerai": user_can_manage_ematerai(request.user, submission),
             "rendered_doc_html": rendered_doc_html,
             "signing_token": signing_token,
             "signing_url": signing_url,
@@ -2884,6 +3038,7 @@ def approve_submission(request, task_id):
             ),
             # Permission tier flags (see approve_submission permission tiers).
             "read_only": read_only,
+            "is_completed_task": is_completed_task,
             "acting_on_behalf": acting_on_behalf,
             "assignee_display": assignee_display,
             # Sub-review / HRMS Delegation support
@@ -4874,6 +5029,7 @@ def _build_approval_step_sections(submission):
 
         sections.append(
             {
+                "task_id": task.id,
                 "step_number": stage_order,
                 "step_name": step_name,
                 "display_label": task.display_label,
@@ -4887,6 +5043,9 @@ def _build_approval_step_sections(submission):
                 "is_surrogate": is_surrogate,
                 "comments": task.comments or "",
                 "fields": visible_fields,
+                "flat_fields": [
+                    f for f in flat_fields if f.get("_type") == "data" and f.get("value")
+                ],
             }
         )
 
@@ -6577,14 +6736,9 @@ def retry_ematerai_stamping(request, submission_id):
     """Manually trigger or retry e-Meterai stamping for an approved SPK submission."""
     submission = get_object_or_404(FormSubmission, id=submission_id)
 
-    form_def = submission.form_definition
-    is_admin = request.user.is_superuser or (
-        request.user.groups.filter(id__in=form_def.admin_groups.all()).exists()
-    )
-    is_sales_support = request.user.groups.filter(name__icontains="sales support").exists()
-    if not (is_admin or is_sales_support or request.user.is_staff):
-        messages.error(request, "Anda tidak memiliki wewenang untuk membubuhkan e-Meterai.")
-        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+    if not user_can_manage_ematerai(request.user, submission):
+        messages.error(request, "Anda tidak memiliki wewenang untuk mengelola atau membubuhkan e-Meterai.")
+        return HttpResponseForbidden("Forbidden: Akses e-Meterai terbatas untuk Sales Support dan Administrator.")
 
     from .services.ematerai import EMeteraiService
 
