@@ -132,10 +132,21 @@
               </a>
             {% endif %}
           {% endwith %}
-          <a href="{% url 'forms_workflows:my_submissions' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;">
-            <i class="bi bi-arrow-left"></i>
-            <span>Back to Submissions</span>
-          </a>
+          {% if is_approver_user %}
+            <a href="{% url 'forms_workflows:approval_inbox' %}" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;">
+              <i class="bi bi-inbox-fill"></i>
+              <span>Inbox Approval</span>
+            </a>
+            <a href="{% url 'forms_workflows:completed_approvals' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;">
+              <i class="bi bi-clock-history"></i>
+              <span>Riwayat Approval</span>
+            </a>
+          {% else %}
+            <a href="{% url 'forms_workflows:my_submissions' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;">
+              <i class="bi bi-arrow-left"></i>
+              <span>Back to Submissions</span>
+            </a>
+          {% endif %}
         </div>
 
 
@@ -592,10 +603,21 @@
   <div class="doc-card">
     <div class="doc-card-body p-3 decision-bar-container d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-2">
       <div>
-        <a href="{% url 'forms_workflows:my_submissions' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center gap-1.5 w-100 w-sm-auto">
-          <i class="bi bi-arrow-left"></i>
-          <span>Back to My Submissions</span>
-        </a>
+        {% if is_approver_user %}
+          <a href="{% url 'forms_workflows:approval_inbox' %}" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center gap-1.5 me-2 w-100 w-sm-auto">
+            <i class="bi bi-inbox-fill"></i>
+            <span>Inbox Approval</span>
+          </a>
+          <a href="{% url 'forms_workflows:completed_approvals' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center gap-1.5 w-100 w-sm-auto">
+            <i class="bi bi-clock-history"></i>
+            <span>Riwayat Approval</span>
+          </a>
+        {% else %}
+          <a href="{% url 'forms_workflows:my_submissions' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center gap-1.5 w-100 w-sm-auto">
+            <i class="bi bi-arrow-left"></i>
+            <span>Back to My Submissions</span>
+          </a>
+        {% endif %}
       </div>
 
       <div class="decision-actions-right d-flex align-items-center gap-2 flex-wrap">

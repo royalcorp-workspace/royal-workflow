@@ -1513,12 +1513,20 @@ def submission_detail(request, submission_id):
     is_reviewer = request.user.groups.filter(
         id__in=form_def_early.reviewer_groups.all()
     ).exists()
-    can_view = (
-        submission.submitter == request.user
-        or request.user.is_superuser
+    is_approver_user = (
+        request.user.is_superuser
+        or is_reviewer
         or user_can_approve(request.user, submission)
         or request.user.groups.filter(id__in=form_def_early.admin_groups.all()).exists()
-        or is_reviewer
+        or submission.approval_tasks.filter(
+            models.Q(assigned_to=request.user)
+            | models.Q(assigned_group__in=request.user.groups.all())
+            | models.Q(completed_by=request.user)
+        ).exists()
+    )
+    can_view = (
+        submission.submitter == request.user
+        or is_approver_user
     )
 
     if not can_view:
@@ -1757,6 +1765,7 @@ def submission_detail(request, submission_id):
             "approval_step_sections": approval_step_sections,
             "can_approve_pdf": can_approve_pdf,
             "hide_approval_history": hide_approval_history,
+            "is_approver_user": is_approver_user,
         },
     )
 
@@ -2051,8 +2060,17 @@ def approve_submission(request, task_id):
     is_reviewer = request.user.groups.filter(
         id__in=form_def.reviewer_groups.all()
     ).exists()
+    is_completed_by_me = (task.completed_by == request.user)
+    has_submission_history_access = (
+        submission.submitter == request.user
+        or submission.approval_tasks.filter(
+            models.Q(assigned_to=request.user)
+            | models.Q(assigned_group__in=request.user.groups.all())
+            | models.Q(completed_by=request.user)
+        ).exists()
+    )
     can_act = is_assignee or is_admin or request.user.is_superuser or is_delegated_staff
-    can_view = can_act or is_reviewer
+    can_view = can_act or is_reviewer or is_completed_by_me or has_submission_history_access
     read_only = can_view and not can_act
     acting_on_behalf = (
         can_act
@@ -2064,6 +2082,15 @@ def approve_submission(request, task_id):
     if not can_view:
         messages.error(request, "You don't have permission to view this approval step.")
         return redirect("forms_workflows:approval_inbox")
+
+    is_completed_task = (task.status != "pending")
+    if is_completed_task:
+        if request.method == "POST":
+            messages.warning(request, "Tugas ini telah selesai diproses.")
+            return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+        # GET request: allow past approver / reviewer to view in Read-Only mode
+        read_only = True
+        can_act = False
 
     if request.method == "POST" and read_only:
         messages.error(request, "You don't have permission to action this step.")
@@ -2077,10 +2104,6 @@ def approve_submission(request, task_id):
         assignee_display = f"group {task.assigned_group.name}"
     else:
         assignee_display = ""
-
-    if task.status != "pending":
-        messages.warning(request, "This task has already been processed.")
-        return redirect("forms_workflows:approval_inbox")
 
     # Check if this form has stage-scoped fields for the current task.
     has_approval_step_fields = (
@@ -2884,6 +2907,7 @@ def approve_submission(request, task_id):
             ),
             # Permission tier flags (see approve_submission permission tiers).
             "read_only": read_only,
+            "is_completed_task": is_completed_task,
             "acting_on_behalf": acting_on_behalf,
             "assignee_display": assignee_display,
             # Sub-review / HRMS Delegation support

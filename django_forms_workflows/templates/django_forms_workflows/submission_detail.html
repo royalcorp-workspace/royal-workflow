@@ -32,10 +32,21 @@
                         </a>
                     {% endif %}
                 {% endwith %}
-                <a href="{% url 'forms_workflows:my_submissions' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1.5">
-                    <i class="bi bi-arrow-left"></i>
-                    <span>Back to Submissions</span>
-                </a>
+                {% if is_approver_user %}
+                    <a href="{% url 'forms_workflows:approval_inbox' %}" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1.5">
+                        <i class="bi bi-inbox-fill"></i>
+                        <span>Inbox Approval</span>
+                    </a>
+                    <a href="{% url 'forms_workflows:completed_approvals' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1.5">
+                        <i class="bi bi-clock-history"></i>
+                        <span>Riwayat Approval</span>
+                    </a>
+                {% else %}
+                    <a href="{% url 'forms_workflows:my_submissions' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1.5">
+                        <i class="bi bi-arrow-left"></i>
+                        <span>Back to Submissions</span>
+                    </a>
+                {% endif %}
             </div>
         </div>
 
@@ -422,9 +433,20 @@
 
         <!-- Actions -->
         <div class="mt-3 d-flex flex-wrap gap-2 align-items-center">
-            <a href="{% url 'forms_workflows:my_submissions' %}" class="btn btn-outline-secondary">
-                <i class="bi bi-arrow-left"></i> Back to My Submissions
-            </a>
+            {% if is_approver_user %}
+                <a href="{% url 'forms_workflows:approval_inbox' %}" class="btn btn-outline-primary d-inline-flex align-items-center gap-1.5">
+                    <i class="bi bi-inbox-fill"></i>
+                    <span>Inbox Approval</span>
+                </a>
+                <a href="{% url 'forms_workflows:completed_approvals' %}" class="btn btn-outline-secondary d-inline-flex align-items-center gap-1.5">
+                    <i class="bi bi-clock-history"></i>
+                    <span>Riwayat Approval</span>
+                </a>
+            {% else %}
+                <a href="{% url 'forms_workflows:my_submissions' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back to My Submissions
+                </a>
+            {% endif %}
             {% if submission.status == 'draft' %}
                 {% if submission.submitter == user %}
                     <a href="{% url 'forms_workflows:form_submit' submission.form_definition.slug %}"

@@ -105,7 +105,15 @@
 <div class="review-wrapper py-3">
 
   {# ── Permission / Informational Alerts ── #}
-  {% if read_only %}
+  {% if is_completed_task %}
+    <div class="alert alert-info border-info d-flex align-items-center gap-2 mb-3 py-2.5 shadow-sm">
+      <i class="bi bi-info-circle-fill text-info fs-5 flex-shrink-0"></i>
+      <div class="small">
+        <strong>Mode Tinjau (Dokumen Selesai):</strong>
+        Tugas persetujuan tahap ini telah berstatus <strong>{{ task.get_status_display|default:task.status|title }}</strong>{% if task.completed_by %} oleh <strong>{{ task.completed_by.get_full_name|default:task.completed_by.username }}</strong>{% endif %}{% if task.completed_at %} pada {{ task.completed_at|date:"d M Y, H:i" }} WIB{% endif %}. Seluruh data ditampilkan dalam format <em>Read-Only</em>.
+      </div>
+    </div>
+  {% elif read_only %}
     <div class="alert alert-secondary d-flex align-items-center gap-2 mb-3 py-2.5">
       <i class="bi bi-eye text-secondary fs-5"></i>
       <div class="small">
@@ -1397,7 +1405,8 @@
   /* ── Signature Pad Handler for Direktur (Stage 4) ── */
   (function() {
     const modalEl = document.getElementById('direkturSignModal');
-    if (!modalEl) return;
+    const approvalForm = document.getElementById('approval-decision-form');
+    if (!modalEl || !approvalForm) return;
 
     const canvas = document.getElementById('direkturSigCanvas');
     const placeholder = document.getElementById('direkturCanvasPlaceholder');
@@ -1534,7 +1543,8 @@
   // ── Handlers for E-Signature & Cap Digital (Pengajuan Biaya) ──
   (function() {
     const modalBiaya = document.getElementById('eSignatureBiayaModal');
-    if (!modalBiaya) return;
+    const approvalForm = document.getElementById('approval-decision-form');
+    if (!modalBiaya || !approvalForm) return;
 
     const canvas = document.getElementById('biayaSigCanvas');
     const placeholder = document.getElementById('biayaCanvasPlaceholder');
