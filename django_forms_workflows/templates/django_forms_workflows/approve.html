@@ -769,7 +769,7 @@
                 <i class="bi bi-arrow-counterclockwise me-1"></i> Tolak / Minta Revisi
               </button>
 
-              {% if task.workflow_stage and task.workflow_stage.order == 3 %}
+              {% if task.workflow_stage and task.workflow_stage.order == 3 and submission.form_definition.slug == 'permohonan-kontrak' %}
                 {% if signing_token and signing_token.status == 'signed' or submission.form_data.ttd_toko_image %}
                   <button
                     type="submit"
@@ -778,25 +778,6 @@
                     class="btn btn-sm btn-success btn-decision-approve d-inline-flex align-items-center justify-content-center gap-1.5 flex-fill flex-md-grow-0 shadow-sm"
                     style="padding: 0.45rem 1.25rem; font-weight: 600; font-size: 0.875rem; border-radius: 6px;">
                     <i class="bi bi-check2-circle me-1"></i> Setujui ({{ task.workflow_stage.name|default:"Sales Support" }})
-                  </button>
-                {% elif signing_token and signing_token.status != 'signed' %}
-                  <button
-                    type="submit"
-                    name="decision"
-                    value="approve"
-                    class="btn btn-sm btn-secondary btn-decision-approve d-inline-flex align-items-center justify-content-center gap-1.5 flex-fill flex-md-grow-0"
-                    style="padding: 0.45rem 1rem; font-weight: 500; font-size: 0.875rem; border-radius: 6px;"
-                    title="Pihak mitra toko belum menandatangani draf via portal publik">
-                    <i class="bi bi-clock me-1"></i> Menunggu TTD Toko
-                  </button>
-                {% else %}
-                  <button
-                    type="submit"
-                    name="decision"
-                    value="approve"
-                    class="btn btn-sm btn-primary btn-decision-approve d-inline-flex align-items-center justify-content-center gap-1.5 flex-fill flex-md-grow-0"
-                    style="padding: 0.45rem 1.25rem; font-weight: 600; font-size: 0.875rem; border-radius: 6px;">
-                    <i class="bi bi-check2-circle me-1"></i> Setujui ({{ task.workflow_stage.name|default:"Approve" }})
                   </button>
                 {% endif %}
               {% elif task.workflow_stage and task.workflow_stage.order == 4 and submission.form_definition.slug == 'permohonan-kontrak' %}
