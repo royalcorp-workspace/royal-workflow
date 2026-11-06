@@ -101,7 +101,7 @@
                 <span class="spinner-border spinner-border-sm" role="status" style="width: 0.75rem; height: 0.75rem;"></span>
                 <span>Proses e-Meterai...</span>
               </span>
-            {% elif submission.stamped_document.status == 'failed' %}
+            {% elif submission.stamped_document.status == 'failed' and can_manage_ematerai %}
               <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1.5 d-inline-flex align-items-center gap-1 font-monospace" style="font-size: 11px;" title="{{ submission.stamped_document.error_message }}">
                 <i class="bi bi-exclamation-triangle-fill text-danger"></i>
                 <span>e-Meterai Gagal</span>
@@ -114,7 +114,7 @@
                 </button>
               </form>
             {% endif %}
-          {% elif submission.status == 'approved' and submission.form_definition.slug == 'permohonan-kontrak' %}
+          {% elif submission.status == 'approved' and submission.form_definition.slug == 'permohonan-kontrak' and can_manage_ematerai %}
             <form method="post" action="{% url 'forms_workflows:retry_ematerai_stamping' submission.id %}" class="d-inline">
               {% csrf_token %}
               <button type="submit" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" title="Bubuhkan e-Meterai resmi ke dokumen SPK">

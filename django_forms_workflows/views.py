@@ -1503,6 +1503,45 @@ def my_submissions(request):
     )
 
 
+def user_can_manage_ematerai(user, submission=None) -> bool:
+    """Check if the user has permission to manage (retry/stamp) e-Meterai on SPK submissions.
+
+    Allowed roles:
+    - Superusers
+    - Members of Admin Groups for the form definition
+    - Members of 'Sales Support', 'Administrator', or 'MIS' groups
+    - Users assigned to Stage 3 (Sales Support / Review & Koordinasi TTD Toko) for this submission
+    """
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+
+    # 1. Admin groups of the form definition
+    if submission and getattr(submission, "form_definition_id", None):
+        if user.groups.filter(id__in=submission.form_definition.admin_groups.all()).exists():
+            return True
+
+    # 2. Sales Support or Administrator / MIS groups
+    if user.groups.filter(
+        models.Q(name__icontains="sales support")
+        | models.Q(name__icontains="administrator")
+        | models.Q(name__icontains="mis")
+    ).exists():
+        return True
+
+    # 3. User assigned to Stage 3 (Sales Support) task
+    if submission:
+        has_support_task = submission.approval_tasks.filter(
+            models.Q(assigned_to=user) | models.Q(assigned_group__in=user.groups.all()),
+            models.Q(workflow_stage__order=3) | models.Q(workflow_stage__name__icontains="sales support")
+        ).exists()
+        if has_support_task:
+            return True
+
+    return False
+
+
 @login_required
 def submission_detail(request, submission_id):
     """View submission details"""
@@ -1812,6 +1851,7 @@ def submission_detail(request, submission_id):
             "approval_field_names": approval_field_names,
             "approval_step_sections": approval_step_sections,
             "can_approve_pdf": can_approve_pdf,
+            "can_manage_ematerai": user_can_manage_ematerai(request.user, submission),
             "hide_approval_history": hide_approval_history,
             "is_approver_user": is_approver_user,
             "workflow_mode": workflow_mode,
@@ -2542,7 +2582,8 @@ def approve_submission(request, task_id):
                 )
                 _fd = _resolve_form_data_urls(submission.form_data)
                 _ctx = {
-                    "task": task,
+                    "can_manage_ematerai": user_can_manage_ematerai(request.user, submission),
+            "task": task,
                     "submission": submission,
                     "read_only": read_only,
                     "acting_on_behalf": acting_on_behalf,
@@ -2921,6 +2962,7 @@ def approve_submission(request, task_id):
         {
             "task": task,
             "submission": submission,
+            "can_manage_ematerai": user_can_manage_ematerai(request.user, submission),
             "rendered_doc_html": rendered_doc_html,
             "signing_token": signing_token,
             "signing_url": signing_url,
@@ -6657,14 +6699,9 @@ def retry_ematerai_stamping(request, submission_id):
     """Manually trigger or retry e-Meterai stamping for an approved SPK submission."""
     submission = get_object_or_404(FormSubmission, id=submission_id)
 
-    form_def = submission.form_definition
-    is_admin = request.user.is_superuser or (
-        request.user.groups.filter(id__in=form_def.admin_groups.all()).exists()
-    )
-    is_sales_support = request.user.groups.filter(name__icontains="sales support").exists()
-    if not (is_admin or is_sales_support or request.user.is_staff):
-        messages.error(request, "Anda tidak memiliki wewenang untuk membubuhkan e-Meterai.")
-        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+    if not user_can_manage_ematerai(request.user, submission):
+        messages.error(request, "Anda tidak memiliki wewenang untuk mengelola atau membubuhkan e-Meterai.")
+        return HttpResponseForbidden("Forbidden: Akses e-Meterai terbatas untuk Sales Support dan Administrator.")
 
     from .services.ematerai import EMeteraiService
 
