@@ -319,6 +319,59 @@
       </div>
       <div class="doc-card-body">
         <div class="pipeline-stepper">
+          {# ── Pre-Step: Initiator / Submitter Step ── #}
+          <div class="pipeline-step-item is-completed" style="border-left: 3px solid #16a34a;">
+            <div>
+              {# Row 1: Step Index Badge & Submitter Status Pill #}
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="step-index-badge badge-completed" title="Pengajuan dibuat oleh pemohon">
+                  <i class="bi bi-send-check-fill text-white"></i>
+                </span>
+
+                {% if submission.status == 'draft' %}
+                  <span class="badge bg-warning-subtle text-warning-emphasis text-uppercase stage-pill">Draft</span>
+                {% elif submission.status == 'needs_revision' %}
+                  <span class="badge bg-warning text-dark text-uppercase stage-pill">Needs Revision</span>
+                {% else %}
+                  <span class="badge bg-success-subtle text-success text-uppercase stage-pill">Submitted</span>
+                {% endif %}
+              </div>
+
+              {# Row 2: Full Stage Name #}
+              <div class="stage-name-title mb-1.5 fw-bold text-dark">
+                Pengajuan Formulir
+              </div>
+
+              {# Row 3: Submitter Identity & Timestamp #}
+              <div class="text-muted" style="font-size: 11.5px; line-height: 1.4;">
+                <div class="fw-semibold text-dark text-truncate" title="{% if submission.submitter %}{{ submission.submitter.get_full_name|default:submission.submitter.username }}{% else %}Pemohon (Inisiator){% endif %}">
+                  <i class="bi bi-person-fill text-primary me-1"></i>
+                  {% if submission.submitter %}
+                    {{ submission.submitter.get_full_name|default:submission.submitter.username }}
+                  {% else %}
+                    Pemohon
+                  {% endif %}
+                </div>
+                <div class="text-secondary small mt-0.5 d-flex align-items-center flex-wrap gap-1">
+                  {% if submission.form_data.cabang %}
+                    <span class="badge bg-light text-secondary border px-1.5 py-0.5">{{ submission.form_data.cabang }}</span>
+                  {% elif submission.submitter.employee_profile.position %}
+                    <span class="badge bg-light text-secondary border px-1.5 py-0.5">{{ submission.submitter.employee_profile.position }}</span>
+                  {% endif %}
+                  <span class="text-nowrap">
+                    <i class="bi bi-clock me-0.5 text-muted"></i>
+                    {% if submission.submitted_at %}
+                      {{ submission.submitted_at|date:"d M Y, H:i" }} WIB
+                    {% elif submission.created_at %}
+                      {{ submission.created_at|date:"d M Y, H:i" }} WIB
+                    {% else %}
+                      —
+                    {% endif %}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
           {% for stage in approval_stages %}
             <div class="pipeline-step-item {% if stage.is_completed %}is-completed{% elif stage.is_current %}is-current{% elif stage.is_rejected %}is-rejected{% endif %}">
               <div>

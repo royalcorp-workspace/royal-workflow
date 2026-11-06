@@ -1744,6 +1744,47 @@ def submission_detail(request, submission_id):
     active_tasks_count = sum(1 for t in approval_tasks if t.status != "skipped")
     skipped_tasks_count = sum(1 for t in approval_tasks if t.status == "skipped")
 
+    # Build linear approval stages for visual stepper tracking in submission_detail
+    approval_stages = []
+    workflow_mode = "none"
+    current_stage_number = 1
+    if workflow:
+        stages = list(workflow.stages.order_by("order"))
+        if stages:
+            workflow_mode = "staged"
+            pending_task = approval_tasks.filter(status="pending").first()
+            if pending_task:
+                current_stage_number = pending_task.stage_number or 1
+            elif submission.status == "approved":
+                current_stage_number = len(stages)
+            else:
+                current_stage_number = 1
+
+            all_sub_tasks = list(approval_tasks)
+            tasks_by_stage = {}
+            for t in all_sub_tasks:
+                if t.workflow_stage_id:
+                    tasks_by_stage.setdefault(t.workflow_stage_id, []).append(t)
+
+            for i, stage in enumerate(stages, start=1):
+                stage_tasks = tasks_by_stage.get(stage.id, [])
+                approved_count = sum(1 for t in stage_tasks if t.status == "approved")
+                approval_stages.append(
+                    {
+                        "number": i,
+                        "name": stage.name,
+                        "approval_logic": stage.approval_logic,
+                        "total_stages": len(stages),
+                        "is_current": i == current_stage_number and submission.status not in ("approved", "rejected"),
+                        "is_completed": approved_count > 0 and not any(t.status == "pending" for t in stage_tasks),
+                        "is_rejected": any(t.status == "rejected" for t in stage_tasks),
+                        "is_pending": i > current_stage_number,
+                        "tasks": stage_tasks,
+                        "approved_count": approved_count,
+                        "total_count": len(stage_tasks),
+                    }
+                )
+
     return render(
         request,
         "django_forms_workflows/submission_detail.html",
@@ -1766,6 +1807,10 @@ def submission_detail(request, submission_id):
             "can_approve_pdf": can_approve_pdf,
             "hide_approval_history": hide_approval_history,
             "is_approver_user": is_approver_user,
+            "workflow_mode": workflow_mode,
+            "approval_stages": approval_stages,
+            "current_stage_number": current_stage_number,
+            "total_stages": len(approval_stages),
         },
     )
 
