@@ -54,11 +54,41 @@
         margin-bottom: 0 !important;  /* grid gap handles spacing */
     }
 
-    /* 4. Labels sit at the bottom of their row-track so short labels
-       align with the bottom of taller (wrapping) labels. */
+    /* 4. Explicit subgrid track assignment for field components */
     .row.fields-aligned-row > .field-wrapper > .mb-3 > label {
+        grid-row: 1;
         align-self: end;
     }
+    .row.fields-aligned-row > .field-wrapper > .mb-3 > :is(input, select, textarea, .input-group, .select2-container) {
+        grid-row: 2;
+    }
+    .row.fields-aligned-row > .field-wrapper > .mb-3 > :is(.invalid-feedback, .valid-feedback, [class*="-feedback"]) {
+        grid-row: 3;
+    }
+    .row.fields-aligned-row > .field-wrapper > .mb-3 > :is(.form-text, .help-block, small) {
+        grid-row: 4;
+    }
+}
+
+/* ── Validation Feedback & Helper Text Positioning Guardrails ─────────── */
+.invalid-feedback,
+.valid-feedback,
+[class*="-feedback"] {
+    position: static !important;
+    clear: both !important;
+    width: 100% !important;
+}
+
+/* Guard: Sembunyikan pesan invalid jika input dinyatakan valid */
+.is-valid ~ .invalid-feedback:not(.valid-feedback),
+.is-valid ~ [class*="-feedback"]:not(.valid-feedback):not(.text-success) {
+    display: none !important;
+}
+
+/* Guard: Sembunyikan pesan valid jika input dinyatakan invalid */
+.is-invalid ~ .valid-feedback,
+.is-invalid ~ [class*="-feedback"].text-success {
+    display: none !important;
 }
 
 /* ── Consistent field spacing ────────────────────────────────────────── */

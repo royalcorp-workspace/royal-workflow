@@ -1078,6 +1078,7 @@
         emailInput.setAttribute('novalidate', 'novalidate');
         emailInput.setAttribute('type', 'email');
         emailInput.setAttribute('autocomplete', 'email');
+        emailInput.dataset.customValidation = 'true';
         emailInput.addEventListener('invalid', function (e) {
             e.preventDefault();
         });
@@ -1118,8 +1119,8 @@
 
         const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 
-        const clearError = function () {
-            emailInput.classList.remove('is-invalid');
+        const clearStatus = function () {
+            emailInput.classList.remove('is-invalid', 'is-valid');
             if (feedback) {
                 feedback.innerHTML = '';
                 feedback.style.display = 'none';
@@ -1153,7 +1154,8 @@
                 return false;
             }
 
-            const isFormatValid = EMAIL_REGEX.test(val) || (typeof emailInput.checkValidity === 'function' ? emailInput.checkValidity() : true);
+            // Validasi wajib memenuhi EMAIL_REGEX (memiliki domain dan ekstensi lengkap seperti .com, .co.id)
+            const isFormatValid = EMAIL_REGEX.test(val);
             if (isFormatValid) {
                 emailInput.classList.add('is-valid');
                 if (feedback) {
@@ -1173,10 +1175,10 @@
             }
         };
 
-        // 4. Saat pengguna mengetik: HANYA bersihkan status error lama, JANGAN evaluasi regex error baru
+        // 4. Saat pengguna mengetik: HANYA bersihkan status lama, JANGAN evaluasi regex error baru
         emailInput.addEventListener('input', function () {
-            if (emailInput.classList.contains('is-invalid') || (feedback && feedback.style.display !== 'none')) {
-                clearError();
+            if (emailInput.classList.contains('is-invalid') || emailInput.classList.contains('is-valid') || (feedback && feedback.style.display !== 'none')) {
+                clearStatus();
             }
         });
 

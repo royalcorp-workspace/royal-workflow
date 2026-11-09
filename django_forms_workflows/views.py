@@ -1560,40 +1560,23 @@ def my_submissions(request):
 def user_can_manage_ematerai(user, submission=None) -> bool:
     """Check if the user has permission to manage (retry/stamp) e-Meterai on SPK submissions.
 
-    Allowed roles:
+    STRICT BUSINESS RULE:
+    Action is exclusively restricted to:
     - Superusers
-    - Members of Admin Groups for the form definition
-    - Members of 'Sales Support', 'Administrator', or 'MIS' groups
-    - Users assigned to Stage 3 (Sales Support / Review & Koordinasi TTD Toko) for this submission
+    - Members of 'Administrator' group
+    - Members of 'Sales Support' group
+
+    ASM, RSOM, Pemohon, GM, Direksi, and all other roles are strictly excluded.
     """
     if not user or not user.is_authenticated:
         return False
     if user.is_superuser:
         return True
 
-    # 1. Admin groups of the form definition
-    if submission and getattr(submission, "form_definition_id", None):
-        if user.groups.filter(id__in=submission.form_definition.admin_groups.all()).exists():
-            return True
-
-    # 2. Sales Support or Administrator / MIS groups
-    if user.groups.filter(
-        models.Q(name__icontains="sales support")
-        | models.Q(name__icontains="administrator")
-        | models.Q(name__icontains="mis")
-    ).exists():
-        return True
-
-    # 3. User assigned to Stage 3 (Sales Support) task
-    if submission:
-        has_support_task = submission.approval_tasks.filter(
-            models.Q(assigned_to=user) | models.Q(assigned_group__in=user.groups.all()),
-            models.Q(workflow_stage__order=3) | models.Q(workflow_stage__name__icontains="sales support")
-        ).exists()
-        if has_support_task:
-            return True
-
-    return False
+    return user.groups.filter(
+        models.Q(name__iexact="Sales Support")
+        | models.Q(name__iexact="Administrator")
+    ).exists()
 
 
 @login_required

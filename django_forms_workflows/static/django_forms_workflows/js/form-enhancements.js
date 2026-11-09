@@ -418,6 +418,11 @@ class FormEnhancements {
      * Perform actual field validation
      */
     performFieldValidation(field) {
+        // If form is 'permohonan-kontrak' or field has custom validation handler, delegate to specialized controller
+        if (this.form.dataset.formSlug === 'permohonan-kontrak' || (field && field.dataset.customValidation === 'true')) {
+            return;
+        }
+
         const fieldName = field.name;
         const value = this.getFieldValue(field);
         const rules = this.options.validationRules.find(r => r.field === fieldName);
@@ -518,7 +523,14 @@ class FormEnhancements {
         if (!errorDiv) {
             errorDiv = document.createElement('div');
             errorDiv.className = 'invalid-feedback';
-            field.parentElement.appendChild(errorDiv);
+            const helpText = container.querySelector('.form-text, .help-block');
+            if (helpText && helpText.parentNode === field.parentNode) {
+                field.parentNode.insertBefore(errorDiv, helpText);
+            } else if (field.nextSibling) {
+                field.parentNode.insertBefore(errorDiv, field.nextSibling);
+            } else {
+                field.parentElement.appendChild(errorDiv);
+            }
         }
 
         errorDiv.textContent = message;
