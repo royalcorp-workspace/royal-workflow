@@ -1162,6 +1162,15 @@ class DynamicForm(forms.Form):
                 prefill_key, field_def.prefill_source_config
             )
             if prefill_value:
+                if field_def.field_type in ["select", "radio"]:
+                    choices = self._resolve_choices(field_def)
+                    pv_lower = str(prefill_value).strip().lower()
+                    pv_stripped = pv_lower.replace("cabang ", "").replace("branch ", "").strip()
+                    for val, _ in choices:
+                        val_lower = str(val).strip().lower()
+                        val_stripped = val_lower.replace("cabang ", "").replace("branch ", "").strip()
+                        if val_lower == pv_lower or (val_stripped and val_stripped == pv_stripped):
+                            return val
                 return prefill_value
 
         # Fall back to empty saved value, default value, or ""

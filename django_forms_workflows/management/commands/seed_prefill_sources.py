@@ -56,6 +56,41 @@ class Command(BaseCommand):
                 "description": "Username of the logged-in user",
                 "order": 50,
             },
+            {
+                "name": "Current User - Branch / Cabang",
+                "source_type": "user",
+                "source_key": "user.branch",
+                "description": "Branch / Cabang of the logged-in user (from EmployeeProfile)",
+                "order": 60,
+            },
+            {
+                "name": "Current User - Department / Divisi",
+                "source_type": "user",
+                "source_key": "user.department",
+                "description": "Department / Divisi of the logged-in user (from EmployeeProfile)",
+                "order": 70,
+            },
+            {
+                "name": "Current User - Company / Perusahaan",
+                "source_type": "user",
+                "source_key": "user.company",
+                "description": "Company name of the logged-in user (from EmployeeProfile)",
+                "order": 80,
+            },
+            {
+                "name": "Current User - Position / Jabatan",
+                "source_type": "user",
+                "source_key": "user.position",
+                "description": "Job Position of the logged-in user (from EmployeeProfile)",
+                "order": 90,
+            },
+            {
+                "name": "Current User - NIK",
+                "source_type": "user",
+                "source_key": "user.nik",
+                "description": "Employee NIK of the logged-in user (from EmployeeProfile)",
+                "order": 95,
+            },
             # LDAP sources
             {
                 "name": "LDAP - Department",
