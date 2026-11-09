@@ -1245,7 +1245,12 @@ table.clause-table td.cell-currency {
 }
 
 
-/* Proteksi Sembunyikan Field Bawaan Django untuk Rekening Perusahaan agar tidak memicu label duplikat */
+/* Proteksi Sembunyikan Field Bawaan Django untuk Rekening Perusahaan & Perusahaan (Pihak Pertama) */
+.field-perusahaan,
+#div_id_perusahaan,
+.field-wrapper:has([name="perusahaan"]),
+.field-wrapper:has(#id_perusahaan),
+[data-field-name="perusahaan"],
 .field-rekening_perusahaan,
 #div_id_rekening_perusahaan,
 .field-wrapper:has(input[name="rekening_perusahaan"]),

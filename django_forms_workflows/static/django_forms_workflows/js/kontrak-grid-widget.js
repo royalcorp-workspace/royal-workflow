@@ -540,6 +540,22 @@
         wrapper.appendChild(pane1);
         wrapper.appendChild(pane2);
         wrapper.appendChild(pane3);
+
+        // Enforce hidden state for internal system fields (perusahaan, rekening) after DOM distribution
+        const enforceHiddenFields = (root) => {
+            ['perusahaan', 'rekening_perusahaan', 'bank_perusahaan', 'nomor_rekening_perusahaan', 'atas_nama_rekening'].forEach(name => {
+                const el = root.querySelector(`[name="${name}"]`);
+                if (el) {
+                    const wrap = el.closest('.field-wrapper') || el.closest(`#div_id_${name}`) || el.closest('.mb-3') || el.parentElement;
+                    if (wrap) {
+                        wrap.style.setProperty('display', 'none', 'important');
+                        wrap.classList.add('d-none');
+                    }
+                }
+            });
+        };
+        enforceHiddenFields(wrapper);
+
         console.log('[KontrakGridWidget] Form fields successfully partitioned into 3 isolated wizard step panes.');
     }
 
@@ -1264,6 +1280,14 @@
         const cabangSelect = form.querySelector('[name="cabang"]');
         const perusahaanSelect = form.querySelector('[name="perusahaan"]');
 
+        if (perusahaanSelect) {
+            const pWrap = perusahaanSelect.closest('.field-wrapper') || perusahaanSelect.closest('#div_id_perusahaan') || perusahaanSelect.closest('.mb-3') || perusahaanSelect.parentElement;
+            if (pWrap) {
+                pWrap.style.setProperty('display', 'none', 'important');
+                pWrap.classList.add('d-none');
+            }
+        }
+
         if (!spkInput) return;
 
         lockReadonlyFields(form);
@@ -1536,7 +1560,7 @@
             if (!perusahaanSelect || !brandSelect) return;
             const currentComp = (perusahaanSelect.value || '').trim();
             const b = (brandSelect.value || '').toUpperCase();
-            if (!currentComp || currentComp === '—') {
+            if (!currentComp || currentComp === '—' || currentComp.startsWith('--') || currentComp.toLowerCase().includes('select') || currentComp.toLowerCase().includes('pilih')) {
                 if (b.includes('ROYAL') || b.includes('FOAM') || b.includes('CLASSIC')) {
                     setSelectValue(perusahaanSelect, 'PT Royal Abadi Sejahtera');
                 } else if (b.includes('BESTARI')) {
@@ -1600,8 +1624,8 @@
                 card4Body.appendChild(fallbackWrap);
             }
         }
+        autoSelectPerusahaanFromBrand();
         syncRekeningPerusahaan();
-
 
         // Run immediately to generate official SPK number
         updateSPK();

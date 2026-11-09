@@ -497,6 +497,10 @@ def form_submit(request, slug):
                     raw_data["syarat_pencairan"] = ""
                     raw_data["komponen_biaya"] = ""
                     raw_data["pengecualian_ketentuan_support"] = ""
+                if not raw_data.get("perusahaan") or str(raw_data.get("perusahaan")).strip() in ("", "-- Select --", "—"):
+                    from .company_profiles import resolve_company_profile
+                    comp_prof = resolve_company_profile(form_data=raw_data, user=request.user)
+                    raw_data["perusahaan"] = comp_prof.get("display_name", "PT Anugrah Cemerlang Abadi")
 
             if draft:
                 draft.form_data = raw_data
@@ -595,6 +599,10 @@ def form_submit(request, slug):
                         updated_data["syarat_pencairan"] = ""
                         updated_data["komponen_biaya"] = ""
                         updated_data["pengecualian_ketentuan_support"] = ""
+                    if not updated_data.get("perusahaan") or str(updated_data.get("perusahaan")).strip() in ("", "-- Select --", "—"):
+                        from .company_profiles import resolve_company_profile
+                        comp_prof = resolve_company_profile(form_data=updated_data, user=request.user)
+                        updated_data["perusahaan"] = comp_prof.get("display_name", "PT Anugrah Cemerlang Abadi")
 
                 from .workflow_engine import handle_resubmit_revision
 
@@ -666,6 +674,9 @@ def form_submit(request, slug):
                         assigned_seq = curr_num if curr_num >= latest_seq - 1 else latest_seq
 
                     comp_prof = resolve_company_profile(form_data=submission.form_data, user=request.user)
+                    if not perusahaan or str(perusahaan).strip() in ("", "-- Select --", "—"):
+                        perusahaan = comp_prof.get("display_name", "PT Anugrah Cemerlang Abadi")
+                        submission.form_data["perusahaan"] = perusahaan
                     submission.form_data["nomor_spk"] = format_official_spk_number(
                         nomor=assigned_seq,
                         brand=brand,
@@ -801,6 +812,8 @@ def form_submit(request, slug):
                     today = timezone.now().date()
                     seq = get_next_branch_spk_sequence(cabang, today.year, form_slug=form_def.slug)
                     comp_prof = resolve_company_profile(form_data=initial_data, user=user_or_none)
+                    if not initial_data.get("perusahaan") or str(initial_data.get("perusahaan")).strip() in ("", "-- Select --", "—"):
+                        initial_data["perusahaan"] = comp_prof.get("display_name", "PT Anugrah Cemerlang Abadi")
                     initial_data.setdefault(
                         "nomor_spk",
                         format_official_spk_number(
@@ -1150,9 +1163,13 @@ def form_auto_save(request, slug):
                     seq = get_next_branch_spk_sequence(cabang, today.year, form_slug=form_def.slug)
                     if seq > 1:
                         need_assign = True
+            comp_prof = resolve_company_profile(form_data=data, user=request.user)
+            if not perusahaan or str(perusahaan).strip() in ("", "-- Select --", "—"):
+                perusahaan = comp_prof.get("display_name", "PT Anugrah Cemerlang Abadi")
+                data["perusahaan"] = perusahaan
+
             if need_assign:
                 seq = get_next_branch_spk_sequence(cabang, today.year, form_slug=form_def.slug)
-                comp_prof = resolve_company_profile(form_data=data, user=request.user)
                 data["nomor_spk"] = format_official_spk_number(
                     nomor=seq,
                     brand=brand,
