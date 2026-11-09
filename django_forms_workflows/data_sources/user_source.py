@@ -51,6 +51,13 @@ class UserDataSource(DataSource):
                 value = getattr(user, field_name)
                 return value if value else None
 
+            # Try to get from Royal employee profile if it exists
+            if hasattr(user, "employee_profile"):
+                profile = user.employee_profile
+                if hasattr(profile, field_name):
+                    value = getattr(profile, field_name)
+                    return value if value else None
+
             # Try to get from user profile if it exists
             if hasattr(user, "forms_profile"):
                 profile = user.forms_profile

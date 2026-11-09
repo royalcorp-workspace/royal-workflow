@@ -30,6 +30,8 @@ from django_forms_workflows.models import (
     FormField,
     FormSubmission,
     NotificationRule,
+    PrefillSource,
+    SharedOptionList,
     StageApprovalGroup,
     WorkflowDefinition,
     WorkflowStage,
@@ -70,12 +72,12 @@ class Command(BaseCommand):
         # 1.b Akun Pengujian Per-Peran & Hierarki HRMS (Dedicated Role-Based Testing Accounts)
         default_pwd = "Bandung*123#"
         test_users_config = [
-            ("kasir.cabang", "Siti", "Rahmawati (Kasir Cabang)", "kasir.cabang@royalcorp.co.id", [group_maker], "ROYAL-KSR-001", "Kasir & Administrasi Cabang", "Operasional Cabang", "Cabang Bandung"),
-            ("atasan.cabang", "Budi", "Santoso (Manager Cabang)", "atasan.cabang@royalcorp.co.id", [group_atasan_cabang], "ROYAL-MGR-001", "Branch Operational Manager", "Operasional Cabang", "Cabang Bandung"),
-            ("staff.operasional", "Rina", "Kusuma (Staff Operasional)", "staff.operasional@royalcorp.co.id", [group_pic_pusat], "ROYAL-STF-001", "Staff Verifikator & Telaah Operasional", "Divisi Operasional & Logistik", "Kantor Pusat Bandung"),
-            ("pic.pusat", "Hendra", "Wijaya (PIC Pusat)", "pic.pusat@royalcorp.co.id", [group_pic_pusat], "ROYAL-PIC-001", "PIC Pusat Operasional", "Divisi Operasional & Logistik", "Kantor Pusat Bandung"),
-            ("head.division", "Dedi", "Kusnadi (Head of Div / GM)", "head.division@royalcorp.co.id", [group_atasan_pic], "ROYAL-GM-001", "General Manager Operasional & Umum", "Divisi Operasional & Logistik", "Kantor Pusat Bandung"),
-            ("finance.ops", "Dewi", "Lestari (Finance & Kasir Pusat)", "finance.ops@royalcorp.co.id", [group_finance_transfer, group_finance_closing], "ROYAL-FIN-001", "Finance & Accounting Officer", "Finance & Accounting", "Kantor Pusat Bandung"),
+            ("kasir.cabang", "Kasir", "Cabang", "kasir.cabang@royalcorp.co.id", [group_maker], "ROYAL-KSR-001", "Kasir Cabang", "Operasional Cabang", "Cabang Bandung"),
+            ("atasan.cabang", "Atasan", "Cabang", "atasan.cabang@royalcorp.co.id", [group_atasan_cabang], "ROYAL-MGR-001", "Atasan Cabang", "Operasional Cabang", "Cabang Bandung"),
+            ("staff.operasional", "Staff", "Operasional Pusat", "staff.operasional@royalcorp.co.id", [group_pic_pusat], "ROYAL-STF-001", "Staff Operasional Pusat", "Divisi Operasional & Logistik", "Kantor Pusat Bandung"),
+            ("pic.pusat", "PIC", "Pusat", "pic.pusat@royalcorp.co.id", [group_pic_pusat], "ROYAL-PIC-001", "PIC Pusat", "Divisi Operasional & Logistik", "Kantor Pusat Bandung"),
+            ("head.division", "Atasan", "PIC Pusat", "head.division@royalcorp.co.id", [group_atasan_pic], "ROYAL-GM-001", "Atasan PIC Pusat", "Divisi Operasional & Logistik", "Kantor Pusat Bandung"),
+            ("finance.ops", "Finance", "Pusat", "finance.ops@royalcorp.co.id", [group_finance_transfer, group_finance_closing], "ROYAL-FIN-001", "Finance Pusat", "Finance & Accounting", "Kantor Pusat Bandung"),
         ]
 
         created_user_objs = {}
@@ -178,6 +180,54 @@ class Command(BaseCommand):
         else:
             self.stdout.write("Created new FormDefinition.")
 
+        # 4. Master Data Terpusat & Prefill Dinamis (HRMS / EmployeeProfile)
+        prefill_branch, _ = PrefillSource.objects.update_or_create(
+            source_key="user.branch",
+            defaults={
+                "name": "Current User - Branch / Cabang",
+                "source_type": "user",
+                "description": "Branch / Cabang pemohon otomatis dari EmployeeProfile",
+                "order": 60,
+                "is_active": True,
+            },
+        )
+        prefill_dept, _ = PrefillSource.objects.update_or_create(
+            source_key="user.department",
+            defaults={
+                "name": "Current User - Department / Divisi",
+                "source_type": "user",
+                "description": "Department / Divisi pemohon otomatis dari EmployeeProfile",
+                "order": 70,
+                "is_active": True,
+            },
+        )
+        prefill_name, _ = PrefillSource.objects.update_or_create(
+            source_key="user.full_name",
+            defaults={
+                "name": "Current User - Full Name",
+                "source_type": "user",
+                "description": "Nama lengkap user yang sedang login",
+                "order": 40,
+                "is_active": True,
+            },
+        )
+
+        shared_branch_list, _ = SharedOptionList.objects.update_or_create(
+            slug="daftar-cabang-perusahaan",
+            defaults={
+                "name": "Daftar Cabang Perusahaan",
+                "items": [
+                    {"value": "Cabang Jakarta Pusat", "label": "Cabang Jakarta Pusat"},
+                    {"value": "Cabang Bandung", "label": "Cabang Bandung"},
+                    {"value": "Cabang Surabaya", "label": "Cabang Surabaya"},
+                    {"value": "Cabang Denpasar", "label": "Cabang Denpasar"},
+                    {"value": "Cabang Medan", "label": "Cabang Medan"},
+                    {"value": "Kantor Pusat / Holding", "label": "Kantor Pusat / Holding"},
+                ],
+                "is_active": True,
+            },
+        )
+
         # 4. Form Fields Specification
         field_specs = [
             # ── SECTION 1: Informasi Pemohon & Unit Kerja Cabang ──
@@ -224,6 +274,8 @@ class Command(BaseCommand):
                 "required": True,
                 "order": 4,
                 "width": "half",
+                "shared_option_list": shared_branch_list,
+                "prefill_source_config": prefill_branch,
                 "choices": [
                     {"value": "Cabang Jakarta Pusat", "label": "Cabang Jakarta Pusat"},
                     {"value": "Cabang Bandung", "label": "Cabang Bandung"},
@@ -232,7 +284,7 @@ class Command(BaseCommand):
                     {"value": "Cabang Medan", "label": "Cabang Medan"},
                     {"value": "Kantor Pusat / Holding", "label": "Kantor Pusat / Holding"},
                 ],
-                "default_value": "Cabang Jakarta Pusat",
+                "help_text": "Otomatis terisi dinamis sesuai cabang user login pemohon.",
             },
             {
                 "field_name": "divisi_pemohon",
@@ -241,7 +293,9 @@ class Command(BaseCommand):
                 "required": True,
                 "order": 5,
                 "width": "half",
+                "prefill_source_config": prefill_dept,
                 "choices": [
+                    {"value": "Operasional Cabang", "label": "Operasional Cabang"},
                     {"value": "Divisi Umum & General Affairs", "label": "Divisi Umum & General Affairs"},
                     {"value": "Divisi Operasional & Logistik", "label": "Divisi Operasional & Logistik"},
                     {"value": "Divisi IT & Digital System", "label": "Divisi IT & Digital System"},
@@ -249,7 +303,8 @@ class Command(BaseCommand):
                     {"value": "Divisi Finance & Accounting", "label": "Divisi Finance & Accounting"},
                     {"value": "Divisi Human Capital (HRD)", "label": "Divisi Human Capital (HRD)"},
                 ],
-                "default_value": "Divisi Umum & General Affairs",
+                "default_value": "Operasional Cabang",
+                "help_text": "Otomatis terisi dinamis sesuai divisi pemohon.",
             },
             {
                 "field_name": "tanggal_kebutuhan",
@@ -267,7 +322,9 @@ class Command(BaseCommand):
                 "required": True,
                 "order": 7,
                 "width": "half",
+                "prefill_source_config": prefill_name,
                 "placeholder": "contoh: Kasir Cabang / PIC Unit Kerja",
+                "help_text": "Otomatis terisi nama lengkap pemohon dari sistem.",
             },
             {
                 "field_name": "urgensi_pengajuan",
@@ -399,6 +456,8 @@ class Command(BaseCommand):
                 width=spec.get("width", "full"),
                 required=spec.get("required", False),
                 choices=spec.get("choices", None),
+                shared_option_list=spec.get("shared_option_list", None),
+                prefill_source_config=spec.get("prefill_source_config", None),
                 default_value=spec.get("default_value", ""),
                 placeholder=spec.get("placeholder", ""),
                 help_text=spec.get("help_text", ""),
