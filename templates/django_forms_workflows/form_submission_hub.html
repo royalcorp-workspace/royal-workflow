@@ -389,11 +389,86 @@
     margin-bottom: 2px;
   }
 
-  /* ── Card Table Footer ── */
+  /* ── Refined Table Pagination Footer ── */
   .card-table-footer {
-    padding: 10px 16px;
+    padding: 14px 24px;
     border-top: 1px solid #e2e8f0;
+    background-color: #f8fafc;
+  }
+  .pagination-info-text {
+    font-size: 13.5px;
+    color: #64748b;
+    line-height: 1.5;
+  }
+  .pagination-divider {
+    color: #cbd5e1;
+    font-size: 14px;
+    user-select: none;
+  }
+  .pagination-perpage-label {
+    font-size: 13px;
+    color: #64748b;
+    font-weight: 500;
+  }
+  .table-per-page-select {
+    width: auto;
+    min-width: 68px;
+    height: 32px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #1e293b;
     background-color: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding-left: 10px;
+    padding-right: 26px;
+    cursor: pointer;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .table-per-page-select:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+    outline: none;
+  }
+  .card-table-footer .pagination {
+    gap: 4px;
+  }
+  .card-table-footer .pagination .page-item .page-link {
+    min-width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px !important;
+    background-color: #ffffff;
+    padding: 0 8px;
+    line-height: 1;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+    transition: all 0.12s ease;
+  }
+  .card-table-footer .pagination .page-item:not(.active):not(.disabled) .page-link:hover {
+    background-color: #f1f5f9;
+    border-color: #cbd5e1;
+    color: #0f172a;
+  }
+  .card-table-footer .pagination .page-item.active .page-link {
+    background-color: #1e3a8a;
+    border-color: #1e3a8a;
+    color: #ffffff;
+    font-weight: 600;
+    box-shadow: 0 1px 3px 0 rgba(30, 58, 138, 0.25);
+  }
+  .card-table-footer .pagination .page-item.disabled .page-link {
+    background-color: #f8fafc;
+    border-color: #e2e8f0;
+    color: #cbd5e1;
+    cursor: not-allowed;
+    box-shadow: none;
   }
 </style>
 {% endblock %}
@@ -561,42 +636,44 @@
       </table>
     </div>
     
-    <div class="card-table-footer d-flex flex-column flex-md-row align-items-center justify-content-between gap-3 py-2.5 px-3 border-top bg-light text-muted small">
+    {# ── Table Footer: Pagination & Per-Page Controls ── #}
+    <div class="card-table-footer d-flex flex-column flex-md-row align-items-center justify-content-between gap-3 py-3 px-4 border-top">
       {# Sisi Kiri: Ringkasan Data & Dropdown Ukuran Halaman #}
-      <div class="d-flex align-items-center gap-2.5 flex-wrap">
-        <span>
+      <div class="d-flex align-items-center flex-wrap gap-2 gap-sm-3 justify-content-center justify-content-md-start">
+        <span class="pagination-info-text">
           {% if paginator.count > 0 %}
-            Menampilkan <strong>{{ page_obj.start_index }}–{{ page_obj.end_index }}</strong> dari <strong>{{ paginator.count }}</strong> pengajuan
+            Menampilkan <span class="fw-semibold text-dark">{{ page_obj.start_index }}–{{ page_obj.end_index }}</span> dari <span class="fw-semibold text-dark">{{ paginator.count }}</span> pengajuan
           {% else %}
-            Menampilkan <strong>0</strong> pengajuan
+            Menampilkan <span class="fw-semibold text-dark">0</span> pengajuan
           {% endif %}
         </span>
-        <span class="text-secondary opacity-50">|</span>
-        <div class="d-flex align-items-center gap-1.5">
-          <label for="perPageSelect" class="text-secondary mb-0" style="font-size: 12px;">Tampilkan:</label>
-          <select id="perPageSelect" class="form-select form-select-sm" style="width: auto; padding: 2px 24px 2px 8px; font-size: 12px; cursor: pointer;">
+        
+        <span class="pagination-divider d-none d-sm-inline-block" aria-hidden="true">&bull;</span>
+        
+        <div class="d-flex align-items-center gap-2">
+          <label for="perPageSelect" class="pagination-perpage-label mb-0">Baris per halaman:</label>
+          <select id="perPageSelect" class="form-select form-select-sm table-per-page-select" aria-label="Jumlah baris per halaman">
             <option value="15" {% if per_page == 15 %}selected{% endif %}>15</option>
             <option value="30" {% if per_page == 30 %}selected{% endif %}>30</option>
             <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
           </select>
-          <span class="text-secondary" style="font-size: 12px;">per hal</span>
         </div>
       </div>
 
       {# Sisi Kanan: Navigasi Pagination (Otomatis Sembunyi Jika Data <= Batas Per Page) #}
       {% if page_obj.has_other_pages %}
-      <nav aria-label="Navigasi Halaman Pengajuan">
-        <ul class="pagination pagination-sm mb-0">
+      <nav aria-label="Navigasi Halaman Pengajuan" class="d-flex align-items-center">
+        <ul class="pagination pagination-sm mb-0 align-items-center gap-1">
           {# Tombol Previous #}
           {% if page_obj.has_previous %}
             <li class="page-item">
-              <a class="page-link" href="?{% if query_params_no_page %}{{ query_params_no_page }}&{% endif %}page={{ page_obj.previous_page_number }}" aria-label="Sebelumnya">
+              <a class="page-link" href="?{% if query_params_no_page %}{{ query_params_no_page }}&{% endif %}page={{ page_obj.previous_page_number }}" aria-label="Sebelumnya" title="Halaman Sebelumnya">
                 <i class="bi bi-chevron-left" style="font-size: 11px;"></i>
               </a>
             </li>
           {% else %}
             <li class="page-item disabled">
-              <span class="page-link"><i class="bi bi-chevron-left" style="font-size: 11px;"></i></span>
+              <span class="page-link" aria-hidden="true"><i class="bi bi-chevron-left" style="font-size: 11px;"></i></span>
             </li>
           {% endif %}
 
@@ -616,13 +693,13 @@
           {# Tombol Next #}
           {% if page_obj.has_next %}
             <li class="page-item">
-              <a class="page-link" href="?{% if query_params_no_page %}{{ query_params_no_page }}&{% endif %}page={{ page_obj.next_page_number }}" aria-label="Berikutnya">
+              <a class="page-link" href="?{% if query_params_no_page %}{{ query_params_no_page }}&{% endif %}page={{ page_obj.next_page_number }}" aria-label="Berikutnya" title="Halaman Berikutnya">
                 <i class="bi bi-chevron-right" style="font-size: 11px;"></i>
               </a>
             </li>
           {% else %}
             <li class="page-item disabled">
-              <span class="page-link"><i class="bi bi-chevron-right" style="font-size: 11px;"></i></span>
+              <span class="page-link" aria-hidden="true"><i class="bi bi-chevron-right" style="font-size: 11px;"></i></span>
             </li>
           {% endif %}
         </ul>
