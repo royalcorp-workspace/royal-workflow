@@ -176,6 +176,14 @@
         border-color: #cbd5e1 !important;
         pointer-events: auto !important;
     }
+    /* Sembunyikan Field Perusahaan (Pihak Pertama) */
+    .field-perusahaan,
+    #div_id_perusahaan,
+    .field-wrapper:has([name="perusahaan"]),
+    .field-wrapper:has(#id_perusahaan),
+    [data-field-name="perusahaan"] {
+        display: none !important;
+    }
 </style>
 {% endblock %}
 

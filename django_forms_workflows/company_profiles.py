@@ -616,13 +616,36 @@ def get_brand_default_discount_rows(brand_name: str) -> list:
 
 def normalize_company_key(company_name: str, brand: str = "", user=None) -> str:
     """Normalize user, form input, brand, or user profile to canonical company key."""
-    candidates = []
-    if company_name:
-        candidates.append(str(company_name))
-    if brand:
-        candidates.append(str(brand))
+    # 1. Direct company name check if provided
+    if company_name and str(company_name).strip() not in ("", "-- Select --", "—"):
+        c_upper = str(company_name).strip().upper()
+        if any(k in c_upper for k in ["PRIMATARA", "BANGUN CIPTA", "BCP"]):
+            return "PT BANGUN CIPTA PRIMATARA"
+        if any(k in c_upper for k in ["BESTARI", "BESTARI MULIA", "BM"]):
+            return "PT BESTARI MULIA"
+        if any(k in c_upper for k in ["ABADI MULIA", "CEMERLANG ABADI MULIA", "CAM"]):
+            return "PT CEMERLANG ABADI MULIA"
+        if any(k in c_upper for k in ["SEJAHTERA", "RAS", "ROYAL", "FOAM", "CLASSIC"]):
+            return "PT ROYAL ABADI SEJAHTERA"
+        if any(k in c_upper for k in ["ANUGRAH", "ANUGERAH", "ACA", "CEMERLAH"]):
+            return "PT ANUGRAH CEMERLANG ABADI"
 
-    # Check user or submitter profile & groups
+    # 2. Brand check if provided (brand mapping takes precedence over user's corporate affiliation)
+    if brand:
+        b_upper = str(brand).strip().upper()
+        if any(k in b_upper for k in ["LADY", "ELITE", "SERENITY", "ACA", "ANUGRAH"]):
+            return "PT ANUGRAH CEMERLANG ABADI"
+        if any(k in b_upper for k in ["BESTARI", "BM"]):
+            return "PT BESTARI MULIA"
+        if any(k in b_upper for k in ["ROYAL", "FOAM", "CLASSIC", "RAS", "SEJAHTERA"]):
+            return "PT ROYAL ABADI SEJAHTERA"
+        if any(k in b_upper for k in ["PRIMATARA", "BCP"]):
+            return "PT BANGUN CIPTA PRIMATARA"
+        if any(k in b_upper for k in ["CAM", "ABADI MULIA"]):
+            return "PT CEMERLANG ABADI MULIA"
+
+    # 3. User or submitter profile & groups fallback
+    candidates = []
     if user:
         ep = getattr(user, "employee_profile", None)
         if ep and getattr(ep, "company", None):
@@ -635,24 +658,14 @@ def normalize_company_key(company_name: str, brand: str = "", user=None) -> str:
                 pass
 
     joined = " ".join(candidates).strip().upper()
-
-    # Check BCP / Bangun Cipta Primatara
     if any(k in joined for k in ["PRIMATARA", "BANGUN CIPTA", "BCP"]):
         return "PT BANGUN CIPTA PRIMATARA"
-
-    # Check BM / Bestari Mulia
     if any(k in joined for k in ["BESTARI", "BESTARI MULIA", "BM"]):
         return "PT BESTARI MULIA"
-
-    # Check CAM / Cemerlang Abadi Mulia
     if any(k in joined for k in ["ABADI MULIA", "CEMERLANG ABADI MULIA", "CAM"]):
         return "PT CEMERLANG ABADI MULIA"
-
-    # Check RAS / Royal Abadi Sejahtera / Royal Foam / Classic
     if any(k in joined for k in ["SEJAHTERA", "RAS", "ROYAL", "FOAM", "CLASSIC"]):
         return "PT ROYAL ABADI SEJAHTERA"
-
-    # Check ACA / Anugrah / Elite / Lady Americana / Serenity
     if any(k in joined for k in ["ANUGRAH", "ANUGERAH", "ACA", "CEMERLAH", "LADY", "ELITE", "SERENITY"]):
         return "PT ANUGRAH CEMERLANG ABADI"
 

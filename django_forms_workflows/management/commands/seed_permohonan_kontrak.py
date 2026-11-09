@@ -1198,7 +1198,7 @@ class Command(BaseCommand):
                 "step_number": 1,
                 "required": False,
                 "readonly": True,
-                "css_class": "field-readonly",
+                "css_class": "field-readonly d-none",
                 "shared_option_list": sol_perusahaan,
                 "help_text": "Terkunci otomatis sesuai badan hukum pemohon.",
             },
