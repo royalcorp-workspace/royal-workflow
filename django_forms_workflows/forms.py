@@ -1391,8 +1391,8 @@ class DynamicForm(forms.Form):
                 if not re.match(strict_email_regex, email_val):
                     self.add_error("email", "Format email tidak valid (harus menyertakan domain lengkap, contoh: nama@domain.com).")
 
-            # Validasi Wajib Minimal 1 Tier Valid pada Target & Incentive Scheme (Pasal 3)
-            # Wajib memiliki minimal 1 tier dengan Target Bulanan > 0 dan Incentive (%) > 0
+            # Validasi Wajib Minimal 1 Tier pada Target & Incentive Scheme (Pasal 3)
+            # Cukup memastikan kolom target bulanan dan insentif telah terisi (presence check)
             raw_target = cleaned_data.get("target_incentive") or self.data.get("target_incentive") or ""
             tier_list = []
             if isinstance(raw_target, str):
@@ -1403,22 +1403,20 @@ class DynamicForm(forms.Form):
             elif isinstance(raw_target, list):
                 tier_list = raw_target
 
-            has_valid_tier = False
-            if isinstance(tier_list, list):
+            has_filled_tier = False
+            if isinstance(tier_list, list) and len(tier_list) > 0:
                 for t in tier_list:
                     if isinstance(t, dict):
-                        tb = t.get("target_bulanan") or t.get("target") or 0
-                        inc = t.get("incentive_pct") or t.get("incentive") or 0
-                        tb_num = float(re.sub(r"[^\d.]", "", str(tb)) or 0)
-                        inc_num = float(re.sub(r"[^\d.]", "", str(inc)) or 0)
-                        if tb_num > 0 and inc_num > 0:
-                            has_valid_tier = True
+                        tb = str(t.get("target_bulanan") if t.get("target_bulanan") is not None else (t.get("target") or "")).strip()
+                        inc = str(t.get("incentive_pct") if t.get("incentive_pct") is not None else (t.get("incentive") or "")).strip()
+                        if tb != "" and inc != "":
+                            has_filled_tier = True
                             break
 
-            if not has_valid_tier:
+            if not has_filled_tier:
                 self.add_error(
                     "target_incentive",
-                    "Target & Incentive Scheme (Pasal 3) wajib memiliki minimal satu tier yang valid (Target Bulanan > 0 dan Incentive > 0%).",
+                    "Target & Incentive Scheme (Pasal 3) wajib diisi minimal 1 baris.",
                 )
             # 1. Clear any ChoiceField invalid choice errors on support toggle fields
             if "is_sales_support" in self._errors:

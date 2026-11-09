@@ -1694,67 +1694,12 @@
                 });
             });
 
-            function validateTargetTierScheme(showWarning = true) {
-                const curRows = getRows();
-                let hasValid = false;
-
-                if (Array.isArray(curRows)) {
-                    for (let i = 0; i < curRows.length; i++) {
-                        const r = curRows[i];
-                        const tbRaw = String(r.target_bulanan || '').replace(/[^0-9]/g, '');
-                        const tbNum = parseInt(tbRaw, 10) || 0;
-                        const incNum = parseFloat(String(r.incentive_pct || '').replace(',', '.')) || 0;
-                        if (tbNum > 0 && incNum > 0) {
-                            hasValid = true;
-                            break;
-                        }
-                    }
-                }
-
-                let errBox = container.querySelector('#targetTierError');
-                const firstTr = container.querySelector('tbody tr');
-                const firstTbInput = firstTr ? firstTr.querySelector('[data-key="target_bulanan"]') : null;
-                const firstIncInput = firstTr ? firstTr.querySelector('[data-key="incentive_pct"]') : null;
-
-                if (!hasValid) {
-                    if (showWarning) {
-                        if (!errBox) {
-                            errBox = document.createElement('div');
-                            errBox.id = 'targetTierError';
-                            errBox.className = 'alert alert-danger py-2 px-3 small mt-2 d-flex align-items-center mb-0';
-                            errBox.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2 fs-6"></i> <span><strong>Wajib Diisi:</strong> Wajib mengisi minimal 1 tier target penjualan bulanan dan reward insentif dengan nilai lebih dari 0.</span>';
-                            container.appendChild(errBox);
-                        }
-                        if (firstTbInput) firstTbInput.classList.add('is-invalid');
-                        if (firstIncInput) firstIncInput.classList.add('is-invalid');
-                    }
-                    return false;
-                } else {
-                    if (errBox) errBox.remove();
-                    container.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
-                    return true;
-                }
-            }
-            form._validateTargetTierScheme = validateTargetTierScheme;
-
-            // Trigger real-time re-validation if warning is active
-            container.querySelectorAll('input').forEach(inp => {
-                inp.addEventListener('input', () => {
-                    if (container.querySelector('#targetTierError')) {
-                        validateTargetTierScheme(true);
-                    }
-                });
-            });
-
             container.querySelectorAll('.btn-delete-row').forEach(btn => {
                 btn.addEventListener('click', () => {
                     const idx = parseInt(btn.closest('tr').dataset.index);
                     rows.splice(idx, 1);
                     saveRows(rows);
                     render();
-                    if (container.querySelector('#targetTierError') || (typeof form._validateTargetTierScheme === 'function')) {
-                        form._validateTargetTierScheme(true);
-                    }
                 });
             });
 
@@ -2114,12 +2059,69 @@
                 }
             });
 
+            function validateTargetTierScheme(showWarning = true) {
+                const curRows = getRows();
+                let hasFilledRow = false;
+
+                if (Array.isArray(curRows) && curRows.length > 0) {
+                    for (let i = 0; i < curRows.length; i++) {
+                        const r = curRows[i];
+                        if (!r) continue;
+                        const tbStr = String(r.target_bulanan !== undefined && r.target_bulanan !== null ? r.target_bulanan : '').trim();
+                        const incStr = String(r.incentive_pct !== undefined && r.incentive_pct !== null ? r.incentive_pct : '').trim();
+
+                        // Presence check: pastikan kolom target bulanan dan insentif tidak kosong
+                        if (tbStr !== '' && incStr !== '') {
+                            hasFilledRow = true;
+                            break;
+                        }
+                    }
+                }
+
+                let errBox = container.querySelector('#targetTierError');
+                const firstTr = container.querySelector('tbody tr');
+                const firstTbInput = firstTr ? firstTr.querySelector('[data-key="target_bulanan"]') : null;
+                const firstIncInput = firstTr ? firstTr.querySelector('[data-key="incentive_pct"]') : null;
+
+                if (!hasFilledRow) {
+                    if (showWarning) {
+                        if (!errBox) {
+                            errBox = document.createElement('div');
+                            errBox.id = 'targetTierError';
+                            errBox.className = 'alert alert-danger py-2 px-3 small mt-2 d-flex align-items-center mb-0';
+                            errBox.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2 fs-6"></i> <span><strong>Wajib Diisi:</strong> Target & Incentive Scheme (Pasal 3) wajib diisi minimal 1 baris.</span>';
+                            container.appendChild(errBox);
+                        }
+                        if (firstTbInput) firstTbInput.classList.add('is-invalid');
+                        if (firstIncInput) firstIncInput.classList.add('is-invalid');
+                    }
+                    return false;
+                } else {
+                    if (errBox) errBox.remove();
+                    container.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+                    return true;
+                }
+            }
+            form._validateTargetTierScheme = validateTargetTierScheme;
+
+            // Trigger real-time re-validation if warning is active
+            container.querySelectorAll('input').forEach(inp => {
+                inp.addEventListener('input', () => {
+                    if (container.querySelector('#targetTierError')) {
+                        validateTargetTierScheme(true);
+                    }
+                });
+            });
+
             container.querySelectorAll('.btn-delete-row').forEach(btn => {
                 btn.addEventListener('click', () => {
                     const idx = parseInt(btn.closest('tr').dataset.index);
                     rows.splice(idx, 1);
                     saveRows(rows);
                     render();
+                    if (container.querySelector('#targetTierError') || (typeof form._validateTargetTierScheme === 'function')) {
+                        form._validateTargetTierScheme(true);
+                    }
                 });
             });
 
@@ -2127,6 +2129,9 @@
                 rows.push({ target_bulanan: 0, exclude_ppn: true, incentive_pct: 0, keterangan: '' });
                 saveRows(rows);
                 render();
+                if (container.querySelector('#targetTierError') || (typeof form._validateTargetTierScheme === 'function')) {
+                    form._validateTargetTierScheme(true);
+                }
             });
         }
 
@@ -4367,7 +4372,7 @@
                         const isTierValid = form._validateTargetTierScheme(true);
                         if (!isTierValid) {
                             hasError = true;
-                            errorDetails.push('<strong>Target & Incentive Scheme (Pasal 3)</strong> wajib memiliki minimal 1 tier valid (Target Bulanan > 0 dan Incentive > 0%).');
+                            errorDetails.push('<strong>Target & Incentive Scheme (Pasal 3)</strong> wajib diisi minimal 1 baris.');
                             const targetContainer = form.querySelector('.kontrak-target-incentive-wrapper') || form.querySelector('[data-grid="target_incentive"]');
                             if (targetContainer && !firstInvalid) {
                                 firstInvalid = targetContainer.querySelector('[data-key="target_bulanan"]') || targetContainer;
