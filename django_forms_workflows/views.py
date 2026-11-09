@@ -2800,8 +2800,17 @@ def approve_submission(request, task_id):
             changes=audit_changes,
         )
 
-        action_label = "approved" if decision == "approve" else "rejected"
-        messages.success(request, f"Submission {action_label} successfully.")
+        stage_name = task.workflow_stage.name if task.workflow_stage else ""
+        doc_no = (
+            submission.form_data.get("nomor_spk")
+            or submission.form_data.get("nomor_dokumen")
+            or f"#{submission.id}"
+        )
+        if decision == "approve":
+            stage_info = f" ({stage_name})" if stage_name else ""
+            messages.success(request, f"Pengajuan {doc_no} berhasil disetujui{stage_info}.")
+        else:
+            messages.warning(request, f"Pengajuan {doc_no} ditolak.")
         return redirect("forms_workflows:approval_inbox")
 
     # GET request - create the approval step form if needed

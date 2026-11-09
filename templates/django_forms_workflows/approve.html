@@ -937,9 +937,11 @@
                   {% if signing_token and signing_token.status == 'signed' or submission.form_data.ttd_toko_image %}
                     <button
                       type="button"
-                      id="btnTriggerApproveModal"
+                      id="btnTriggerApproveModalStage3"
                       class="btn btn-sm btn-success btn-decision-approve d-inline-flex align-items-center justify-content-center gap-1.5 flex-fill flex-md-grow-0 shadow-sm"
-                      style="padding: 0.45rem 1.25rem; font-weight: 600; font-size: 0.875rem; border-radius: 6px;">
+                      style="padding: 0.45rem 1.25rem; font-weight: 600; font-size: 0.875rem; border-radius: 6px;"
+                      data-bs-toggle="modal"
+                      data-bs-target="#approveConfirmModal">
                       <i class="bi bi-check2-circle me-1"></i> Setujui ({{ task.workflow_stage.name|default:"Sales Support" }})
                     </button>
                   {% endif %}
@@ -965,8 +967,10 @@
                   <button
                     type="button"
                     id="btnTriggerApproveModal"
-                    class="btn btn-sm btn-primary btn-decision-approve d-inline-flex align-items-center justify-content-center gap-1.5 flex-fill flex-md-grow-0"
-                    style="padding: 0.45rem 1.25rem; font-weight: 600; font-size: 0.875rem; border-radius: 6px;">
+                    class="btn btn-sm btn-primary btn-decision-approve d-inline-flex align-items-center justify-content-center gap-1.5 flex-fill flex-md-grow-0 shadow-sm"
+                    style="padding: 0.45rem 1.25rem; font-weight: 600; font-size: 0.875rem; border-radius: 6px;"
+                    data-bs-toggle="modal"
+                    data-bs-target="#approveConfirmModal">
                     <i class="bi bi-check2-circle me-1"></i> Setujui ({{ task.workflow_stage.name|default:"Approve" }})
                   </button>
                 {% endif %}
@@ -1128,50 +1132,105 @@
     {% endif %}
         {# ── Modal Konfirmasi Persetujuan Universal ── #}
     <div class="modal fade" id="approveConfirmModal" tabindex="-1" aria-labelledby="approveConfirmModalLabel" aria-hidden="true" data-bs-backdrop="static">
-      <div class="modal-dialog modal-dialog-centered" style="max-width: 460px;">
-        <div class="modal-content border shadow-sm">
-          <div class="modal-header bg-light border-bottom py-2.5 px-3">
-            <h6 class="modal-title fw-bold text-dark mb-0 d-flex align-items-center gap-2" id="approveConfirmModalLabel">
-              <i class="bi bi-check2-circle text-success fs-5"></i>
-              <span>Konfirmasi Persetujuan</span>
-            </h6>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+      <div class="modal-dialog modal-dialog-centered" style="max-width: 500px;">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 12px; overflow: hidden;">
+          
+          {# Modal Header #}
+          <div class="modal-header d-flex align-items-center justify-content-between" style="padding: 18px 24px; border-bottom: 1px solid #f1f5f9; background: #ffffff;">
+            <div class="d-flex align-items-center gap-3">
+              <div style="background: #ecfdf5; color: #059669; width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 1px 2px rgba(5, 150, 105, 0.1);">
+                <i class="bi bi-shield-check" style="font-size: 1.25rem;"></i>
+              </div>
+              <div>
+                <h6 class="modal-title mb-0" id="approveConfirmModalLabel" style="font-size: 1.05rem; font-weight: 700; color: #0f172a; letter-spacing: -0.01em;">
+                  Konfirmasi Persetujuan SPK
+                </h6>
+                <div class="text-muted" style="font-size: 12px; margin-top: 1px;">
+                  Tahap: <span class="fw-medium text-dark">{{ task.workflow_stage.name|default:"Reviewer" }}</span>
+                </div>
+              </div>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup" style="font-size: 0.85rem;"></button>
           </div>
 
-          <div class="modal-body p-3">
-            <p class="text-dark small mb-3">
-              Apakah Anda yakin ingin menyetujui pengajuan ini pada tahap 
-              <strong>{{ task.workflow_stage.name|default:"Persetujuan Dokumen" }}</strong>?
+          {# Modal Body #}
+          <div class="modal-body" style="padding: 20px 24px;">
+            <p class="mb-3 text-secondary" style="font-size: 13.5px; line-height: 1.5; color: #475569;">
+              Pastikan Anda telah memeriksa draf perjanjian dan detail klausul sebelum memberikan persetujuan.
             </p>
 
-            <!-- Ringkasan Singkat Dokumen -->
-            <div class="p-2.5 bg-light rounded border small mb-0">
-              <div class="row g-1">
-                <div class="col-4 text-muted">No. Dokumen</div>
-                <div class="col-8 fw-semibold text-dark text-break">
-                  {% if submission.form_data.nomor_spk %}{{ submission.form_data.nomor_spk }}{% elif submission.form_data.nomor_dokumen %}{{ submission.form_data.nomor_dokumen }}{% else %}#{{ submission.id }}{% endif %}
+            <!-- Modern Structured Detail Card (Key-Value Grid) -->
+            <div class="rounded-3 border" style="background-color: #f8fafc; border-color: #e2e8f0; border-radius: 10px; overflow: hidden;">
+              <div class="p-3">
+                <div class="row g-2.5">
+                  <div class="col-6">
+                    <div class="text-uppercase fw-semibold" style="font-size: 11px; color: #64748b; letter-spacing: 0.04em;">Nomor SPK / Dokumen</div>
+                    <div class="fw-bold text-dark text-break mt-0.5" style="font-size: 13px; color: #0f172a;">
+                      {% if submission.form_data.nomor_spk %}
+                        {{ submission.form_data.nomor_spk }}
+                      {% elif submission.form_data.nomor_dokumen %}
+                        {{ submission.form_data.nomor_dokumen }}
+                      {% else %}
+                        #{{ submission.id }}
+                      {% endif %}
+                    </div>
+                  </div>
+
+                  <div class="col-6">
+                    <div class="text-uppercase fw-semibold" style="font-size: 11px; color: #64748b; letter-spacing: 0.04em;">Tahap Persetujuan</div>
+                    <div class="mt-0.5">
+                      <span class="badge" style="background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; font-weight: 600; font-size: 11px; padding: 4px 8px; border-radius: 5px;">
+                        <i class="bi bi-clock-history me-1"></i>{{ task.workflow_stage.name|default:"Reviewer" }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="col-12"><hr class="my-1" style="border-color: #e2e8f0; opacity: 0.6;"></div>
+
+                  <div class="col-6">
+                    <div class="text-uppercase fw-semibold" style="font-size: 11px; color: #64748b; letter-spacing: 0.04em;">Pemohon</div>
+                    <div class="fw-semibold text-dark mt-0.5" style="font-size: 12.5px; color: #1e293b;">
+                      <i class="bi bi-person me-1 text-muted"></i>{{ submission.submitter.get_full_name|default:submission.submitter.username|default:"Pemohon" }}
+                    </div>
+                  </div>
+
+                  <div class="col-6">
+                    <div class="text-uppercase fw-semibold" style="font-size: 11px; color: #64748b; letter-spacing: 0.04em;">
+                      {% if submission.form_data.nama_toko %}Mitra Toko{% else %}Jenis Formulir{% endif %}
+                    </div>
+                    <div class="fw-semibold text-dark text-truncate mt-0.5" style="font-size: 12.5px; color: #1e293b;">
+                      {% if submission.form_data.nama_toko %}
+                        <i class="bi bi-shop me-1 text-muted"></i>{{ submission.form_data.nama_toko }}
+                      {% else %}
+                        {{ submission.form_definition.name }}
+                      {% endif %}
+                    </div>
+                  </div>
                 </div>
-                <div class="col-4 text-muted">Pemohon</div>
-                <div class="col-8 fw-semibold text-dark">
-                  {{ submission.submitter.get_full_name|default:submission.submitter.username|default:"Pemohon" }}
-                </div>
-                {% if submission.form_data.nama_toko %}
-                <div class="col-4 text-muted">Mitra Toko</div>
-                <div class="col-8 text-dark">{{ submission.form_data.nama_toko }}</div>
-                {% endif %}
               </div>
+            </div>
+
+            <!-- Pratinjau Catatan Reviewer (Jika Ada) -->
+            <div id="approveModalNoteSection" class="rounded-2 small d-none" style="background: #eff6ff; border-left: 3px solid #3b82f6; color: #1e40af; padding: 10px 14px; margin-top: 14px;">
+              <div class="fw-semibold mb-1 d-flex align-items-center gap-1.5" style="font-size: 11.5px; color: #1d4ed8;">
+                <i class="bi bi-chat-left-quote-fill"></i>
+                <span>Catatan Reviewer:</span>
+              </div>
+              <div id="approveModalNoteText" style="font-size: 12.5px; font-style: italic; color: #1e3a8a; word-break: break-word; line-height: 1.45;"></div>
             </div>
           </div>
 
-          <div class="modal-footer bg-light border-top d-flex justify-content-between py-2 px-3">
-            <button type="button" class="btn btn-sm btn-outline-secondary px-3" data-bs-dismiss="modal" id="btnCancelApprove">
+          {# Modal Footer #}
+          <div class="modal-footer d-flex justify-content-between align-items-center" style="border-top: 1px solid #f1f5f9; padding: 14px 24px; background: #fafafa;">
+            <button type="button" class="btn" data-bs-dismiss="modal" id="btnCancelApprove" style="border: 1px solid #cbd5e1; color: #475569; background: #ffffff; font-weight: 500; border-radius: 6px; padding: 7px 18px; font-size: 13.5px; transition: all 0.15s ease;">
               Batal
             </button>
-            <button type="button" class="btn btn-sm btn-success fw-semibold px-3 d-inline-flex align-items-center gap-1.5" id="btnConfirmApproveSubmit">
-              <i class="bi bi-check-lg"></i>
+            <button type="button" class="btn text-white d-inline-flex align-items-center gap-1.5" id="btnConfirmApproveSubmit" style="background-color: #059669; border-color: #059669; font-weight: 600; padding: 7px 20px; border-radius: 6px; font-size: 13.5px; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); transition: all 0.15s ease;">
+              <i class="bi bi-check-lg" style="font-size: 1rem;"></i>
               <span>Ya, Setujui</span>
             </button>
           </div>
+
         </div>
       </div>
     </div>
@@ -1496,7 +1555,6 @@
     const resetBtn = document.getElementById('btnResetDirekturSig');
     const confirmBtn = document.getElementById('btnConfirmDirekturSig');
     const hiddenSigInput = document.getElementById('id_ttd_direksi_image');
-    const approvalForm = document.getElementById('approval-decision-form');
 
     let ctx = null;
     let isDrawing = false;
@@ -1633,7 +1691,6 @@
     const resetBtn = document.getElementById('btnResetBiayaSig');
     const confirmBtn = document.getElementById('btnConfirmBiayaStamp');
     const hiddenStampInput = document.getElementById('id_e_signature_stamp');
-    const approvalForm = document.getElementById('approval-decision-form');
     const tabManual = document.getElementById('tab-manual-canvas');
 
     let ctx = null;
@@ -1753,12 +1810,31 @@
   // ── Modal Konfirmasi Persetujuan (Approve Confirmation Handler) ──
   (function () {
     const approvalForm = document.getElementById('approval-decision-form');
-    const triggerBtns = document.querySelectorAll('#btnTriggerApproveModal, .btn-decision-approve:not([data-bs-target])');
     const modalEl = document.getElementById('approveConfirmModal');
     const confirmBtn = document.getElementById('btnConfirmApproveSubmit');
     const cancelBtn = document.getElementById('btnCancelApprove');
+    const triggerBtns = document.querySelectorAll('#btnTriggerApproveModal, #btnTriggerApproveModalStage3, .btn-decision-approve:not([data-bs-target])');
 
-    if (!approvalForm || !modalEl || !confirmBtn || triggerBtns.length === 0) return;
+    if (!approvalForm || !modalEl || !confirmBtn) return;
+
+    // Sinkronisasi catatan reviewer ke preview modal saat modal dibuka
+    function syncReviewerNoteToModal() {
+      const commentInput = approvalForm.querySelector('[name="comments"]');
+      const noteSection = document.getElementById('approveModalNoteSection');
+      const noteText = document.getElementById('approveModalNoteText');
+      if (commentInput && noteSection && noteText) {
+        const val = commentInput.value.trim();
+        if (val) {
+          noteText.textContent = val;
+          noteSection.classList.remove('d-none');
+        } else {
+          noteSection.classList.add('d-none');
+          noteText.textContent = '';
+        }
+      }
+    }
+
+    modalEl.addEventListener('show.bs.modal', syncReviewerNoteToModal);
 
     let bsModal = null;
     if (window.bootstrap && bootstrap.Modal) {
@@ -1767,18 +1843,24 @@
 
     triggerBtns.forEach(btn => {
       btn.addEventListener('click', function (e) {
-        e.preventDefault();
-
-        // 1. Jalankan validasi HTML5 form terlebih dahulu
+        // Jalankan validasi HTML5 form terlebih dahulu jika ada required field
         if (!approvalForm.checkValidity()) {
+          e.preventDefault();
           approvalForm.reportValidity();
+          if (bsModal) {
+            bsModal.hide();
+          }
           return;
         }
 
-        // 2. Tampilkan modal konfirmasi
-        if (bsModal) {
+        syncReviewerNoteToModal();
+
+        // Jika tombol tidak memiliki data-bs-toggle native, buka modal secara manual
+        if (!btn.getAttribute('data-bs-toggle') && bsModal) {
+          e.preventDefault();
           bsModal.show();
-        } else if (window.$ && $.fn.modal) {
+        } else if (!btn.getAttribute('data-bs-toggle') && window.$ && $.fn.modal) {
+          e.preventDefault();
           $('#approveConfirmModal').modal('show');
         }
       });
