@@ -54,6 +54,23 @@ class UserDataSource(DataSource):
             # Try to get from Royal employee profile if it exists
             if hasattr(user, "employee_profile"):
                 profile = user.employee_profile
+
+                # Specific field mappings for Workflow Wireframe & PRD
+                if field_name in ["supervisor_name", "nama_atasan"]:
+                    if profile.supervisor_1_name:
+                        return profile.supervisor_1_name
+                    if profile.supervisor_1:
+                        return profile.supervisor_1.get_full_name() or profile.supervisor_1.username
+                    return "Atasan Cabang"
+                if field_name in ["department_pembuat", "dept_pembuat"]:
+                    return profile.department or "Operasional Cabang"
+                if field_name in ["bagian_pembuat", "posisi_pembuat"]:
+                    return profile.position or "Kasir Cabang"
+                if field_name in ["nama_kasir", "pemohon_nama"]:
+                    return profile.full_name or f"{user.first_name} {user.last_name}".strip() or user.username
+                if field_name in ["cabang", "branch"]:
+                    return profile.branch or "Cabang Bandung"
+
                 if hasattr(profile, field_name):
                     value = getattr(profile, field_name)
                     return value if value else None

@@ -127,9 +127,17 @@ class Command(BaseCommand):
         if u_pic and u_gm:
             EmployeeProfile.objects.filter(user=u_pic).update(supervisor_1=u_gm)
         if u_kasir and u_mgr:
-            EmployeeProfile.objects.filter(user=u_kasir).update(supervisor_1=u_mgr)
+            EmployeeProfile.objects.filter(user=u_kasir).update(
+                supervisor_1=u_mgr,
+                supervisor_1_name="Atasan Cabang",
+                supervisor_1_position="Atasan Cabang",
+            )
         if u_mgr and u_gm:
-            EmployeeProfile.objects.filter(user=u_mgr).update(supervisor_1=u_gm)
+            EmployeeProfile.objects.filter(user=u_mgr).update(
+                supervisor_1=u_gm,
+                supervisor_1_name="Atasan PIC Pusat",
+                supervisor_1_position="Head of Division",
+            )
 
         self.stdout.write("Created/updated 6 dedicated testing users & HRMS EmployeeProfiles (password: Bandung*123#).")
 
@@ -181,6 +189,16 @@ class Command(BaseCommand):
             self.stdout.write("Created new FormDefinition.")
 
         # 4. Master Data Terpusat & Prefill Dinamis (HRMS / EmployeeProfile)
+        prefill_date, _ = PrefillSource.objects.update_or_create(
+            source_key="current_date",
+            defaults={
+                "name": "Current Date (YYYY-MM-DD)",
+                "source_type": "system",
+                "description": "Tanggal hari ini otomatis dari sistem",
+                "order": 200,
+                "is_active": True,
+            },
+        )
         prefill_branch, _ = PrefillSource.objects.update_or_create(
             source_key="user.branch",
             defaults={
@@ -191,23 +209,43 @@ class Command(BaseCommand):
                 "is_active": True,
             },
         )
-        prefill_dept, _ = PrefillSource.objects.update_or_create(
-            source_key="user.department",
+        prefill_dept_pembuat, _ = PrefillSource.objects.update_or_create(
+            source_key="user.department_pembuat",
             defaults={
-                "name": "Current User - Department / Divisi",
+                "name": "Current User - Department Pembuat",
                 "source_type": "user",
-                "description": "Department / Divisi pemohon otomatis dari EmployeeProfile",
-                "order": 70,
+                "description": "Department pembuat dari profil karyawan pemohon",
+                "order": 97,
                 "is_active": True,
             },
         )
-        prefill_name, _ = PrefillSource.objects.update_or_create(
-            source_key="user.full_name",
+        prefill_bagian_pembuat, _ = PrefillSource.objects.update_or_create(
+            source_key="user.bagian_pembuat",
             defaults={
-                "name": "Current User - Full Name",
+                "name": "Current User - Bagian Pembuat",
                 "source_type": "user",
-                "description": "Nama lengkap user yang sedang login",
-                "order": 40,
+                "description": "Bagian / Posisi pembuat dari profil karyawan pemohon",
+                "order": 98,
+                "is_active": True,
+            },
+        )
+        prefill_nama_atasan, _ = PrefillSource.objects.update_or_create(
+            source_key="user.supervisor_name",
+            defaults={
+                "name": "Current User - Supervisor / Atasan",
+                "source_type": "user",
+                "description": "Supervisor / Atasan langsung pemohon",
+                "order": 96,
+                "is_active": True,
+            },
+        )
+        prefill_nama_kasir, _ = PrefillSource.objects.update_or_create(
+            source_key="user.nama_kasir",
+            defaults={
+                "name": "Current User - Nama Kasir",
+                "source_type": "user",
+                "description": "Nama Kasir / Pemohon yang sedang membuat pengajuan",
+                "order": 99,
                 "is_active": True,
             },
         )
@@ -228,52 +266,39 @@ class Command(BaseCommand):
             },
         )
 
-        # 4. Form Fields Specification
+        # 4. Form Fields Specification (Harmonized with Wireframe refferense-wf.jpeg & PRD v1.2)
         field_specs = [
-            # ── SECTION 1: Informasi Pemohon & Unit Kerja Cabang ──
+            # ── KOLOM A: IDENTITAS PENGAJUAN & INFORMASI PEMBUAT (100% Prefilled & Locked) ──
             {
-                "field_name": "section_info_pemohon",
-                "field_label": "1. Informasi Pemohon & Unit Kerja Cabang",
-                "field_type": "section",
+                "field_name": "tanggal_pengajuan",
+                "field_label": "Tanggal Pengajuan",
+                "field_type": "date",
+                "required": False,
+                "readonly": True,
                 "order": 1,
-                "width": "full",
-            },
-            {
-                "field_name": "nama_kegiatan",
-                "field_label": "Nama / Judul Kegiatan Pengajuan Biaya",
-                "field_type": "text",
-                "required": True,
-                "order": 2,
-                "width": "full",
-                "placeholder": "contoh: Pengadaan Kertas & ATK Operasional Cabang Periode Q3",
-                "help_text": "Judul atau nama kegiatan yang mendasari permohonan pengajuan biaya.",
-            },
-            {
-                "field_name": "kategori_biaya",
-                "field_label": "Kategori Pengeluaran Biaya",
-                "field_type": "select",
-                "required": True,
-                "order": 3,
                 "width": "half",
-                "choices": [
-                    {"value": "Operasional Cabang", "label": "Operasional Cabang"},
-                    {"value": "ATK & Perlengkapan Kantor", "label": "ATK & Perlengkapan Kantor"},
-                    {"value": "Transportasi, BBM & Tol", "label": "Transportasi, BBM & Tol"},
-                    {"value": "Konsumsi & Jamuan Klien", "label": "Konsumsi & Jamuan Klien"},
-                    {"value": "Perawatan & Servis Gedung/Mesin", "label": "Perawatan & Servis Gedung / Mesin"},
-                    {"value": "IT, Komunikasi & Software", "label": "IT, Komunikasi & Software"},
-                    {"value": "Promosi & Pemasaran", "label": "Promosi & Pemasaran"},
-                    {"value": "Lain-lain", "label": "Lain-lain"},
-                ],
-                "default_value": "Operasional Cabang",
+                "prefill_source_config": prefill_date,
+                "help_text": "Otomatis terisi tanggal hari ini.",
+            },
+            {
+                "field_name": "nomor_pengajuan",
+                "field_label": "Nomor Pengajuan",
+                "field_type": "text",
+                "required": False,
+                "readonly": True,
+                "order": 2,
+                "width": "half",
+                "default_value": "Auto Number",
+                "help_text": "Nomor registrasi pengajuan otomatis dari sistem workflow.",
             },
             {
                 "field_name": "cabang",
-                "field_label": "Cabang / Unit Kerja Pemohon",
+                "field_label": "Cabang / Unit Kerja",
                 "field_type": "select",
-                "required": True,
-                "order": 4,
-                "width": "half",
+                "required": False,
+                "readonly": True,
+                "order": 3,
+                "width": "full",
                 "shared_option_list": shared_branch_list,
                 "prefill_source_config": prefill_branch,
                 "choices": [
@@ -284,55 +309,164 @@ class Command(BaseCommand):
                     {"value": "Cabang Medan", "label": "Cabang Medan"},
                     {"value": "Kantor Pusat / Holding", "label": "Kantor Pusat / Holding"},
                 ],
-                "help_text": "Otomatis terisi dinamis sesuai cabang user login pemohon.",
+                "help_text": "Terkunci otomatis sesuai cabang profil karyawan.",
             },
             {
-                "field_name": "divisi_pemohon",
-                "field_label": "Divisi Pemohon",
-                "field_type": "select",
-                "required": True,
+                "field_name": "department_pembuat",
+                "field_label": "Department Pembuat",
+                "field_type": "text",
+                "required": False,
+                "readonly": True,
+                "order": 4,
+                "width": "half",
+                "prefill_source_config": prefill_dept_pembuat,
+                "default_value": "Operasional Cabang",
+                "help_text": "Otomatis terisi dari profil user pembuat.",
+            },
+            {
+                "field_name": "bagian_pembuat",
+                "field_label": "Bagian Pembuat",
+                "field_type": "text",
+                "required": False,
+                "readonly": True,
                 "order": 5,
                 "width": "half",
-                "prefill_source_config": prefill_dept,
+                "prefill_source_config": prefill_bagian_pembuat,
+                "default_value": "Kasir Cabang",
+                "help_text": "Otomatis terisi dari profil user pembuat.",
+            },
+            {
+                "field_name": "nama_atasan",
+                "field_label": "Nama Atasan Langsung",
+                "field_type": "text",
+                "required": False,
+                "readonly": True,
+                "order": 6,
+                "width": "half",
+                "prefill_source_config": prefill_nama_atasan,
+                "default_value": "Atasan Cabang",
+                "help_text": "Atasan penanggung jawab pemohon (Reviewer Tahap 1).",
+            },
+            {
+                "field_name": "inisiator_nama",
+                "field_label": "Nama Kasir / Pemohon",
+                "field_type": "text",
+                "required": False,
+                "readonly": True,
+                "order": 7,
+                "width": "half",
+                "prefill_source_config": prefill_nama_kasir,
+                "default_value": "Kasir Cabang",
+                "help_text": "User aktif yang membuat pengajuan biaya operasional.",
+            },
+
+            # ── KOLOM A: TUJUAN PENGAJUAN (Divisi Penerima & Klasifikasi Biaya PRD v1.2) ──
+            {
+                "field_name": "nama_kegiatan",
+                "field_label": "Nama / Judul Pengajuan Biaya",
+                "field_type": "text",
+                "required": True,
+                "order": 8,
+                "width": "full",
+                "placeholder": "",
+                "help_text": "Ringkasan judul kebutuhan pengajuan biaya operasional cabang.",
+            },
+            {
+                "field_name": "department_penerima",
+                "field_label": "Department Penerima",
+                "field_type": "select",
+                "required": True,
+                "order": 9,
+                "width": "half",
                 "choices": [
-                    {"value": "Operasional Cabang", "label": "Operasional Cabang"},
-                    {"value": "Divisi Umum & General Affairs", "label": "Divisi Umum & General Affairs"},
+                    {"value": "Divisi Umum & PGA", "label": "Divisi Umum & PGA"},
+                    {"value": "Divisi IT & Komunikasi", "label": "Divisi IT & Komunikasi"},
                     {"value": "Divisi Operasional & Logistik", "label": "Divisi Operasional & Logistik"},
-                    {"value": "Divisi IT & Digital System", "label": "Divisi IT & Digital System"},
                     {"value": "Divisi Sales & Marketing", "label": "Divisi Sales & Marketing"},
                     {"value": "Divisi Finance & Accounting", "label": "Divisi Finance & Accounting"},
                     {"value": "Divisi Human Capital (HRD)", "label": "Divisi Human Capital (HRD)"},
                 ],
-                "default_value": "Operasional Cabang",
-                "help_text": "Otomatis terisi dinamis sesuai divisi pemohon.",
+                "default_value": "Divisi Umum & PGA",
             },
             {
-                "field_name": "tanggal_kebutuhan",
-                "field_label": "Tanggal Kebutuhan Dana",
-                "field_type": "date",
-                "required": True,
-                "order": 6,
+                "field_name": "bagian_penerima",
+                "field_label": "Bagian Penerima",
+                "field_type": "text",
+                "required": False,
+                "order": 10,
                 "width": "half",
-                "help_text": "Batas waktu realisasi kebutuhan dana atau jadwal pelaksanaan belanja.",
+                "default_value": "PGA / Operasional Pusat",
+                "placeholder": "",
             },
             {
-                "field_name": "inisiator_nama",
-                "field_label": "Nama Pemohon / Penanggung Jawab (Kasir Cabang)",
+                "field_name": "nama_pic",
+                "field_label": "Nama PIC Penerima",
+                "field_type": "text",
+                "required": False,
+                "order": 11,
+                "width": "half",
+                "default_value": "PIC Pusat",
+                "placeholder": "",
+            },
+            {
+                "field_name": "tembusan",
+                "field_label": "Tembusan",
+                "field_type": "text",
+                "required": False,
+                "order": 12,
+                "width": "half",
+                "default_value": "Atasan PIC Pusat",
+                "placeholder": "",
+                "help_text": "Minimal nama atasan PIC kantor pusat.",
+            },
+            {
+                "field_name": "nomor_petty_cash",
+                "field_label": "No. Dokumen Petty Cash / Kasbon Cabang",
                 "field_type": "text",
                 "required": True,
-                "order": 7,
+                "order": 13,
+                "width": "full",
+                "placeholder": "",
+                "help_text": "Nomor voucher petty cash fisik cabang (Wajib diisi sesuai PRD FR-04).",
+            },
+            {
+                "field_name": "kategori_biaya",
+                "field_label": "Kategori Pengeluaran Biaya",
+                "field_type": "select",
+                "required": True,
+                "order": 14,
                 "width": "half",
-                "prefill_source_config": prefill_name,
-                "placeholder": "contoh: Kasir Cabang / PIC Unit Kerja",
-                "help_text": "Otomatis terisi nama lengkap pemohon dari sistem.",
+                "choices": [
+                    {"value": "ATK & Perlengkapan Kantor", "label": "ATK & Perlengkapan Kantor"},
+                    {"value": "Service Umum & Pemeliharaan Gedung/Aset", "label": "Service Umum & Pemeliharaan Gedung/Aset"},
+                    {"value": "Operasional Kendaraan & Transportasi", "label": "Operasional Kendaraan & Transportasi"},
+                    {"value": "IT, Komunikasi & Peralatan Kantor", "label": "IT, Komunikasi & Peralatan Kantor"},
+                    {"value": "Sales, Pemasaran & Operasional Cabang", "label": "Sales, Pemasaran & Operasional Cabang"},
+                ],
+                "default_value": "ATK & Perlengkapan Kantor",
+                "help_text": "5 Kategori Pengeluaran Biaya MVP sesuai PRD v1.2 FR-01.",
+            },
+            {
+                "field_name": "tipe_transaksi",
+                "field_label": "Tipe Transaksi",
+                "field_type": "select",
+                "required": True,
+                "order": 15,
+                "width": "half",
+                "choices": [
+                    {"value": "Pengajuan", "label": "Pengajuan (Kasbon di muka sebelum belanja)"},
+                    {"value": "Reimburse", "label": "Reimburse (Klaim penggantian dana yang sudah keluar)"},
+                ],
+                "default_value": "Pengajuan",
+                "help_text": "Reimburse mewajibkan unggah bukti nota belanja riil saat submit (FR-05).",
             },
             {
                 "field_name": "urgensi_pengajuan",
                 "field_label": "Tingkat Urgensi",
                 "field_type": "select",
                 "required": True,
-                "order": 8,
-                "width": "half",
+                "order": 16,
+                "width": "full",
                 "choices": [
                     {"value": "Normal (Sesuai SLA Standar)", "label": "Normal (Sesuai SLA Standar)"},
                     {"value": "Prioritas Tinggi", "label": "Prioritas Tinggi"},
@@ -341,61 +475,104 @@ class Command(BaseCommand):
                 "default_value": "Normal (Sesuai SLA Standar)",
             },
 
-            # ── SECTION 2: Rincian Anggaran & Metode Pencairan Dana ──
+            # ── KOLOM A: LAMPIRAN BERKAS ──
             {
-                "field_name": "section_rincian_anggaran",
-                "field_label": "2. Rincian Anggaran & Metode Pencairan Dana",
-                "field_type": "section",
-                "order": 9,
+                "field_name": "dokumen_pendukung",
+                "field_label": "Lampiran Pengajuan / Bukti Nota / Penawaran",
+                "field_type": "file",
+                "required": False,
+                "order": 17,
                 "width": "full",
+                "help_text": "Unggah nota, kuitansi, proforma invoice, atau foto kebutuhan (Wajib untuk Reimburse).",
+            },
+            {
+                "field_name": "lampiran_realisasi",
+                "field_label": "Lampiran Realisasi / Bukti Beresan (Closing)",
+                "field_type": "file",
+                "required": False,
+                "readonly": True,
+                "order": 18,
+                "width": "full",
+                "help_text": "Diupload saat tahap Pelaporan Realisasi Biaya oleh Kasir (Tahap 6 Closing).",
+            },
+
+            # ── KOLOM B: DETAIL ITEM DAN LIMIT BUDGET GUARDRAIL ──
+            {
+                "field_name": "sisa_limit_pengajuan_lalu",
+                "field_label": "Sisa Limit Pengajuan Lalu (Rp)",
+                "field_type": "number",
+                "required": False,
+                "readonly": True,
+                "order": 19,
+                "width": "third",
+                "default_value": "1000000",
+                "help_text": "Sisa saldo limit operasional periode sebelumnya.",
+            },
+            {
+                "field_name": "total_nominal",
+                "field_label": "Total Nominal Biaya (Rp)",
+                "field_type": "number",
+                "required": True,
+                "order": 20,
+                "width": "third",
+                "placeholder": "",
+                "help_text": "Total akumulasi nominal pengajuan dihitung otomatis dari rincian item.",
+            },
+            {
+                "field_name": "sisa_limit_saat_ini",
+                "field_label": "Sisa Limit Saat Ini (Rp)",
+                "field_type": "number",
+                "required": False,
+                "readonly": True,
+                "order": 21,
+                "width": "third",
+                "default_value": "1000000",
+                "help_text": "Sisa limit setelah dikurangi total pengajuan ini.",
+            },
+            {
+                "field_name": "items_data",
+                "field_label": "Data Rincian Multi-Item (JSON)",
+                "field_type": "textarea",
+                "required": False,
+                "order": 22,
+                "width": "full",
+                "default_value": "[]",
+                "help_text": "Data terstruktur multi-item barang/jasa disinkronkan otomatis.",
             },
             {
                 "field_name": "rincian_item",
                 "field_label": "Daftar Rincian Item Barang / Jasa",
                 "field_type": "textarea",
                 "required": True,
-                "order": 10,
+                "order": 23,
                 "width": "full",
-                "placeholder": (
-                    "Tuliskan rincian kebutuhan barang/jasa beserta kuantitas dan estimasi harga:\n"
-                    "1. Kertas HVS A4 80gsm - 5 Rim @ Rp 45.000 = Rp 225.000\n"
-                    "2. Pulpen Gel Biru - 12 Pcs @ Rp 5.000 = Rp 60.000\n"
-                    "3. Ongkos Kirim / Kurir = Rp 50.000"
-                ),
-                "help_text": "Rincian spesifikasi barang/jasa, jumlah, satuan, estimasi harga satuan, dan subtotal.",
+                "placeholder": "",
+                "help_text": "Ringkasan teks rincian item kebutuhan operasional.",
             },
-            {
-                "field_name": "total_nominal",
-                "field_label": "Total Nominal Pengajuan (Rp)",
-                "field_type": "number",
-                "required": True,
-                "order": 11,
-                "width": "half",
-                "placeholder": "contoh: 335000",
-                "help_text": "Ketik total nominal angka tanpa titik/koma (misal: 335000 untuk Rp 335.000).",
-            },
+
+            # ── KOLOM B: PENCAIRAN DANA & JUSTIFIKASI ──
             {
                 "field_name": "metode_pencairan",
                 "field_label": "Metode Pencairan Dana",
                 "field_type": "select",
                 "required": True,
-                "order": 12,
+                "order": 24,
                 "width": "half",
                 "choices": [
-                    {"value": "Transfer Rekening Bank", "label": "Transfer Rekening Bank (Cabang / Vendor)"},
                     {"value": "Kas Kecil / Kasbon (Petty Cash)", "label": "Kas Kecil / Kasbon Tunai (Petty Cash)"},
-                    {"value": "Reimbursement Pribadi", "label": "Klaim Reimbursement Karyawan"},
+                    {"value": "Transfer Rekening Bank", "label": "Transfer Rekening Bank (Cabang / Vendor)"},
+                    {"value": "Klaim Reimbursement Karyawan", "label": "Klaim Reimbursement Karyawan"},
                 ],
-                "default_value": "Transfer Rekening Bank",
+                "default_value": "Kas Kecil / Kasbon (Petty Cash)",
             },
             {
                 "field_name": "nama_bank",
                 "field_label": "Nama Bank Tujuan",
                 "field_type": "text",
                 "required": False,
-                "order": 13,
+                "order": 25,
                 "width": "half",
-                "placeholder": "contoh: BCA / Mandiri / BNI / BRI",
+                "placeholder": "",
                 "help_text": "Isi jika memilih metode transfer rekening bank.",
             },
             {
@@ -403,45 +580,27 @@ class Command(BaseCommand):
                 "field_label": "Nomor Rekening Tujuan",
                 "field_type": "text",
                 "required": False,
-                "order": 14,
+                "order": 26,
                 "width": "half",
-                "placeholder": "contoh: 1234567890",
+                "placeholder": "",
             },
             {
                 "field_name": "atas_nama_rekening",
                 "field_label": "Atas Nama Rekening",
                 "field_type": "text",
                 "required": False,
-                "order": 15,
-                "width": "full",
-                "placeholder": "contoh: PT Royal Abadi Sejahtera Cabang Bandung / Nama Pemohon",
-            },
-
-            # ── SECTION 3: Dokumen Lampiran & Justifikasi Kebutuhan ──
-            {
-                "field_name": "section_dokumen_lampiran",
-                "field_label": "3. Dokumen Lampiran & Justifikasi Kebutuhan",
-                "field_type": "section",
-                "order": 16,
-                "width": "full",
-            },
-            {
-                "field_name": "dokumen_pendukung",
-                "field_label": "Dokumen Pendukung / Nota / Proforma Invoice",
-                "field_type": "file",
-                "required": False,
-                "order": 17,
-                "width": "full",
-                "help_text": "Unggah berkas penawaran vendor, proforma invoice, kuitansi, atau proposal kebutuhan (PDF/JPG/PNG).",
+                "order": 27,
+                "width": "half",
+                "placeholder": "",
             },
             {
                 "field_name": "catatan_justifikasi",
                 "field_label": "Catatan Justifikasi & Rencana Penggunaan",
                 "field_type": "textarea",
                 "required": False,
-                "order": 18,
+                "order": 28,
                 "width": "full",
-                "placeholder": "Berikan penjelasan latar belakang kebutuhan dan manfaat operasional dari pengeluaran ini...",
+                "placeholder": "",
                 "help_text": "Uraian justifikasi kebutuhan operasional dan urgensi pemakaian dana.",
             },
         ]
@@ -455,6 +614,7 @@ class Command(BaseCommand):
                 order=spec["order"],
                 width=spec.get("width", "full"),
                 required=spec.get("required", False),
+                readonly=spec.get("readonly", False),
                 choices=spec.get("choices", None),
                 shared_option_list=spec.get("shared_option_list", None),
                 prefill_source_config=spec.get("prefill_source_config", None),
@@ -575,8 +735,8 @@ class Command(BaseCommand):
           <td class="info-value">{{{{ form_data.kategori_biaya|default:"Operasional Cabang" }}}}</td>
         </tr>
         <tr>
-          <td class="info-label">Cabang / Unit Kerja</td>
-          <td class="info-value">{{{{ form_data.cabang|default:"Kantor Pusat" }}}} ({{{{ form_data.divisi_pemohon|default:"Divisi Umum" }}}})</td>
+          <td class="info-label">Cabang / Tipe</td>
+          <td class="info-value">{{{{ form_data.cabang|default:"Cabang Bandung" }}}} ({{{{ form_data.tipe_transaksi|default:"Pengajuan" }}}})</td>
         </tr>
         <tr>
           <td class="info-label">Metode Pencairan</td>
@@ -641,7 +801,7 @@ class Command(BaseCommand):
         </tr>
         <tr>
           <td class="info-label">Cabang &amp; Divisi</td>
-          <td class="info-value">{{{{ form_data.cabang|default:"Kantor Pusat" }}}} &bull; {{{{ form_data.divisi_pemohon|default:"Divisi Umum" }}}}</td>
+          <td class="info-value">{{{{ form_data.cabang|default:"Cabang Bandung" }}}} &bull; {{{{ form_data.department_pembuat|default:"Operasional Cabang" }}}}</td>
         </tr>
       </table>
 
@@ -739,7 +899,7 @@ class Command(BaseCommand):
         </tr>
         <tr>
           <td class="info-label">Cabang</td>
-          <td class="info-value">{{{{ form_data.cabang|default:"Kantor Pusat" }}}}</td>
+          <td class="info-value">{{{{ form_data.cabang|default:"Cabang Bandung" }}}}</td>
         </tr>
       </table>
 

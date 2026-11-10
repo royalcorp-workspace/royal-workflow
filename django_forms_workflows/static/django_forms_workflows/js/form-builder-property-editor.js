@@ -100,7 +100,7 @@ export const propertyEditorMethods = {
             <div class="tab-content">
                 <!-- Basic Tab -->
                 <div class="tab-pane fade show active" id="basic-panel" role="tabpanel">
-                    ${this.buildBasicPropertiesTab(field, prefillOptions, widthOptions)}
+                    ${this.buildBasicPropertiesTab(field, prefillOptions, widthOptions, formattedChoices)}
                 </div>
 
                 <!-- Conditional Logic Tab -->
@@ -121,7 +121,21 @@ export const propertyEditorMethods = {
         `;
     },
 
-    buildBasicPropertiesTab(field, prefillOptions, widthOptions) {
+    buildBasicPropertiesTab(field, prefillOptions, widthOptions, formattedChoices) {
+        if (typeof formattedChoices === 'undefined') {
+            if (Array.isArray(field.choices)) {
+                formattedChoices = field.choices.map(c => {
+                    if (typeof c === 'object' && c !== null) {
+                        return c.value === c.label ? c.value : `${c.value}|${c.label}`;
+                    }
+                    return c;
+                }).join('\n');
+            } else if (typeof field.choices === 'string') {
+                formattedChoices = field.choices;
+            } else {
+                formattedChoices = '';
+            }
+        }
         return `
             <div class="row g-3">
                 <div class="col-md-6">
