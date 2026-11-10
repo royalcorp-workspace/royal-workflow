@@ -91,6 +91,34 @@ class Command(BaseCommand):
                 "description": "Employee NIK of the logged-in user (from EmployeeProfile)",
                 "order": 95,
             },
+            {
+                "name": "Current User - Supervisor / Atasan",
+                "source_type": "user",
+                "source_key": "user.supervisor_name",
+                "description": "Supervisor / Atasan langsung pemohon (from EmployeeProfile supervisor_1)",
+                "order": 96,
+            },
+            {
+                "name": "Current User - Department Pembuat",
+                "source_type": "user",
+                "source_key": "user.department_pembuat",
+                "description": "Department pembuat dari profil karyawan pemohon",
+                "order": 97,
+            },
+            {
+                "name": "Current User - Bagian Pembuat",
+                "source_type": "user",
+                "source_key": "user.bagian_pembuat",
+                "description": "Bagian / Posisi pembuat dari profil karyawan pemohon",
+                "order": 98,
+            },
+            {
+                "name": "Current User - Nama Kasir",
+                "source_type": "user",
+                "source_key": "user.nama_kasir",
+                "description": "Nama Kasir / Pemohon yang sedang membuat pengajuan",
+                "order": 99,
+            },
             # LDAP sources
             {
                 "name": "LDAP - Department",

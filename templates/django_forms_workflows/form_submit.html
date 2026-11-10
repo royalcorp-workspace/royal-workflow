@@ -9,6 +9,9 @@
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'django_forms_workflows/css/forms.css' %}">
 <link rel="stylesheet" href="{% static 'django_forms_workflows/css/kontrak-form.css' %}?v=20261104_v2">
+{% if form_def.slug == 'pengajuan-biaya' %}
+<link rel="stylesheet" href="{% static 'django_forms_workflows/css/pengajuan-biaya-form.css' %}?v=20261109_wfwireframe">
+{% endif %}
 <style>
     /* ── Enterprise Document UI Styling ── */
     .form-document-card {
@@ -226,10 +229,10 @@
 
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-12 col-lg-10 col-xl-9">
+    <div class="{% if form_def.slug == 'pengajuan-biaya' %}col-12 col-xl-12 col-xxl-12 px-xxl-4{% else %}col-12 col-lg-10 col-xl-9{% endif %}">
 
         {# ── Main Document Card ── #}
-        <div class="form-document-card">
+        <div class="form-document-card {% if form_def.slug == 'pengajuan-biaya' %}pengajuan-biaya-card{% endif %}">
             
             {# ── Document Header ── #}
             <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center pb-3 mb-4 border-bottom gap-2">
@@ -738,4 +741,7 @@
         });
     })();
 </script>
+{% if form_def.slug == 'pengajuan-biaya' %}
+<script src="{% static 'django_forms_workflows/js/pengajuan-biaya-widget.js' %}?v=20261109_wfwireframe"></script>
+{% endif %}
 {% endblock %}

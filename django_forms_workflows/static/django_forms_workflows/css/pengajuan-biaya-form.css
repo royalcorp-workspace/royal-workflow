@@ -1,0 +1,355 @@
+/* ==========================================================================
+   WORKFLOW PENGAJUAN BIAYA - SPATIOUS WIREFRAME 2-COLUMN STYLING
+   RoyalOne Enterprise Workflow Engine
+   Harmonized with reference: refferense-wf.jpeg & PRD v1.2
+   UI/UX: Wide breathing room, generous grid spacing, modern cards
+   ========================================================================== */
+
+/* ── Expand Main Page Container for Wide Layout ── */
+body:has([data-form-slug="pengajuan-biaya"]) main.container,
+main.container:has([data-form-slug="pengajuan-biaya"]),
+.has-wide-form main.container {
+    max-width: 1560px !important;
+    width: 96% !important;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+}
+
+/* ── Main Document Card Styling ── */
+.form-document-card:has([data-form-slug="pengajuan-biaya"]),
+.pengajuan-biaya-card {
+    background-color: #fbfcfd !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 16px !important;
+    padding: 1.75rem 1.5rem !important;
+    box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05), 0 2px 6px -1px rgba(15, 23, 42, 0.03) !important;
+}
+
+@media (min-width: 992px) {
+    .form-document-card:has([data-form-slug="pengajuan-biaya"]),
+    .pengajuan-biaya-card {
+        padding: 2.25rem 2.5rem !important;
+    }
+}
+
+/* ── Two-Column Responsive Wrapper ── */
+.wf-twocol-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+    margin-top: 1.25rem;
+}
+
+@media (min-width: 1200px) {
+    .wf-twocol-wrapper {
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 2.25rem;
+    }
+    .wf-col-left {
+        flex: 0 0 44%;
+        max-width: 44%;
+    }
+    .wf-col-right {
+        flex: 0 0 56%;
+        max-width: 56%;
+    }
+}
+
+/* ── Panel Box Headers & Container (Spacious Wireframe Cards) ── */
+.wf-panel-box {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    margin-bottom: 1.75rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+    overflow: hidden;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.wf-panel-box:hover {
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+    border-color: #cbd5e1;
+}
+
+.wf-panel-header {
+    background: #f8fafc;
+    padding: 0.95rem 1.4rem;
+    border-bottom: 1px solid #edf2f7;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.wf-panel-title {
+    font-size: 0.925rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    letter-spacing: -0.01em;
+}
+
+.wf-panel-title i {
+    color: #2563eb;
+    font-size: 1rem;
+}
+
+.wf-panel-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+    background: #ffffff;
+    padding: 3px 10px;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+}
+
+.wf-panel-body {
+    padding: 1.5rem 1.6rem;
+}
+
+/* ── Form Labels & Controls Spacing ── */
+.wf-panel-body .form-label {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #334155;
+    margin-bottom: 0.45rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.wf-panel-body .form-control,
+.wf-panel-body .form-select {
+    height: 44px;
+    padding: 0.55rem 0.85rem;
+    font-size: 0.875rem;
+    border-radius: 8px;
+    border-color: #cbd5e1;
+    color: #0f172a;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.wf-panel-body textarea.form-control {
+    height: auto;
+    min-height: 90px;
+}
+
+.wf-panel-body .form-control:focus,
+.wf-panel-body .form-select:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.wf-panel-body .field-wrapper,
+.wf-panel-body .mb-3 {
+    margin-bottom: 1.15rem !important;
+}
+
+/* ── Top Metric Limit Cards (Executive Dashboard in Column B) ── */
+.wf-metric-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.75rem;
+}
+
+@media (max-width: 767px) {
+    .wf-metric-grid {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+    }
+}
+
+.wf-metric-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.15rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+    transition: all 0.2s ease;
+}
+
+.wf-metric-card:hover {
+    border-color: #cbd5e1;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+}
+
+.wf-metric-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.035em;
+    color: #64748b;
+    margin-bottom: 0.35rem;
+}
+
+.wf-metric-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+}
+
+.wf-metric-card.total-biaya {
+    border-color: #bfdbfe;
+    background: #f0f7ff;
+}
+.wf-metric-card.total-biaya .wf-metric-label {
+    color: #1e40af;
+}
+.wf-metric-card.total-biaya .wf-metric-value {
+    color: #1d4ed8;
+}
+
+.wf-metric-card.limit-sisa.warning {
+    border-color: #fde68a;
+    background: #fffbeb;
+}
+.wf-metric-card.limit-sisa.warning .wf-metric-value {
+    color: #b45309;
+}
+
+.wf-metric-card.limit-sisa.danger {
+    border-color: #fecaca;
+    background: #fef2f2;
+}
+.wf-metric-card.limit-sisa.danger .wf-metric-value {
+    color: #b91c1c;
+}
+
+/* ── Multi-Item Repeater Cards (Spacious & Clean) ── */
+.wf-items-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    margin-bottom: 1.25rem;
+}
+
+.wf-item-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-left: 4px solid #3b82f6;
+    border-radius: 12px;
+    padding: 1.35rem 1.4rem;
+    position: relative;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+    transition: all 0.2s ease;
+}
+
+.wf-item-card:hover {
+    border-color: #cbd5e1;
+    border-left-color: #2563eb;
+    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
+}
+
+.wf-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.15rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px dashed #e2e8f0;
+}
+
+.wf-item-number-box {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: #1d4ed8;
+}
+
+.wf-item-subtotal-badge {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #166534;
+    background: #f0fdf4;
+    padding: 4px 12px;
+    border-radius: 8px;
+    border: 1px solid #bbf7d0;
+}
+
+.wf-item-del-btn {
+    border: 1px solid #fee2e2;
+    background: #fef2f2;
+    color: #ef4444;
+    font-size: 0.9rem;
+    padding: 5px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 600;
+    transition: all 0.15s ease;
+}
+
+.wf-item-del-btn:hover {
+    color: #ffffff;
+    background: #ef4444;
+    border-color: #dc2626;
+}
+
+.wf-add-item-btn {
+    background: #f8fafc;
+    border: 2px dashed #93c5fd;
+    border-radius: 10px;
+    color: #1e40af;
+    font-size: 0.925rem;
+    font-weight: 600;
+    padding: 0.85rem 1.25rem;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.wf-add-item-btn:hover {
+    background: #eff6ff;
+    border-color: #2563eb;
+    color: #1d4ed8;
+    transform: translateY(-1px);
+}
+
+/* ── Read-only Locked Field Styling ── */
+.field-readonly {
+    background-color: #f8fafc !important;
+    border-color: #e2e8f0 !important;
+    color: #334155 !important;
+    cursor: not-allowed !important;
+}
+
+.wf-auto-badge {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: #0369a1;
+    background-color: #f0f9ff;
+    border: 1px solid #bae6fd;
+    padding: 2px 7px;
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
