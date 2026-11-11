@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: royal_workflow_web
-    restart: unless-stopped
+    restart: always
     ports:
       - "8069:8000"
     env_file:
