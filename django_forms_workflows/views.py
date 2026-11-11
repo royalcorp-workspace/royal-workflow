@@ -1477,7 +1477,7 @@ def my_submissions(request):
     Decommissioned My Submissions view.
     Redirects directly to the centralized Kontrak Toko submission hub.
     """
-    return redirect("forms_workflows:form_submission_hub", slug="permohonan-kontrak")
+    return redirect("/forms/permohonan-kontrak/")
 
 
 def user_can_manage_ematerai(user, submission=None) -> bool:
