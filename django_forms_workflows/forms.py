@@ -1606,7 +1606,7 @@ class DynamicForm(forms.Form):
 
             if field.field_type == "email":
                 validation_rules.append(
-                    {"type": "email", "message": "Please enter a valid email address"}
+                    {"type": "email", "message": "Format email tidak valid (contoh: toko@gmail.com)"}
                 )
 
             if field.field_type == "phone":
@@ -2272,7 +2272,7 @@ class ApprovalStepForm(forms.Form):
                 )
             if field.field_type == "email":
                 rules.append(
-                    {"type": "email", "message": "Please enter a valid email address"}
+                    {"type": "email", "message": "Format email tidak valid (contoh: toko@gmail.com)"}
                 )
             if field.field_type == "phone":
                 rules.append(

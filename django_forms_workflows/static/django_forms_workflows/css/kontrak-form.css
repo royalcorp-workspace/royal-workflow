@@ -1276,3 +1276,41 @@ table.clause-table td.cell-currency {
 #companyBankContainer .form-label {
     white-space: nowrap;
 }
+
+/* ==========================================================================
+   Validation Feedback & Helper Text Positioning Guardrails
+   ========================================================================== */
+.field-wrapper .form-text,
+.mb-3 .form-text,
+.field-wrapper .help-block,
+.mb-3 .help-block {
+    position: static !important;
+    clear: both !important;
+    display: block !important;
+    margin-top: 0.35rem !important;
+    margin-bottom: 0 !important;
+    line-height: 1.4 !important;
+}
+
+.email-feedback,
+.nomor-npwp-feedback,
+.nomor-nik-feedback,
+.invalid-feedback,
+.valid-feedback {
+    position: static !important;
+    clear: both !important;
+    width: 100% !important;
+    line-height: 1.35 !important;
+}
+
+/* Guard: Cegah tampilan valid dan invalid secara bersamaan */
+.is-valid ~ .invalid-feedback:not(.valid-feedback),
+.is-valid ~ [class*="-feedback"]:not(.valid-feedback):not(.text-success) {
+    display: none !important;
+}
+
+.is-invalid ~ .valid-feedback,
+.is-invalid ~ [class*="-feedback"].text-success {
+    display: none !important;
+}
+

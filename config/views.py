@@ -159,97 +159,22 @@ def custom_form_submit(request, slug):
             if updated:
                 latest.save(update_fields=["form_data"])
 
+        is_rev = bool(request.POST.get("revision_id") or request.POST.get("revision"))
+        # Ensure post-submission redirect ALWAYS routes directly to the Kontrak Toko submission hub,
+        # unless it is a revision resubmit which redirects to submission_detail.
+        if not is_rev and hasattr(response, "status_code") and response.status_code in (301, 302):
+            return redirect("forms_workflows:form_submission_hub", slug="permohonan-kontrak")
+
     return response
 
 
 @login_required
 def custom_my_submissions(request):
     """
-    Enhanced My Submissions view supporting status tabs (All, Draft, Pending, Approved, Rejected)
-    and category filtering.
+    Decommissioned My Submissions view.
+    Redirects directly to the centralized Kontrak Toko submission hub.
     """
-    user_groups = request.user.groups.all()
-    privileged_form_ids = (
-        FormDefinition.objects.filter(
-            models.Q(reviewer_groups__in=user_groups)
-            | models.Q(admin_groups__in=user_groups)
-        )
-        .values_list("id", flat=True)
-        .distinct()
-    )
-    base_submissions = FormSubmission.objects.filter(
-        models.Q(submitter=request.user)
-        | models.Q(
-            form_definition__in=privileged_form_ids,
-            status__in=[
-                "submitted",
-                "pending_approval",
-                "approved",
-                "rejected",
-                "withdrawn",
-            ],
-        )
-    ).distinct()
-
-    # Status counts for filter pills
-    status_counts = {
-        "all": base_submissions.count(),
-        "draft": base_submissions.filter(status="draft").count(),
-        "pending": base_submissions.filter(status__in=["submitted", "pending_approval"]).count(),
-        "approved": base_submissions.filter(status="approved").count(),
-        "rejected": base_submissions.filter(status="rejected").count(),
-    }
-
-    # Category counts
-    raw_counts = (
-        base_submissions.values(
-            "form_definition__category__pk",
-            "form_definition__category__name",
-            "form_definition__category__slug",
-            "form_definition__category__icon",
-            "form_definition__category__order",
-        )
-        .annotate(count=models.Count("id"))
-        .order_by(
-            "form_definition__category__order",
-            "form_definition__category__name",
-        )
-    )
-    category_counts = []
-    for row in raw_counts:
-        slug = row["form_definition__category__slug"]
-        if slug:
-            category_counts.append(
-                {
-                    "name": row["form_definition__category__name"],
-                    "slug": slug,
-                    "icon": row["form_definition__category__icon"] or "",
-                    "count": row["count"],
-                }
-            )
-
-    status_filter = request.GET.get("status", "all").strip().lower()
-    category_slug = request.GET.get("category", "").strip()
-    active_category = next((c for c in category_counts if c["slug"] == category_slug), None) if category_slug else None
-
-    # Check if any submissions support bulk export
-    any_exportable = base_submissions.filter(
-        form_definition__workflows__allow_bulk_export=True
-    ).exists()
-
-    return render(
-        request,
-        "django_forms_workflows/my_submissions.html",
-        {
-            "status_filter": status_filter,
-            "status_counts": status_counts,
-            "category_counts": category_counts,
-            "active_category": active_category,
-            "category_slug": category_slug,
-            "any_exportable": any_exportable,
-            "total_submissions_count": status_counts["all"],
-        },
-    )
+    return redirect("forms_workflows:form_submission_hub", slug="permohonan-kontrak")
 
 
 @login_required
