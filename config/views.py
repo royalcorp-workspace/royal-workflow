@@ -163,7 +163,7 @@ def custom_form_submit(request, slug):
         # Ensure post-submission redirect ALWAYS routes directly to the Kontrak Toko submission hub,
         # unless it is a revision resubmit which redirects to submission_detail.
         if not is_rev and hasattr(response, "status_code") and response.status_code in (301, 302):
-            return redirect("forms_workflows:form_submission_hub", slug="permohonan-kontrak")
+            return redirect("/forms/permohonan-kontrak/")
 
     return response
 
@@ -174,7 +174,7 @@ def custom_my_submissions(request):
     Decommissioned My Submissions view.
     Redirects directly to the centralized Kontrak Toko submission hub.
     """
-    return redirect("forms_workflows:form_submission_hub", slug="permohonan-kontrak")
+    return redirect("/forms/permohonan-kontrak/")
 
 
 @login_required

@@ -225,26 +225,16 @@
             }
 
             // Update badges if cards exist
-            const card1 = form.querySelector('#wizardStepPane2 .spk-clause-card:nth-of-type(2)');
-            const card3 = form.querySelector('#wizardStepPane2 .spk-clause-card:nth-of-type(4)');
-            const card4 = form.querySelector('#wizardStepPane2 .spk-clause-card:nth-of-type(5)');
-            const card5 = form.querySelector('#wizardStepPane2 .spk-clause-card:nth-of-type(6)');
-            if (card1) {
-                const badge1 = card1.querySelector('.spk-clause-badge');
-                if (badge1) badge1.textContent = isSupport ? 'Pasal 5' : 'Pasal 4';
-            }
-            if (card3) {
-                const badge3 = card3.querySelector('.spk-clause-badge');
-                if (badge3) badge3.textContent = isSupport ? 'Pasal 6' : 'Pasal 5';
-            }
-            if (card4) {
-                const badge4 = card4.querySelector('.spk-clause-badge');
-                if (badge4) badge4.textContent = isSupport ? 'BAB III (Pasal 8 - 11)' : 'BAB III (Pasal 7 - 10)';
-            }
-            if (card5) {
-                const badge5 = card5.querySelector('.spk-clause-badge');
-                if (badge5) badge5.textContent = isSupport ? 'BAB IV (Pasal 12 - 13)' : 'BAB IV (Pasal 11 - 12)';
-            }
+            const badgeTarget = form.querySelector('#cardClauseTarget .spk-clause-badge') || form.querySelector('#wizardStepPane2 .spk-clause-card:nth-of-type(2) .spk-clause-badge');
+            const badgePeriode = form.querySelector('#cardClausePeriode .spk-clause-badge') || form.querySelector('#wizardStepPane2 .spk-clause-card:nth-of-type(3) .spk-clause-badge');
+            const badgeDiskon = form.querySelector('#cardClauseDiskon .spk-clause-badge') || form.querySelector('#wizardStepPane2 .spk-clause-card:nth-of-type(4) .spk-clause-badge');
+            const badgeBayar = form.querySelector('#cardClauseBayar .spk-clause-badge') || form.querySelector('#wizardStepPane2 .spk-clause-card:nth-of-type(5) .spk-clause-badge');
+            const badgeTtd = form.querySelector('#cardClauseTtd .spk-clause-badge') || form.querySelector('#wizardStepPane2 .spk-clause-card:nth-of-type(6) .spk-clause-badge');
+            if (badgeTarget) badgeTarget.textContent = 'Pasal 3';
+            if (badgePeriode) badgePeriode.textContent = isSupport ? 'Pasal 5' : 'Pasal 4';
+            if (badgeDiskon) badgeDiskon.textContent = isSupport ? 'Pasal 6' : 'Pasal 5';
+            if (badgeBayar) badgeBayar.textContent = isSupport ? 'BAB III (Pasal 8 - 11)' : 'BAB III (Pasal 7 - 10)';
+            if (badgeTtd) badgeTtd.textContent = isSupport ? 'BAB IV (Pasal 12 - 13)' : 'BAB IV (Pasal 11 - 12)';
 
             hasRestoredDraft = true;
             if (typeof form._syncRekeningPerusahaan === 'function') {
@@ -1268,7 +1258,7 @@
             if (val) {
                 validateEmail(false);
             } else {
-                clearError();
+                clearStatus();
             }
         });
 
@@ -2480,11 +2470,11 @@
                                     <input type="text" class="cell-input border-0 bg-light text-dark fw-bold" data-key="komponen" value="${escapeHtml(r.komponen || '')}" readonly tabindex="-1" style="cursor: not-allowed; background-color: #f1f5f9 !important; width: calc(100% - 22px);" title="Komponen standar baku">
                                     <i class="bi bi-shield-lock-fill text-primary flex-shrink-0" title="Komponen standar baku terkunci" style="font-size: 0.85rem;"></i>
                                 </div>
-                            ` : (isMthmt ? `
-                                <input type="text" class="cell-input border-0 bg-light text-dark fw-bold" data-key="komponen" value="${escapeHtml(r.komponen || 'MTHMT')}" readonly tabindex="-1" style="cursor: not-allowed; background-color: #f1f5f9 !important;" title="Komponen Thematic khusus">
                             ` : `
-                                <input type="text" class="cell-input" data-key="komponen" value="${escapeHtml(r.komponen || '')}" placeholder="Komponen diskon">
-                            `)}
+                                <div class="d-flex align-items-center gap-1 w-100">
+                                    <input type="text" class="cell-input border-0 bg-light text-dark fw-bold" data-key="komponen" value="${escapeHtml(r.komponen || '')}" readonly tabindex="-1" style="cursor: not-allowed; background-color: #f1f5f9 !important; width: 100%;" title="Komponen program diskon khusus (predefined)">
+                                </div>
+                            `}
                         </td>
                         <td>
                             ${isFixed ? `
@@ -2552,9 +2542,6 @@
             html += `
                         </tbody>
                     </table>
-                </div>
-                <div class="mt-2">
-                    <button type="button" class="btn-add-row"><i class="bi bi-plus-circle"></i> Tambah Discount Lain</button>
                 </div>
             `;
 
@@ -2694,12 +2681,6 @@
                     saveRows(rows);
                     render();
                 });
-            });
-
-            container.querySelector('.btn-add-row').addEventListener('click', () => {
-                rows.push({ komponen: '', nilai: '0%', tipe: 'Persentase', keterangan: '' });
-                saveRows(rows);
-                render();
             });
         }
 
@@ -3421,11 +3402,42 @@
             form.appendChild(hiddenKompSupport);
         }
 
-        // 1. Card 1: Periode & Masa Berlaku Kontrak (Pasal 4 / 5)
-        const card1 = createClauseCard('Pasal 4', '', 'Periode & Masa Berlaku Kontrak', 'Masa berlaku perjanjian kerjasama dan tenggang waktu pemenuhan target.');
+        // 1. Card Target: Target Penjualan & Skema Insentif (Pasal 3)
+        const cardTarget = createClauseCard('Pasal 3', '', 'Target Penjualan & Skema Insentif', 'Komitmen volume penjualan bulanan toko dan skema reward insentif.');
+        cardTarget.card.id = 'cardClauseTarget';
+        
+        const colPajakInfo = document.createElement('div');
+        colPajakInfo.className = 'mb-3';
+        colPajakInfo.innerHTML = `
+            <div class="alert alert-light border border-info-subtle text-muted small p-2.5 mb-0 rounded-2 d-flex align-items-center gap-2">
+                <i class="bi bi-info-circle text-info fs-5 flex-shrink-0"></i>
+                <div>Target volume penjualan bulanan dan skema reward insentif toko dibakukan dengan ketentuan <strong>Exclude PPN</strong> sesuai price list resmi yang berlaku.</div>
+            </div>
+        `;
+        cardTarget.body.appendChild(colPajakInfo);
+
+        const targetGridBlock = pane2.querySelector('.kontrak-target-incentive-wrapper') || extractFieldElement('target_incentive');
+        if (targetGridBlock) cardTarget.body.appendChild(targetGridBlock);
+
+        // Field Jenis Pencairan Insentif (Poin 7)
+        const rowPencairan = document.createElement('div');
+        rowPencairan.className = 'row g-3 mt-1 mb-2';
+        const pencairanEl = extractFieldElement('jenis_pencairan_insentif');
+        if (pencairanEl) {
+            const col = document.createElement('div');
+            col.className = 'col-12 col-md-12';
+            pencairanEl.classList.remove('col-md-3', 'col-md-4', 'col-md-6', 'col-md-12');
+            col.appendChild(pencairanEl);
+            rowPencairan.appendChild(col);
+            cardTarget.body.appendChild(rowPencairan);
+        }
+
+        // 2. Card Periode: Periode & Masa Berlaku Kontrak (Pasal 4 / 5)
+        const cardPeriode = createClauseCard('Pasal 4', '', 'Periode & Masa Berlaku Kontrak', 'Masa berlaku perjanjian kerjasama dan tenggang waktu pemenuhan target.');
+        cardPeriode.card.id = 'cardClausePeriode';
         
         const infoBlock = extractFieldElement('info_kontrak_lama');
-        if (infoBlock) card1.body.appendChild(infoBlock);
+        if (infoBlock) cardPeriode.body.appendChild(infoBlock);
 
         // Default Grace Period if empty
         const graceInput = form.querySelector('[name="grace_period"]');
@@ -3445,39 +3457,11 @@
                 rowDates.appendChild(col);
             }
         });
-        card1.body.appendChild(rowDates);
+        cardPeriode.body.appendChild(rowDates);
 
-        // 2. Card 2: Target Penjualan & Skema Insentif (Pasal 3)
-        const card2 = createClauseCard('Pasal 3', '', 'Target Penjualan & Skema Insentif', 'Komitmen volume penjualan bulanan toko dan skema reward insentif.');
-        
-        const colPajakInfo = document.createElement('div');
-        colPajakInfo.className = 'mb-3';
-        colPajakInfo.innerHTML = `
-            <div class="alert alert-light border border-info-subtle text-muted small p-2.5 mb-0 rounded-2 d-flex align-items-center gap-2">
-                <i class="bi bi-info-circle text-info fs-5 flex-shrink-0"></i>
-                <div>Target volume penjualan bulanan dan skema reward insentif toko dibakukan dengan ketentuan <strong>Exclude PPN</strong> sesuai price list resmi yang berlaku.</div>
-            </div>
-        `;
-        card2.body.appendChild(colPajakInfo);
-
-        const targetGridBlock = pane2.querySelector('.kontrak-target-incentive-wrapper') || extractFieldElement('target_incentive');
-        if (targetGridBlock) card2.body.appendChild(targetGridBlock);
-
-        // Field Jenis Pencairan Insentif (Poin 7)
-        const rowPencairan = document.createElement('div');
-        rowPencairan.className = 'row g-3 mt-1 mb-2';
-        const pencairanEl = extractFieldElement('jenis_pencairan_insentif');
-        if (pencairanEl) {
-            const col = document.createElement('div');
-            col.className = 'col-12 col-md-12';
-            pencairanEl.classList.remove('col-md-3', 'col-md-4', 'col-md-6', 'col-md-12');
-            col.appendChild(pencairanEl);
-            rowPencairan.appendChild(col);
-            card2.body.appendChild(rowPencairan);
-        }
-
-        // 3. Card 3: Skema Diskon Produk (Pasal 5 / 6)
-        const card3 = createClauseCard('Pasal 5 / 6', '', 'Skema Diskon Produk', 'Rincian komponen potongan harga penjualan produk toko.');
+        // 3. Card Diskon: Skema Diskon Produk (Pasal 5 / 6)
+        const cardDiskon = createClauseCard('Pasal 5 / 6', '', 'Skema Diskon Produk', 'Rincian komponen potongan harga penjualan produk toko.');
+        cardDiskon.card.id = 'cardClauseDiskon';
 
         // Remove any obsolete legacy discount checkbox wrappers completely from DOM
         pane2.querySelectorAll('[name^="chk_diskon_"], [class*="field-chk_diskon"]').forEach(el => {
@@ -3490,12 +3474,13 @@
         });
 
         const discountGridBlock = pane2.querySelector('.kontrak-discount-scheme-wrapper') || extractFieldElement('discount_scheme');
-        if (discountGridBlock) card3.body.appendChild(discountGridBlock);
+        if (discountGridBlock) cardDiskon.body.appendChild(discountGridBlock);
 
-        // 4. Card 4: Tata Cara & Ketentuan Pembayaran (BAB III - Pasal 7, 8, 9, 10)
-        const card4 = createClauseCard('BAB III', 'badge-bab3', 'Tata Cara & Ketentuan Pembayaran (Pasal 7, 8, 9, 10)', '');
-        card4.card.dataset.cardId = 'card-4';
-        card4.card.classList.add('card-tata-cara-pembayaran');
+        // 4. Card Bayar: Tata Cara & Ketentuan Pembayaran (BAB III - Pasal 7, 8, 9, 10)
+        const cardBayar = createClauseCard('BAB III', 'badge-bab3', 'Tata Cara & Ketentuan Pembayaran (Pasal 7, 8, 9, 10)', '');
+        cardBayar.card.id = 'cardClauseBayar';
+        cardBayar.card.dataset.cardId = 'card-4';
+        cardBayar.card.classList.add('card-tata-cara-pembayaran');
         
         const rowBayar = document.createElement('div');
         rowBayar.className = 'row g-3 mb-2 align-items-start';
@@ -3592,10 +3577,11 @@
         `;
         colRek.appendChild(bankBlock);
         rowBayar.appendChild(colRek);
-        card4.body.appendChild(rowBayar);
+        cardBayar.body.appendChild(rowBayar);
 
-        // 5. Card 5: Ketentuan Akhir & Tempat Pengesahan (BAB IV & Penutup)
-        const card5 = createClauseCard('BAB IV & Penutup', 'badge-bab4', 'Ketentuan Akhir & Tempat Pengesahan', 'Lokasi dan tanggal resmi pengesahan Surat Perjanjian Kerjasama (SPK).');
+        // 5. Card Ttd: Ketentuan Akhir & Tempat Pengesahan (BAB IV & Penutup)
+        const cardTtd = createClauseCard('BAB IV & Penutup', 'badge-bab4', 'Ketentuan Akhir & Tempat Pengesahan', 'Lokasi dan tanggal resmi pengesahan Surat Perjanjian Kerjasama (SPK).');
+        cardTtd.card.id = 'cardClauseTtd';
         
         const rowTtd = document.createElement('div');
         rowTtd.className = 'row g-3 mb-2';
@@ -3609,24 +3595,27 @@
                 rowTtd.appendChild(col);
             }
         });
-        card5.body.appendChild(rowTtd);
+        cardTtd.body.appendChild(rowTtd);
 
         function updateClauseCardBadges(isSupport) {
-            const badge1 = card1.card.querySelector('.spk-clause-badge');
-            const badge3 = card3.card.querySelector('.spk-clause-badge');
-            const badge4 = card4.card.querySelector('.spk-clause-badge');
-            const badge5 = card5.card.querySelector('.spk-clause-badge');
+            const badgeTarget = cardTarget.card.querySelector('.spk-clause-badge');
+            const badgePeriode = cardPeriode.card.querySelector('.spk-clause-badge');
+            const badgeDiskon = cardDiskon.card.querySelector('.spk-clause-badge');
+            const badgeBayar = cardBayar.card.querySelector('.spk-clause-badge');
+            const badgeTtd = cardTtd.card.querySelector('.spk-clause-badge');
+
+            if (badgeTarget) badgeTarget.textContent = 'Pasal 3';
 
             if (isSupport) {
-                if (badge1) badge1.textContent = 'Pasal 5';
-                if (badge3) badge3.textContent = 'Pasal 6';
-                if (badge4) badge4.textContent = 'BAB III (Pasal 8 - 11)';
-                if (badge5) badge5.textContent = 'BAB IV (Pasal 12 - 13)';
+                if (badgePeriode) badgePeriode.textContent = 'Pasal 5';
+                if (badgeDiskon) badgeDiskon.textContent = 'Pasal 6';
+                if (badgeBayar) badgeBayar.textContent = 'BAB III (Pasal 8 - 11)';
+                if (badgeTtd) badgeTtd.textContent = 'BAB IV (Pasal 12 - 13)';
             } else {
-                if (badge1) badge1.textContent = 'Pasal 4';
-                if (badge3) badge3.textContent = 'Pasal 5';
-                if (badge4) badge4.textContent = 'BAB III (Pasal 7 - 10)';
-                if (badge5) badge5.textContent = 'BAB IV (Pasal 11 - 12)';
+                if (badgePeriode) badgePeriode.textContent = 'Pasal 4';
+                if (badgeDiskon) badgeDiskon.textContent = 'Pasal 5';
+                if (badgeBayar) badgeBayar.textContent = 'BAB III (Pasal 7 - 10)';
+                if (badgeTtd) badgeTtd.textContent = 'BAB IV (Pasal 11 - 12)';
             }
         }
 
@@ -3715,13 +3704,13 @@
         // Initial default state (Standar 12 Pasal)
         updateClauseCardBadges(false);
 
-        // Append cards to pane2
-        pane2.appendChild(card0);
-        pane2.appendChild(card1.card);
-        pane2.appendChild(card2.card);
-        pane2.appendChild(card3.card);
-        pane2.appendChild(card4.card);
-        pane2.appendChild(card5.card);
+        // Append cards to pane2 in correct legal & numerical order
+        pane2.appendChild(card0);              // Toggle Switch Support Promosi
+        pane2.appendChild(cardTarget.card);   // PASAL 3: Target Penjualan & Skema Insentif
+        pane2.appendChild(cardPeriode.card);  // PASAL 4 / 5: Periode & Masa Berlaku Kontrak
+        pane2.appendChild(cardDiskon.card);   // PASAL 5 / 6: Skema Diskon Produk
+        pane2.appendChild(cardBayar.card);    // BAB III: Tata Cara & Ketentuan Pembayaran
+        pane2.appendChild(cardTtd.card);      // BAB IV: Ketentuan Akhir & Tempat Pengesahan
 
         // Remove leftover unpartitioned elements/wrappers from pane2 so Card 0 is the immediate first child
         Array.from(pane2.children).forEach(child => {
