@@ -276,6 +276,12 @@
                 {% if is_draft and draft_id %}
                 <input type="hidden" name="draft_id" value="{{ draft_id }}">
                 {% endif %}
+                {% if is_revision and revision_id %}
+                <input type="hidden" name="revision_id" value="{{ revision_id }}">
+                {% endif %}
+                {% if is_revision and revision_submission %}
+                {{ revision_submission.form_data|json_script:"active_server_revision_data" }}
+                {% endif %}
                 {% if active_server_draft %}
                 {{ active_server_draft.form_data|json_script:"active_server_draft_data" }}
                 <div id="activeServerDraftMeta"

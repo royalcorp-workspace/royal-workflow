@@ -30,31 +30,56 @@
 
         console.log('[KontrakGridWidget] Initializing Permohonan Kontrak widgets...');
 
+        const formSlug = form.dataset.formSlug || (() => {
+            const m = window.location.pathname.match(/\/forms\/([^\/]+)/);
+            return m ? m[1] : 'permohonan-kontrak';
+        })();
+
         let hasRestoredDraft = false;
 
-        // Clean initial state for fresh new submissions
-        const storeFields = ['kode_customer_jde', 'nama_toko', 'nama_pemilik', 'alamat_toko', 'no_telepon', 'email', 'kota', 'nomor_nik', 'nomor_npwp', 'nomor_identitas', 'komponen_biaya', 'nomor_spk'];
-        storeFields.forEach(name => {
-            const el = form.querySelector(`[name="${name}"]`);
-            if (el) el.value = '';
-        });
-        form.querySelectorAll('input[name="komponen_biaya"]').forEach(chk => { chk.checked = false; });
+        const urlParams = new URLSearchParams(window.location.search);
+        const isExplicitDraftUrl = urlParams.has('draft') || urlParams.has('draft_id');
+        const isRevision = urlParams.has('revision') || urlParams.has('revision_id') || Boolean(form.querySelector('input[name="revision_id"]')) || Boolean(document.getElementById('active_server_revision_data'));
+        form.dataset.isRevision = isRevision ? 'true' : 'false';
 
-        // Ensure grid fields start empty
-        ['asset_toko', 'market_share', 'target_incentive', 'discount_scheme', 'tier_support'].forEach(name => {
-            const f = form.querySelector(`[name="${name}"]`);
-            if (f) f.value = '[]';
-        });
+        // Clean initial state ONLY for fresh new submissions (skip if loading draft or revising existing submission)
+        if (!isExplicitDraftUrl && !isRevision) {
+            const storeFields = ['kode_customer_jde', 'nama_toko', 'nama_pemilik', 'alamat_toko', 'no_telepon', 'email', 'kota', 'nomor_nik', 'nomor_npwp', 'nomor_identitas', 'komponen_biaya'];
+            storeFields.forEach(name => {
+                const el = form.querySelector(`[name="${name}"]`);
+                if (el) el.value = '';
+            });
 
-        // Ensure support toggle starts OFF (unchecked) for fresh new submissions
-        const suppToggleInit = form.querySelector('input[name="is_support_provided"]');
-        if (suppToggleInit) {
-            suppToggleInit.checked = false;
+            // Fresh form: Brand must be unselected (-- Select --) and SPK empty
+            const bSelect = form.querySelector('[name="brand"]');
+            if (bSelect) {
+                bSelect.value = '';
+                bSelect.selectedIndex = 0;
+            }
+            const sInput = form.querySelector('[name="nomor_spk"]');
+            if (sInput) {
+                sInput.value = '';
+                sInput.placeholder = '— Pilih Brand Produk terlebih dahulu —';
+            }
+
+            form.querySelectorAll('input[name="komponen_biaya"]').forEach(chk => { chk.checked = false; });
+
+            // Ensure grid fields start empty
+            ['asset_toko', 'market_share', 'target_incentive', 'discount_scheme', 'tier_support'].forEach(name => {
+                const f = form.querySelector(`[name="${name}"]`);
+                if (f) f.value = '[]';
+            });
+
+            // Ensure support toggle starts OFF (unchecked) for fresh new submissions
+            const suppToggleInit = form.querySelector('input[name="is_support_provided"]');
+            if (suppToggleInit) {
+                suppToggleInit.checked = false;
+            }
         }
 
-        function applyDraftData(draftData) {
+        function applyDraftData(draftData, isRevisionMode = false) {
             if (!draftData || typeof draftData !== 'object') return;
-            console.log('[KontrakGridWidget] Applying candidate draft data to form fields...', draftData);
+            console.log('[KontrakGridWidget] Applying candidate draft/revision data to form fields...', draftData);
 
             // Backward compatibility for nomor_identitas -> nomor_nik / nomor_npwp
             if (draftData.nomor_identitas && (!draftData.nomor_nik || !draftData.nomor_npwp)) {
@@ -102,6 +127,19 @@
                     val = val[0] || '5';
                 }
 
+                // Nomor SPK selalu digenerate dinamis dari server saat Brand dipilih pada pengajuan baru,
+                // TETAPI harus dipertahankan jika dalam mode revisi pengajuan.
+                if (name === 'nomor_spk') {
+                    if ((isRevision || isRevisionMode) && val) {
+                        const sInput = form.querySelector('[name="nomor_spk"]');
+                        if (sInput) {
+                            sInput.value = val;
+                            sInput.placeholder = val;
+                        }
+                    }
+                    return;
+                }
+
                 const el = form.querySelector(`[name="${name}"]`);
                 if (!el) return;
 
@@ -112,7 +150,11 @@
                     if (radio) radio.checked = true;
                 } else {
                     if (val !== undefined && val !== null) {
-                        el.value = val;
+                        if (typeof val === 'object') {
+                            el.value = JSON.stringify(val);
+                        } else {
+                            el.value = val;
+                        }
                     }
                 }
             });
@@ -208,6 +250,9 @@
             if (typeof form._syncRekeningPerusahaan === 'function') {
                 form._syncRekeningPerusahaan();
             }
+            if (typeof form._updateSPK === 'function') {
+                form._updateSPK();
+            }
             try { renderSummaryTab(form); } catch (e) {}
             try { renderSPKTab(form); } catch (e) {}
         }
@@ -252,23 +297,25 @@
         // 7. Setup Wizard Footer Actions & Stepper Navigation
         try { setupWizardFooter(form); } catch (e) { console.error('[KontrakGridWidget] setupWizardFooter failed:', e); }
 
-        function refreshAllGridsAndHeaders() {
+        function refreshAllGridsAndHeaders(isRevisionMode = false) {
             if (window.renderAssetGrid) window.renderAssetGrid();
             if (window.renderMarketGrid) window.renderMarketGrid();
             if (window.renderTargetGrid) window.renderTargetGrid();
             if (window.renderDiscountGrid) window.renderDiscountGrid();
             if (window.renderTierGrid) window.renderTierGrid();
 
-            // Trigger updates on Brand & Cabang to recalculate Nomor SPK
-            const brandSelect = form.querySelector('[name="brand"]');
-            const cabangSelect = form.querySelector('[name="cabang"]');
-            if (brandSelect && brandSelect.value) {
-                brandSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                brandSelect.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-            if (cabangSelect && cabangSelect.value) {
-                cabangSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                cabangSelect.dispatchEvent(new Event('input', { bubbles: true }));
+            // Trigger updates on Brand & Cabang to recalculate Nomor SPK only if NOT in revision mode
+            if (!isRevision && !isRevisionMode && form.dataset.isRevision !== 'true') {
+                const brandSelect = form.querySelector('[name="brand"]');
+                const cabangSelect = form.querySelector('[name="cabang"]');
+                if (brandSelect && brandSelect.value) {
+                    brandSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    brandSelect.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                if (cabangSelect && cabangSelect.value) {
+                    cabangSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    cabangSelect.dispatchEvent(new Event('input', { bubbles: true }));
+                }
             }
 
             if (typeof form._validateNomorIdentitas === 'function') {
@@ -285,51 +332,55 @@
             updateAutoSaveStatus('saved_server');
         }
 
-        // 8. Auto-restore or Prompt for Existing Draft
-        const urlParams = new URLSearchParams(window.location.search);
-        const isExplicitDraftUrl = urlParams.has('draft') || urlParams.has('draft_id');
+        // 8. Auto-restore or Prompt for Existing Draft / Revision
         const isPageReload = (window.performance && window.performance.getEntriesByType && window.performance.getEntriesByType('navigation')[0]?.type === 'reload');
 
-        // Check for server draft data embedded in template
-        let serverDraftData = null;
-        const serverDraftMeta = document.getElementById('activeServerDraftMeta');
-        const scriptEl = document.getElementById('active_server_draft_data');
-        if (scriptEl && scriptEl.textContent) {
+        // Check for server revision data embedded in template
+        let serverRevisionData = null;
+        const revScriptEl = document.getElementById('active_server_revision_data');
+        if (revScriptEl && revScriptEl.textContent) {
             try {
-                serverDraftData = JSON.parse(scriptEl.textContent);
-            } catch (e) {}
+                serverRevisionData = JSON.parse(revScriptEl.textContent);
+            } catch (e) {
+                console.warn('[KontrakRevision] Gagal parse active_server_revision_data:', e);
+            }
         }
 
-        // Check for local draft data in localStorage
-        let localDraftData = null;
-        try {
-            const rawDraft = localStorage.getItem(STORAGE_KEY);
-            if (rawDraft) {
-                localDraftData = JSON.parse(rawDraft);
+        if (isRevision || form.dataset.isRevision === 'true') {
+            console.log('[KontrakRevision] Mode revisi aktif. Memuat data pengajuan revisi...', serverRevisionData);
+            if (serverRevisionData && typeof serverRevisionData === 'object') {
+                applyDraftData(serverRevisionData, true);
+                refreshAllGridsAndHeaders(true);
             }
-        } catch (e) {}
+            updateAutoSaveStatus('saved_server');
+        } else {
+            // Check for server draft data embedded in template
+            let serverDraftData = null;
+            const serverDraftMeta = document.getElementById('activeServerDraftMeta');
+            const scriptEl = document.getElementById('active_server_draft_data');
+            if (scriptEl && scriptEl.textContent) {
+                try {
+                    serverDraftData = JSON.parse(scriptEl.textContent);
+                } catch (e) {}
+            }
 
-        const candidateDraftData = (localDraftData && hasMeaningfulData(localDraftData)) ? localDraftData : (serverDraftData && hasMeaningfulData(serverDraftData) ? serverDraftData : null);
-
-        if (candidateDraftData) {
-            if (isExplicitDraftUrl || isPageReload) {
-                // User explicitly clicked "Lanjutkan Draft" from hub or refreshed the page (F5)
-                applyDraftData(candidateDraftData);
-                if (serverDraftMeta && serverDraftMeta.dataset.draftId) {
-                    form.dataset.currentDraftId = serverDraftMeta.dataset.draftId;
-                    let draftInput = form.querySelector('input[name="draft_id"]');
-                    if (!draftInput) {
-                        draftInput = document.createElement('input');
-                        draftInput.type = 'hidden';
-                        draftInput.name = 'draft_id';
-                        form.appendChild(draftInput);
+            // Check for local draft data in localStorage
+            let localDraftData = null;
+            try {
+                const rawDraft = localStorage.getItem(STORAGE_KEY);
+                if (rawDraft) {
+                    localDraftData = JSON.parse(rawDraft);
+                    if (localDraftData && localDraftData.nomor_spk) {
+                        delete localDraftData.nomor_spk;
                     }
-                    draftInput.value = serverDraftMeta.dataset.draftId;
                 }
-                refreshAllGridsAndHeaders();
-            } else {
-                // User clicked "+ Buat Pengajuan Baru": Show interactive modal prompt!
-                showDraftPromptModal(form, candidateDraftData, serverDraftMeta, () => {
+            } catch (e) {}
+
+            const candidateDraftData = (localDraftData && hasMeaningfulData(localDraftData)) ? localDraftData : (serverDraftData && hasMeaningfulData(serverDraftData) ? serverDraftData : null);
+
+            if (candidateDraftData) {
+                if (isExplicitDraftUrl || isPageReload) {
+                    // User explicitly clicked "Lanjutkan Draft" from hub or refreshed the page (F5)
                     applyDraftData(candidateDraftData);
                     if (serverDraftMeta && serverDraftMeta.dataset.draftId) {
                         form.dataset.currentDraftId = serverDraftMeta.dataset.draftId;
@@ -343,11 +394,28 @@
                         draftInput.value = serverDraftMeta.dataset.draftId;
                     }
                     refreshAllGridsAndHeaders();
-                });
+                } else {
+                    // User clicked "+ Buat Pengajuan Baru": Show interactive modal prompt!
+                    showDraftPromptModal(form, candidateDraftData, serverDraftMeta, () => {
+                        applyDraftData(candidateDraftData);
+                        if (serverDraftMeta && serverDraftMeta.dataset.draftId) {
+                            form.dataset.currentDraftId = serverDraftMeta.dataset.draftId;
+                            let draftInput = form.querySelector('input[name="draft_id"]');
+                            if (!draftInput) {
+                                draftInput = document.createElement('input');
+                                draftInput.type = 'hidden';
+                                draftInput.name = 'draft_id';
+                                form.appendChild(draftInput);
+                            }
+                            draftInput.value = serverDraftMeta.dataset.draftId;
+                        }
+                        refreshAllGridsAndHeaders();
+                    });
+                    updateAutoSaveStatus('idle');
+                }
+            } else {
                 updateAutoSaveStatus('idle');
             }
-        } else {
-            updateAutoSaveStatus('idle');
         }
 
         // 9. Setup Client-side Draft Persistence & Auto-save
@@ -555,6 +623,18 @@
             });
         };
         enforceHiddenFields(wrapper);
+
+        // Invalidate cached PDF preview whenever substantive data in Step 1 or Step 2 is edited
+        const invalidatePdfPreview = () => {
+            const previewContainer = document.getElementById('spkDocumentPreview');
+            if (previewContainer) {
+                previewContainer._isPdfLoaded = false;
+            }
+        };
+        pane1.addEventListener('input', invalidatePdfPreview);
+        pane1.addEventListener('change', invalidatePdfPreview);
+        pane2.addEventListener('input', invalidatePdfPreview);
+        pane2.addEventListener('change', invalidatePdfPreview);
 
         console.log('[KontrakGridWidget] Form fields successfully partitioned into 3 isolated wizard step panes.');
     }
@@ -1277,6 +1357,10 @@
      * 3. Auto SPK Number Preview & Readonly Lock
      * -------------------------------------------------------------------------- */
     function setupSPKAutoNumber(form) {
+        const formSlug = form.dataset.formSlug || (() => {
+            const m = window.location.pathname.match(/\/forms\/([^\/]+)/);
+            return m ? m[1] : 'permohonan-kontrak';
+        })();
         const spkInput = form.querySelector('[name="nomor_spk"]');
         const brandSelect = form.querySelector('[name="brand"]');
         const cabangSelect = form.querySelector('[name="cabang"]');
@@ -1294,29 +1378,85 @@
 
         lockReadonlyFields(form);
 
-        let branchSeqCache = {};
-        let isFetchingSeq = false;
-
-        async function fetchBranchSequence(cabVal, brandVal) {
-            const cleanCab = (cabVal || 'PUSAT').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-            if (branchSeqCache[cleanCab]) {
-                return branchSeqCache[cleanCab];
+        function setSelectValue(selectEl, targetText) {
+            if (!selectEl || !selectEl.options) return;
+            const norm = targetText.toLowerCase().replace(/[^a-z0-9]/g, '');
+            for (let i = 0; i < selectEl.options.length; i++) {
+                const optText = (selectEl.options[i].text || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                const optVal = (selectEl.options[i].value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (optText.includes(norm) || optVal.includes(norm) || norm.includes(optText) || norm.includes(optVal)) {
+                    selectEl.selectedIndex = i;
+                    break;
+                }
             }
-            if (isFetchingSeq) return null;
-            isFetchingSeq = true;
+        }
+
+        function getResolvedPerusahaan() {
+            if (perusahaanSelect && perusahaanSelect.value) {
+                const val = perusahaanSelect.value.trim();
+                if (val && !val.startsWith('--') && !val.toLowerCase().includes('select') && val !== '—') {
+                    return val;
+                }
+            }
+            const cab = (cabangSelect && cabangSelect.value ? cabangSelect.value : '').toUpperCase();
+            if (cab.includes('BALI')) {
+                return 'PT Cemerlang Abadi Mulia';
+            }
+            const b = (brandSelect && brandSelect.value ? brandSelect.value : '').toUpperCase();
+            if (b.includes('ROYAL') || b.includes('FOAM') || b.includes('CLASSIC')) {
+                return 'PT Royal Abadi Sejahtera';
+            } else if (b.includes('BESTARI')) {
+                return 'PT Bestari Mulia';
+            } else if (b.includes('LADY') || b.includes('ELITE') || b.includes('SERENITY')) {
+                return 'PT Anugrah Cemerlang Abadi';
+            }
+            return '';
+        }
+
+        function autoSelectPerusahaanFromBrand() {
+            if (!perusahaanSelect) return;
+            const currentComp = (perusahaanSelect.value || '').trim();
+            // NEVER overwrite if perusahaanSelect already has a valid company value (e.g. from employee profile or branch default)
+            if (currentComp && !currentComp.startsWith('--') && !currentComp.toLowerCase().includes('select') && currentComp !== '—') {
+                return;
+            }
+            const targetComp = getResolvedPerusahaan();
+            if (targetComp) {
+                setSelectValue(perusahaanSelect, targetComp);
+            }
+        }
+
+        let branchSeqCache = {};
+        let latestFetchId = 0;
+
+        async function fetchBranchSequence(cabVal, brandVal, compVal) {
+            if (!brandVal || brandVal.startsWith('--')) return null;
+            const cleanCab = (cabVal || 'PUSAT').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const cleanBrand = brandVal.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const cleanComp = (compVal || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const cacheKey = `${cleanCab}_${cleanBrand}_${cleanComp}`;
+
+            if (branchSeqCache[cacheKey]) {
+                return branchSeqCache[cacheKey];
+            }
+
+            const currentFetchId = ++latestFetchId;
             try {
-                const res = await fetch(`/forms/${formSlug}/next-spk-number/?cabang=${encodeURIComponent(cleanCab)}&brand=${encodeURIComponent(brandVal || 'LADY')}`);
+                const params = new URLSearchParams({
+                    cabang: cleanCab,
+                    brand: brandVal,
+                    perusahaan: compVal || '',
+                });
+                const res = await fetch(`/forms/${formSlug}/next-spk-number/?${params.toString()}`);
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.success && data.sequence_str) {
-                        branchSeqCache[cleanCab] = data.sequence_str;
-                        return data.sequence_str;
+                    if (data.success && data.nomor_spk) {
+                        branchSeqCache[cacheKey] = data;
+                        return data;
                     }
                 }
             } catch (err) {
                 console.warn('[updateSPK] Gagal mengambil nomor urut SPK dari server:', err);
-            } finally {
-                isFetchingSeq = false;
             }
             return null;
         }
@@ -1324,94 +1464,71 @@
         function updateSPK() {
             const brandVal = (brandSelect && brandSelect.value ? brandSelect.value : '').trim();
             const cabangVal = (cabangSelect && cabangSelect.value ? cabangSelect.value : '').trim();
-            const compVal = (perusahaanSelect && perusahaanSelect.value ? perusahaanSelect.value : '').trim();
 
-            if (!brandVal || !cabangVal) {
+            if (!brandVal || !cabangVal || brandVal.startsWith('--') || cabangVal.startsWith('--')) {
                 spkInput.value = '';
-                spkInput.placeholder = '—';
+                spkInput.placeholder = '— Pilih Brand Produk terlebih dahulu —';
                 return;
             }
 
-            const now = new Date();
-            const month = now.getMonth() + 1;
-            const year = now.getFullYear();
-
-            const bUpper = brandVal.toUpperCase();
-            const cUpper = compVal.toUpperCase();
-            
-            let brandCode = 'LADY';
-            if (bUpper.includes('LADY')) {
-                brandCode = 'LADY';
-            } else if (bUpper.includes('ROYAL') || bUpper.includes('FOAM')) {
-                brandCode = 'ROYAL';
-            } else if (bUpper.includes('SERENITY')) {
-                brandCode = 'SERENITY';
-            } else if (bUpper.includes('ELITE')) {
-                brandCode = 'ELITE';
-            } else if (bUpper.includes('CLASSIC')) {
-                brandCode = 'CLASSIC';
-            } else {
-                brandCode = brandVal.split(' ')[0].toUpperCase().replace(/[^A-Z0-9]/g, '') || 'LADY';
+            // Ensure perusahaan is resolved before sending request
+            autoSelectPerusahaanFromBrand();
+            const compVal = getResolvedPerusahaan();
+            if (perusahaanSelect && (!perusahaanSelect.value || perusahaanSelect.value.startsWith('--')) && compVal) {
+                setSelectValue(perusahaanSelect, compVal);
             }
 
-            let ptCode = 'RAS';
-            if (cUpper.includes('PRIMATARA') || cUpper.includes('BANGUN CIPTA') || cUpper === 'BCP') {
-                ptCode = 'BCP';
-            } else if (cUpper.includes('BESTARI') || cUpper === 'BM') {
-                ptCode = 'BM';
-            } else if (cUpper.includes('CEMERLANG ABADI MULIA') || cUpper.includes('ABADI MULIA') || cUpper === 'CAM') {
-                ptCode = 'CAM';
-            } else if (cUpper.includes('SEJAHTERA') || cUpper.includes('RAS') || cUpper.includes('ROYAL')) {
-                ptCode = 'RAS';
-            } else if (cUpper.includes('ACA') || cUpper.includes('ANUGRAH')) {
-                ptCode = 'ACA';
+            const cleanCab = (cabangVal || 'PUSAT').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const cleanBrand = brandVal.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const cleanComp = (compVal || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const cacheKey = `${cleanCab}_${cleanBrand}_${cleanComp}`;
+
+            // 1. If in cache, use immediately
+            if (branchSeqCache[cacheKey] && branchSeqCache[cacheKey].nomor_spk) {
+                spkInput.value = branchSeqCache[cacheKey].nomor_spk;
+                spkInput.placeholder = branchSeqCache[cacheKey].nomor_spk;
+                spkInput.dispatchEvent(new Event('input', { bubbles: true }));
+                spkInput.dispatchEvent(new Event('change', { bubbles: true }));
+                return;
             }
 
-            const ROMAN_MONTHS = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
-            const monthRoman = ROMAN_MONTHS[month] || String(month);
+            // 2. Clear previous value and show dynamic loading placeholder
+            spkInput.value = '';
+            spkInput.placeholder = `Memuat nomor SPK untuk ${brandVal}...`;
 
-            const cabClean = (cabangVal || 'PUSAT').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'PUSAT';
-
-            // Check if current spkInput already has a valid sequence (excluding default 001 if cache exists)
-            let seq = branchSeqCache[cabClean] || null;
-            if (!seq) {
-                const match = (spkInput.value || '').match(/^(?:No\.\s*)?(\d{1,4})\//i) || (spkInput.value || '').match(/No\.\s*(\d+)/i) || (spkInput.value || '').match(/-(\d+)$/);
-                if (match) {
-                    const n = parseInt(match[1], 10);
-                    if (n > 1) {
-                        seq = String(n).padStart(3, '0');
-                        branchSeqCache[cabClean] = seq;
-                    }
-                }
-            }
-
-            if (!seq) {
-                seq = '001';
-                fetchBranchSequence(cabangVal, brandVal).then(srvSeq => {
-                    if (srvSeq && srvSeq !== '001') {
-                        spkInput.value = `${srvSeq}/SK-${ptCode}/${cabClean}/${brandCode}/${monthRoman}/${year}`;
+            // 3. Fetch authoritative sequence from server
+            fetchBranchSequence(cabangVal, brandVal, compVal).then(data => {
+                if (data && data.nomor_spk) {
+                    const currentBrand = (brandSelect && brandSelect.value ? brandSelect.value : '').trim();
+                    const currentCabang = (cabangSelect && cabangSelect.value ? cabangSelect.value : '').trim();
+                    if (currentBrand === brandVal && currentCabang === cabangVal) {
+                        spkInput.value = data.nomor_spk;
+                        spkInput.placeholder = data.nomor_spk;
                         spkInput.dispatchEvent(new Event('input', { bubbles: true }));
                         spkInput.dispatchEvent(new Event('change', { bubbles: true }));
                     }
-                });
+                    if (data.perusahaan && perusahaanSelect && (!perusahaanSelect.value || perusahaanSelect.value.startsWith('--') || perusahaanSelect.value === '—')) {
+                        setSelectValue(perusahaanSelect, data.perusahaan);
+                    }
+                } else {
+                    spkInput.value = '';
+                    spkInput.placeholder = '— Gagal memuat nomor SPK —';
+                }
+            });
+        }
+        form._updateSPK = updateSPK;
+
+        // Auto-initialize on load: Only if Brand is chosen, otherwise keep clean placeholder
+        const isFormRevision = form.dataset.isRevision === 'true';
+        if (cabangSelect && brandSelect && cabangSelect.value && brandSelect.value && !brandSelect.value.startsWith('--')) {
+            if (!isFormRevision || !spkInput.value) {
+                updateSPK();
             }
-
-            spkInput.value = `${seq}/SK-${ptCode}/${cabClean}/${brandCode}/${monthRoman}/${year}`;
-            spkInput.dispatchEvent(new Event('input', { bubbles: true }));
-            spkInput.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-
-        if (brandSelect) {
-            brandSelect.addEventListener('change', updateSPK);
-            brandSelect.addEventListener('input', updateSPK);
-        }
-        if (cabangSelect) {
-            cabangSelect.addEventListener('change', updateSPK);
-            cabangSelect.addEventListener('input', updateSPK);
-        }
-        if (perusahaanSelect) {
-            perusahaanSelect.addEventListener('change', updateSPK);
-            perusahaanSelect.addEventListener('input', updateSPK);
+        } else {
+            if (!isFormRevision) {
+                spkInput.value = '';
+                spkInput.placeholder = '— Pilih Brand Produk terlebih dahulu —';
+            }
         }
 
         const kotaTtdInput = form.querySelector('[name="kota_penandatanganan"]');
@@ -1543,44 +1660,15 @@
         form._syncRekeningPerusahaan = syncRekeningPerusahaan;
         form._resolveCompanyBankDetails = resolveCompanyBankDetails;
 
-        function setSelectValue(selectEl, targetText) {
-            if (!selectEl || !selectEl.options) return;
-            const norm = targetText.toLowerCase().replace(/[^a-z0-9]/g, '');
-            for (let i = 0; i < selectEl.options.length; i++) {
-                const optText = (selectEl.options[i].text || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                const optVal = (selectEl.options[i].value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                if (optText.includes(norm) || optVal.includes(norm) || norm.includes(optText) || norm.includes(optVal)) {
-                    selectEl.selectedIndex = i;
-                    selectEl.dispatchEvent(new Event('change', { bubbles: true }));
-                    selectEl.dispatchEvent(new Event('input', { bubbles: true }));
-                    break;
-                }
-            }
-        }
-
-        function autoSelectPerusahaanFromBrand() {
-            if (!perusahaanSelect || !brandSelect) return;
-            const currentComp = (perusahaanSelect.value || '').trim();
-            const b = (brandSelect.value || '').toUpperCase();
-            if (!currentComp || currentComp === '—' || currentComp.startsWith('--') || currentComp.toLowerCase().includes('select') || currentComp.toLowerCase().includes('pilih')) {
-                if (b.includes('ROYAL') || b.includes('FOAM') || b.includes('CLASSIC')) {
-                    setSelectValue(perusahaanSelect, 'PT Royal Abadi Sejahtera');
-                } else if (b.includes('BESTARI')) {
-                    setSelectValue(perusahaanSelect, 'PT Bestari Mulia');
-                } else if (b.includes('LADY') || b.includes('ELITE') || b.includes('SERENITY')) {
-                    setSelectValue(perusahaanSelect, 'PT Anugrah Cemerlang Abadi');
-                }
-            }
-        }
-
-        
-
         if (perusahaanSelect) {
             perusahaanSelect.addEventListener('change', () => {
                 syncRekeningPerusahaan();
                 updateSPK();
             });
-            perusahaanSelect.addEventListener('input', () => {
+        }
+        if (cabangSelect) {
+            cabangSelect.addEventListener('change', () => {
+                autoSelectPerusahaanFromBrand();
                 syncRekeningPerusahaan();
                 updateSPK();
             });
@@ -1595,7 +1683,6 @@
                 }
             };
             brandSelect.addEventListener('change', onBrandChanged);
-            brandSelect.addEventListener('input', onBrandChanged);
         }
                 // Defensive check: if #companyBankContainer is missing in DOM, inject it into Card 4 immediately
         let bankContainer = document.getElementById('companyBankContainer');
@@ -3914,6 +4001,14 @@
                 const pageBadge = container.querySelector('#spkPageBadge');
                 const errorMsg = container.querySelector('#spkPdfErrorMessage');
 
+                // If PDF is already loaded and force is falsy, keep existing preview intact
+                if (!force && container._isPdfLoaded && container._activeBlobUrl) {
+                    if (viewerFrame) viewerFrame.style.display = 'block';
+                    if (loadingEl) loadingEl.style.display = 'none';
+                    if (errorEl) errorEl.classList.add('d-none');
+                    return;
+                }
+
                 // Show loading spinner
                 if (loadingEl) loadingEl.style.display = 'flex';
                 if (errorEl) errorEl.classList.add('d-none');
@@ -3970,6 +4065,7 @@
                     }
                     const blobUrl = URL.createObjectURL(blob);
                     container._activeBlobUrl = blobUrl;
+                    container._isPdfLoaded = true;
 
                     if (viewerFrame) {
                         viewerFrame.src = blobUrl + '#toolbar=0&navpanes=0';
@@ -3989,6 +4085,7 @@
                 })
                 .catch(err => {
                     console.error('Error fetching preview PDF:', err);
+                    container._isPdfLoaded = false;
                     if (loadingEl) loadingEl.style.display = 'none';
                     if (errorEl) {
                         errorEl.classList.remove('d-none');
@@ -4000,8 +4097,8 @@
             // Expose globally so external triggers (like Tipe Kontrak toggle) can re-fetch
             window.fetchAndRenderPdf = fetchAndRenderPdf;
 
-            // Execute PDF preview loading
-            fetchAndRenderPdf();
+            // Execute PDF preview loading (check loaded state)
+            fetchAndRenderPdf(false);
 
         } catch (err) {
             console.error('Error in renderSPKTab:', err);
@@ -4214,8 +4311,16 @@
 
         const chkData = form.querySelector('[name="chk_konfirmasi_data"]');
         const chkPreview = form.querySelector('[name="chk_konfirmasi_preview"]');
-        if (chkData) chkData.addEventListener('change', updateSubmitButtonState);
-        if (chkPreview) chkPreview.addEventListener('change', updateSubmitButtonState);
+        if (chkData) {
+            chkData.addEventListener('change', function () {
+                updateSubmitButtonState();
+            });
+        }
+        if (chkPreview) {
+            chkPreview.addEventListener('change', function () {
+                updateSubmitButtonState();
+            });
+        }
 
         // Core Step Switching Function
         function switchWizardStep(targetStep, validate) {
@@ -5007,6 +5112,7 @@
         let serverSaveTimeout = null;
 
         function saveDraftToServer(data) {
+            if (form.dataset.isRevision === 'true') return;
             const autoSaveUrl = '/forms/permohonan-kontrak/auto-save/';
             const tokenInput = form.querySelector('[name="csrfmiddlewaretoken"]');
             let csrfToken = tokenInput ? tokenInput.value : '';
@@ -5058,7 +5164,12 @@
             });
         }
 
-        function scheduleSave() {
+        function scheduleSave(e) {
+            if (form.dataset.isRevision === 'true') return;
+            // Ignore Step 3 confirmation checkbox toggles to avoid unnecessary background draft writes or re-renders
+            if (e && e.target && (e.target.name === 'chk_konfirmasi_data' || e.target.name === 'chk_konfirmasi_preview')) {
+                return;
+            }
             clearTimeout(autoSaveTimeout);
             clearTimeout(serverSaveTimeout);
 
@@ -5208,15 +5319,19 @@
                     return false;
                 }
             }
-            if (!e.defaultPrevented) {
+            if (!e.defaultPrevented && form.dataset.isRevision !== 'true') {
                 try {
                     localStorage.removeItem(STORAGE_KEY);
                 } catch (err) {}
             }
         });
 
-        // Initialize discard button in footer
-        showDiscardDraftButton(form, Boolean(hasRestoredDraft));
+        // Initialize discard button in footer (hide in revision mode)
+        if (form.dataset.isRevision !== 'true') {
+            showDiscardDraftButton(form, Boolean(hasRestoredDraft));
+        } else {
+            showDiscardDraftButton(form, false);
+        }
     }
 
     function escapeHtml(str) {

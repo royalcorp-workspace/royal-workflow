@@ -630,21 +630,7 @@ def normalize_company_key(company_name: str, brand: str = "", user=None) -> str:
         if any(k in c_upper for k in ["ANUGRAH", "ANUGERAH", "ACA", "CEMERLAH"]):
             return "PT ANUGRAH CEMERLANG ABADI"
 
-    # 2. Brand check if provided (brand mapping takes precedence over user's corporate affiliation)
-    if brand:
-        b_upper = str(brand).strip().upper()
-        if any(k in b_upper for k in ["LADY", "ELITE", "SERENITY", "ACA", "ANUGRAH"]):
-            return "PT ANUGRAH CEMERLANG ABADI"
-        if any(k in b_upper for k in ["BESTARI", "BM"]):
-            return "PT BESTARI MULIA"
-        if any(k in b_upper for k in ["ROYAL", "FOAM", "CLASSIC", "RAS", "SEJAHTERA"]):
-            return "PT ROYAL ABADI SEJAHTERA"
-        if any(k in b_upper for k in ["PRIMATARA", "BCP"]):
-            return "PT BANGUN CIPTA PRIMATARA"
-        if any(k in b_upper for k in ["CAM", "ABADI MULIA"]):
-            return "PT CEMERLANG ABADI MULIA"
-
-    # 3. User or submitter profile & groups fallback
+    # 2. User or submitter profile & groups check if user provided (prioritize actual user affiliation)
     candidates = []
     if user:
         ep = getattr(user, "employee_profile", None)
@@ -666,8 +652,22 @@ def normalize_company_key(company_name: str, brand: str = "", user=None) -> str:
         return "PT CEMERLANG ABADI MULIA"
     if any(k in joined for k in ["SEJAHTERA", "RAS", "ROYAL", "FOAM", "CLASSIC"]):
         return "PT ROYAL ABADI SEJAHTERA"
-    if any(k in joined for k in ["ANUGRAH", "ANUGERAH", "ACA", "CEMERLAH", "LADY", "ELITE", "SERENITY"]):
+    if any(k in joined for k in ["ANUGRAH", "ANUGERAH", "ACA", "CEMERLAH"]):
         return "PT ANUGRAH CEMERLANG ABADI"
+
+    # 3. Brand check fallback if company not determined by input or user profile
+    if brand:
+        b_upper = str(brand).strip().upper()
+        if any(k in b_upper for k in ["LADY", "ELITE", "SERENITY", "ACA", "ANUGRAH"]):
+            return "PT ANUGRAH CEMERLANG ABADI"
+        if any(k in b_upper for k in ["BESTARI", "BM"]):
+            return "PT BESTARI MULIA"
+        if any(k in b_upper for k in ["ROYAL", "FOAM", "CLASSIC", "RAS", "SEJAHTERA"]):
+            return "PT ROYAL ABADI SEJAHTERA"
+        if any(k in b_upper for k in ["PRIMATARA", "BCP"]):
+            return "PT BANGUN CIPTA PRIMATARA"
+        if any(k in b_upper for k in ["CAM", "ABADI MULIA"]):
+            return "PT CEMERLANG ABADI MULIA"
 
     return "PT ROYAL ABADI SEJAHTERA"
 
@@ -750,11 +750,13 @@ def get_company_logo_html(company_name: str = "", max_height: int = 50, submissi
 
 def format_official_spk_number(
     nomor,
-    brand,
+    brand=None,
     cabang=None,
     date_val=None,
     company_profile=None,
     perusahaan=None,
+    submission_id=None,
+    **kwargs,
 ) -> str:
     """
     Format official SPK number per Bagian B Poin 1:
@@ -764,6 +766,14 @@ def format_official_spk_number(
       001/SK-RAS/PUSAT/LADY/XI/2026
     """
     import datetime
+
+    # Support dictionary passed as first argument
+    if isinstance(nomor, dict):
+        f_data = nomor
+        nomor = f_data.get("nomor_spk") or f_data.get("sequence") or submission_id or 1
+        brand = brand or f_data.get("brand")
+        cabang = cabang or f_data.get("cabang")
+        perusahaan = perusahaan or f_data.get("perusahaan")
     if not date_val:
         date_val = datetime.date.today()
     elif isinstance(date_val, datetime.datetime):
@@ -824,11 +834,24 @@ def format_official_spk_number(
     return f"{nomor_str}/SK-{pt_code}/{cabang_str}/{brand_clean}/{m_roman}/{y_str}"
 
 
-def get_next_branch_spk_sequence(cabang: str, year: Optional[int] = None, form_slug: str = "permohonan-kontrak") -> int:
+def get_next_spk_sequence(
+    cabang: str,
+    brand: Optional[str] = None,
+    perusahaan: Optional[str] = None,
+    year: Optional[int] = None,
+    form_slug: str = "permohonan-kontrak",
+    exclude_submission_id: Optional[int] = None,
+    company_profile: Optional[dict] = None,
+) -> int:
     """
-    Menghitung nomor urut sequence SPK berikutnya terisolasi per Cabang dan Tahun.
-    Setiap cabang memulai nomor urut dari 1 (001) dan tidak melanjutkan cabang lain.
-    Nomor urut = MAX(sequence) + 1 berbasis (Cabang Pemohon + Tahun SPK).
+    Menghitung nomor urut sequence SPK berikutnya terisolasi berbasis kombinasi:
+    Cabang + Brand + Entitas Perusahaan + Tahun Kalender SPK.
+    Format SPK: {SEQ:3}/SK-{PT}/{CABANG}/{BRAND}/{ROMAN_MONTH}/{YEAR}
+    
+    Nomor urut = MAX(sequence) + 1 untuk kombinasi tersebut.
+    Jika berganti tahun kalender atau belum ada SPK untuk kombinasi ini, mulai dari 1 (001).
+    Mencakup seluruh status pengajuan aktif (submitted, pending_approval, approved, dsb.)
+    agar tidak terjadi duplikasi nomor.
     """
     import datetime
     import re
@@ -841,6 +864,32 @@ def get_next_branch_spk_sequence(cabang: str, year: Optional[int] = None, form_s
         cabang = "PUSAT"
 
     cabang_clean = str(cabang).strip().upper().replace(" ", "")
+
+    # Clean brand
+    brand_clean = None
+    if brand:
+        b_str = str(brand).strip().upper()
+        if "LADY" in b_str:
+            brand_clean = "LADY"
+        elif "ROYAL" in b_str or "FOAM" in b_str:
+            brand_clean = "ROYAL"
+        elif "SERENITY" in b_str:
+            brand_clean = "SERENITY"
+        elif "ELITE" in b_str:
+            brand_clean = "ELITE"
+        elif "CLASSIC" in b_str:
+            brand_clean = "CLASSIC"
+        else:
+            brand_clean = b_str.split()[0] if b_str else None
+
+    # Resolve PT code
+    pt_code = None
+    if company_profile and isinstance(company_profile, dict):
+        pt_code = company_profile.get("short_code")
+    elif perusahaan or brand or cabang:
+        prof = resolve_company_profile(form_data={"cabang": cabang, "brand": brand, "perusahaan": perusahaan})
+        if prof and isinstance(prof, dict):
+            pt_code = prof.get("short_code")
 
     try:
         FormSubmission = apps.get_model("django_forms_workflows", "FormSubmission")
@@ -856,6 +905,8 @@ def get_next_branch_spk_sequence(cabang: str, year: Optional[int] = None, form_s
         return 1
 
     submissions = FormSubmission.objects.filter(form_definition=form_def)
+    if exclude_submission_id:
+        submissions = submissions.exclude(id=exclude_submission_id)
 
     max_seq = 0
     for sub in submissions:
@@ -865,13 +916,28 @@ def get_next_branch_spk_sequence(cabang: str, year: Optional[int] = None, form_s
             continue
 
         created_year = sub.created_at.year if sub.created_at else year
+        # Pastikan dokumen bertanggal tahun yang sama
         if str(year) not in spk_str and created_year != year:
             continue
 
+        # Cocokkan cabang
         sub_cabang = str(data.get("cabang") or "").strip().upper().replace(" ", "")
         cabang_matches = (sub_cabang == cabang_clean) or (f"/{cabang_clean}/" in spk_str.upper())
         if not cabang_matches:
             continue
+
+        # Cocokkan brand (jika brand_clean ditentukan)
+        if brand_clean:
+            sub_brand = str(data.get("brand") or "").strip().upper()
+            brand_matches = (brand_clean in sub_brand) or (f"/{brand_clean}/" in spk_str.upper())
+            if not brand_matches:
+                continue
+
+        # Cocokkan entitas perusahaan (jika pt_code ditentukan)
+        if pt_code:
+            pt_matches = (f"/SK-{pt_code}/" in spk_str.upper()) or (f"-{pt_code}-" in spk_str.upper())
+            if not pt_matches:
+                continue
 
         m = re.match(r"^(?:No\.\s*)?(\d+)/", spk_str)
         if m:
@@ -883,6 +949,27 @@ def get_next_branch_spk_sequence(cabang: str, year: Optional[int] = None, form_s
                 pass
 
     return max_seq + 1
+
+
+def get_next_branch_spk_sequence(
+    cabang: str,
+    year: Optional[int] = None,
+    form_slug: str = "permohonan-kontrak",
+    brand: Optional[str] = None,
+    perusahaan: Optional[str] = None,
+    exclude_submission_id: Optional[int] = None,
+) -> int:
+    """
+    Backward-compatible wrapper untuk get_next_spk_sequence.
+    """
+    return get_next_spk_sequence(
+        cabang=cabang,
+        brand=brand,
+        perusahaan=perusahaan,
+        year=year,
+        form_slug=form_slug,
+        exclude_submission_id=exclude_submission_id,
+    )
 
 
 def resolve_spk_document_template(form_def, submission=None, form_data=None):

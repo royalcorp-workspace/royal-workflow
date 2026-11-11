@@ -315,8 +315,11 @@ def form_qr_code(request, slug):
     form_def = get_object_or_404(FormDefinition, slug=slug, is_active=True)
 
     try:
-        import segno
+        import segno  # type: ignore
     except ImportError:
+        segno = None
+
+    if segno is None:
         return HttpResponse(
             "QR code generation requires the 'segno' package. "
             "Install it with: pip install django-forms-workflows[qr]",
@@ -364,7 +367,12 @@ def form_submit(request, slug):
             from django.contrib.auth.views import redirect_to_login
 
             return redirect_to_login(request.get_full_path())
-    revision_id_param = request.GET.get("revision_id") or request.POST.get("revision_id")
+    revision_id_param = (
+        request.GET.get("revision_id")
+        or request.GET.get("revision")
+        or request.POST.get("revision_id")
+        or request.POST.get("revision")
+    )
     revision_submission = None
     if revision_id_param:
         if is_anonymous:
@@ -431,7 +439,7 @@ def form_submit(request, slug):
             )
             if existing:
                 messages.error(request, "You have already submitted this form.")
-                return redirect("forms_workflows:my_submissions")
+                return redirect("forms_workflows:form_submission_hub", slug=form_def.slug)
 
     # Drafts are only loaded when explicitly requested via draft_id / draft parameter
     draft = None
@@ -533,9 +541,7 @@ def form_submit(request, slug):
                 comments="Saved as draft",
             )
             messages.success(request, "Draf pengajuan berhasil disimpan.")
-            if form_def.slug == "permohonan-kontrak":
-                return redirect("forms_workflows:form_submission_hub", slug=form_def.slug)
-            return redirect("forms_workflows:my_submissions")
+            return redirect("forms_workflows:form_submission_hub", slug=form_def.slug)
 
         # ------------------------------------------------------------------ #
         # Full submission: validate then save.                                #
@@ -645,7 +651,7 @@ def form_submit(request, slug):
             if form_def.slug == "permohonan-kontrak":
                 from .company_profiles import (
                     format_official_spk_number,
-                    get_next_branch_spk_sequence,
+                    get_next_spk_sequence,
                     resolve_company_profile,
                 )
                 import re
@@ -658,26 +664,42 @@ def form_submit(request, slug):
                 from django.db import transaction
                 with transaction.atomic():
                     FormDefinition.objects.select_for_update().get(pk=form_def.pk)
-                    latest_seq = get_next_branch_spk_sequence(cabang, timezone.now().year, form_slug=form_def.slug)
+                    ep = getattr(request.user, "employee_profile", None)
+                    user_company = ep.company if ep and ep.company else None
+                    if not perusahaan or str(perusahaan).strip() in ("", "-- Select --", "—"):
+                        perusahaan = user_company
+                    comp_prof = resolve_company_profile(
+                        form_data={"cabang": cabang, "brand": brand, "perusahaan": perusahaan},
+                        user=request.user,
+                    )
+                    if not perusahaan or str(perusahaan).strip() in ("", "-- Select --", "—"):
+                        perusahaan = user_company or comp_prof.get("display_name", "PT Anugrah Cemerlang Abadi")
+                    submission.form_data["perusahaan"] = perusahaan
+
+                    latest_seq = get_next_spk_sequence(
+                        cabang=cabang,
+                        brand=brand,
+                        perusahaan=perusahaan,
+                        year=timezone.now().year,
+                        form_slug=form_def.slug,
+                        exclude_submission_id=submission.id,
+                        company_profile=comp_prof,
+                    )
                     
                     already_taken = False
                     if current_spk and not ("OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-") or "____" in current_spk):
                         already_taken = FormSubmission.objects.filter(
                             form_definition=form_def,
                             form_data__nomor_spk=current_spk,
-                        ).exclude(id=submission.id).exclude(status="draft").exists()
+                        ).exclude(id=submission.id).exists()
 
                     if already_taken or not current_spk or not m_curr or "OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-") or "____" in current_spk:
                         assigned_seq = latest_seq
                     else:
                         curr_num = int(m_curr.group(1))
-                        assigned_seq = curr_num if curr_num >= latest_seq - 1 else latest_seq
+                        assigned_seq = max(curr_num, latest_seq)
 
-                    comp_prof = resolve_company_profile(form_data=submission.form_data, user=request.user)
-                    if not perusahaan or str(perusahaan).strip() in ("", "-- Select --", "—"):
-                        perusahaan = comp_prof.get("display_name", "PT Anugrah Cemerlang Abadi")
-                        submission.form_data["perusahaan"] = perusahaan
-                    submission.form_data["nomor_spk"] = format_official_spk_number(
+                    candidate_spk = format_official_spk_number(
                         nomor=assigned_seq,
                         brand=brand,
                         cabang=cabang,
@@ -685,6 +707,22 @@ def form_submit(request, slug):
                         company_profile=comp_prof,
                         perusahaan=perusahaan,
                     )
+                    # Collision guard loop to guarantee zero duplicate SPK numbers
+                    while FormSubmission.objects.filter(
+                        form_definition=form_def,
+                        form_data__nomor_spk=candidate_spk,
+                    ).exclude(id=submission.id).exists():
+                        assigned_seq += 1
+                        candidate_spk = format_official_spk_number(
+                            nomor=assigned_seq,
+                            brand=brand,
+                            cabang=cabang,
+                            date_val=timezone.now(),
+                            company_profile=comp_prof,
+                            perusahaan=perusahaan,
+                        )
+
+                    submission.form_data["nomor_spk"] = candidate_spk
 
                 if not submission.form_data.get("kota_penandatanganan"):
                     submission.form_data["kota_penandatanganan"] = resolve_default_signing_city(
@@ -777,7 +815,7 @@ def form_submit(request, slug):
                 )
 
             messages.success(request, "Form submitted successfully.")
-            return redirect("forms_workflows:my_submissions")
+            return redirect("forms_workflows:form_submission_hub", slug=form_def.slug)
     else:
         if revision_submission:
             initial_data = revision_submission.form_data or {}
@@ -802,29 +840,39 @@ def form_submit(request, slug):
                     initial_data.setdefault("kota_penandatanganan", signing_city)
                 if form_def.slug == "permohonan-kontrak":
                     from .company_profiles import (
-                        get_next_branch_spk_sequence,
+                        get_next_spk_sequence,
                         format_official_spk_number,
                         resolve_company_profile,
                     )
                     cabang = initial_data.get("cabang") or (ep.branch if ep and ep.branch else "PUSAT")
                     initial_data["cabang"] = cabang
-                    brand = initial_data.get("brand") or "LADY"
+                    brand = initial_data.get("brand")
                     today = timezone.now().date()
-                    seq = get_next_branch_spk_sequence(cabang, today.year, form_slug=form_def.slug)
                     comp_prof = resolve_company_profile(form_data=initial_data, user=user_or_none)
                     if not initial_data.get("perusahaan") or str(initial_data.get("perusahaan")).strip() in ("", "-- Select --", "—"):
                         initial_data["perusahaan"] = comp_prof.get("display_name", "PT Anugrah Cemerlang Abadi")
-                    initial_data.setdefault(
-                        "nomor_spk",
-                        format_official_spk_number(
-                            nomor=seq,
-                            brand=brand,
+                    if brand and str(brand).strip() not in ("", "-- Select --", "—"):
+                        seq = get_next_spk_sequence(
                             cabang=cabang,
-                            date_val=today,
-                            company_profile=comp_prof,
+                            brand=brand,
                             perusahaan=initial_data.get("perusahaan"),
-                        ),
-                    )
+                            year=today.year,
+                            form_slug=form_def.slug,
+                            company_profile=comp_prof,
+                        )
+                        initial_data.setdefault(
+                            "nomor_spk",
+                            format_official_spk_number(
+                                nomor=seq,
+                                brand=brand,
+                                cabang=cabang,
+                                date_val=today,
+                                company_profile=comp_prof,
+                                perusahaan=initial_data.get("perusahaan"),
+                            ),
+                        )
+                    else:
+                        initial_data["nomor_spk"] = ""
             form = DynamicForm(
                 form_definition=form_def, user=user_or_none, initial_data=initial_data
             )
@@ -1146,38 +1194,61 @@ def form_auto_save(request, slug):
         if form_def.slug == "permohonan-kontrak":
             from .company_profiles import (
                 format_official_spk_number,
-                get_next_branch_spk_sequence,
+                get_next_spk_sequence,
                 resolve_company_profile,
             )
             import re
-            brand = data.get("brand") or "LADY"
-            cabang = data.get("cabang") or "PUSAT"
-            perusahaan = data.get("perusahaan")
-            today = timezone.now().date()
-            current_spk = str(data.get("nomor_spk", "")).strip()
-            m_curr = re.match(r"^(?:No\.\s*)?(\d+)/", current_spk) if current_spk else None
-            need_assign = not current_spk or "OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-") or "____" in current_spk
-            if not need_assign and m_curr:
-                curr_num = int(m_curr.group(1))
-                if curr_num <= 1:
-                    seq = get_next_branch_spk_sequence(cabang, today.year, form_slug=form_def.slug)
-                    if seq > 1:
-                        need_assign = True
-            comp_prof = resolve_company_profile(form_data=data, user=request.user)
-            if not perusahaan or str(perusahaan).strip() in ("", "-- Select --", "—"):
-                perusahaan = comp_prof.get("display_name", "PT Anugrah Cemerlang Abadi")
-                data["perusahaan"] = perusahaan
+            brand = data.get("brand")
+            if not brand or str(brand).strip() in ("", "-- Select --", "—"):
+                data["nomor_spk"] = ""
+            else:
+                cabang = data.get("cabang") or "PUSAT"
+                perusahaan = data.get("perusahaan")
+                today = timezone.now().date()
+                current_spk = str(data.get("nomor_spk", "")).strip()
+                m_curr = re.match(r"^(?:No\.\s*)?(\d+)/", current_spk) if current_spk else None
+                need_assign = not current_spk or "OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-") or "____" in current_spk
 
-            if need_assign:
-                seq = get_next_branch_spk_sequence(cabang, today.year, form_slug=form_def.slug)
-                data["nomor_spk"] = format_official_spk_number(
-                    nomor=seq,
-                    brand=brand,
-                    cabang=cabang,
-                    date_val=today,
-                    company_profile=comp_prof,
-                    perusahaan=perusahaan,
-                )
+                comp_prof = resolve_company_profile(form_data=data, user=request.user)
+                if not perusahaan or str(perusahaan).strip() in ("", "-- Select --", "—"):
+                    ep = getattr(request.user, "employee_profile", None)
+                    user_company = ep.company if ep and ep.company else None
+                    perusahaan = user_company or comp_prof.get("display_name", "PT Anugrah Cemerlang Abadi")
+                    data["perusahaan"] = perusahaan
+
+                if not need_assign and m_curr:
+                    curr_num = int(m_curr.group(1))
+                    if curr_num <= 1:
+                        seq = get_next_spk_sequence(
+                            cabang=cabang,
+                            brand=brand,
+                            perusahaan=perusahaan,
+                            year=today.year,
+                            form_slug=form_def.slug,
+                            exclude_submission_id=draft.id if draft.pk else None,
+                            company_profile=comp_prof,
+                        )
+                        if seq > 1:
+                            need_assign = True
+
+                if need_assign:
+                    seq = get_next_spk_sequence(
+                        cabang=cabang,
+                        brand=brand,
+                        perusahaan=perusahaan,
+                        year=today.year,
+                        form_slug=form_def.slug,
+                        exclude_submission_id=draft.id if draft.pk else None,
+                        company_profile=comp_prof,
+                    )
+                    data["nomor_spk"] = format_official_spk_number(
+                        nomor=seq,
+                        brand=brand,
+                        cabang=cabang,
+                        date_val=today,
+                        company_profile=comp_prof,
+                        perusahaan=perusahaan,
+                    )
 
         draft.form_data = data
         draft.submission_ip = get_client_ip(request)
@@ -1265,9 +1336,9 @@ def form_submission_hub(request, slug):
     # Order newest first
     submissions_qs = submissions_qs.select_related("submitter").order_by("-created_at")
 
-    # Whitelist & parse per_page (default 15, options [15, 30, 50])
-    PER_PAGE_CHOICES = [15, 30, 50]
-    DEFAULT_PER_PAGE = 15
+    # Whitelist & parse per_page (default 25, options [10, 25, 50, 100])
+    PER_PAGE_CHOICES = [10, 25, 50, 100]
+    DEFAULT_PER_PAGE = 25
     try:
         per_page = int(request.GET.get("per_page", DEFAULT_PER_PAGE))
         if per_page not in PER_PAGE_CHOICES:
@@ -1402,159 +1473,11 @@ def form_submission_hub(request, slug):
 
 @login_required
 def my_submissions(request):
-    """View user's submissions, optionally filtered by form category.
-
-    Accepts an optional ``?category=<slug>`` query parameter to narrow the
-    submission list to a single form category.  The template also receives a
-    ``category_counts`` list so the UI can render a filter-pill bar showing
-    how many submissions belong to each category.
     """
-    # Include submissions the user owns OR submissions for forms where the user
-    # is in reviewer_groups OR admin_groups (both mean "can view all submissions").
-    user_groups = request.user.groups.all()
-    privileged_form_ids = (
-        FormDefinition.objects.filter(
-            models.Q(reviewer_groups__in=user_groups)
-            | models.Q(admin_groups__in=user_groups)
-        )
-        .values_list("id", flat=True)
-        .distinct()
-    )
-    base_submissions = FormSubmission.objects.filter(
-        models.Q(submitter=request.user)
-        | models.Q(
-            form_definition__in=privileged_form_ids,
-            status__in=[
-                "submitted",
-                "pending_approval",
-                "approved",
-                "rejected",
-                "withdrawn",
-            ],
-        )
-    ).distinct()
-
-    # --- Category counts (for the filter bar) ---
-    raw_counts = (
-        base_submissions.values(
-            "form_definition__category__pk",
-            "form_definition__category__name",
-            "form_definition__category__slug",
-            "form_definition__category__icon",
-            "form_definition__category__order",
-        )
-        .annotate(count=models.Count("id"))
-        .order_by(
-            "form_definition__category__order",
-            "form_definition__category__name",
-        )
-    )
-
-    category_counts = []
-    for row in raw_counts:
-        slug = row["form_definition__category__slug"]
-        if slug:  # only include categorised entries in the filter bar
-            category_counts.append(
-                {
-                    "name": row["form_definition__category__name"],
-                    "slug": slug,
-                    "icon": row["form_definition__category__icon"] or "",
-                    "count": row["count"],
-                }
-            )
-
-    total_submissions_count = base_submissions.count()
-
-    # --- Apply optional category filter ---
-    category_slug = request.GET.get("category", "").strip()
-    active_category = None
-
-    if category_slug:
-        submissions = base_submissions.filter(
-            form_definition__category__slug=category_slug
-        )
-        active_category = next(
-            (c for c in category_counts if c["slug"] == category_slug), None
-        )
-
-    # --- Form counts within the active category (for the form-level filter bar) ---
-    form_slug = request.GET.get("form", "").strip()
-    form_counts = []
-    active_form = None
-
-    if category_slug:
-        raw_form_counts = (
-            submissions.values(
-                "form_definition__pk",
-                "form_definition__name",
-                "form_definition__slug",
-            )
-            .annotate(count=models.Count("id"))
-            .order_by("form_definition__name")
-        )
-        form_counts = [
-            {
-                "name": r["form_definition__name"],
-                "slug": r["form_definition__slug"],
-                "count": r["count"],
-            }
-            for r in raw_form_counts
-            if r["form_definition__slug"]
-        ]
-        if form_slug:
-            active_form = next((f for f in form_counts if f["slug"] == form_slug), None)
-
-    # Check if any submissions support bulk export (fast EXISTS)
-    any_exportable = base_submissions.filter(
-        form_definition__workflows__allow_bulk_export=True
-    ).exists()
-
-    # Extra form-field columns (only when a specific form is selected)
-    form_fields = []
-    if form_slug:
-        try:
-            fd = FormDefinition.objects.get(slug=form_slug)
-            form_fields = list(
-                FormField.objects.filter(form_definition=fd)
-                .exclude(
-                    field_type__in=[
-                        "section",
-                        "display_text",
-                        "file",
-                        "multifile",
-                        "signature",
-                    ]
-                )
-                .order_by("order")
-                .values("field_name", "field_label")
-            )
-        except FormDefinition.DoesNotExist:
-            logger.debug(
-                "FormDefinition not found when loading export fields for submission list"
-            )
-
-    # Compute default sort column index for DataTables (submitted_at)
-    _exp_off = 1 if any_exportable else 0
-    _cat_off = 0 if category_slug else 1
-    # columns: [checkbox?] id actions [category?] form status submitted_at [extra…]
-    default_sort_col = _exp_off + 2 + _cat_off + 2  # index of submitted_at
-
-    return render(
-        request,
-        "django_forms_workflows/my_submissions.html",
-        {
-            "category_counts": category_counts,
-            "active_category": active_category,
-            "category_slug": category_slug,
-            "total_submissions_count": total_submissions_count,
-            "form_counts": form_counts,
-            "form_slug": form_slug,
-            "active_form": active_form,
-            "any_exportable": any_exportable,
-            "form_fields": form_fields,
-            "default_sort_col": default_sort_col,
-        },
-    )
+    Decommissioned My Submissions view.
+    Redirects directly to the centralized Kontrak Toko submission hub.
+    """
+    return redirect("forms_workflows:form_submission_hub", slug="permohonan-kontrak")
 
 
 def user_can_manage_ematerai(user, submission=None) -> bool:
@@ -3187,7 +3110,7 @@ def sub_workflow_detail(request, instance_id):
     )
     if not can_view:
         messages.error(request, "You don't have permission to view this.")
-        return redirect("forms_workflows:my_submissions")
+        return redirect("forms_workflows:form_submission_hub", slug=submission.form_definition.slug)
 
     tasks = instance.approval_tasks.select_related(
         "assigned_to", "assigned_group", "completed_by", "workflow_stage"
@@ -3443,7 +3366,7 @@ def withdraw_submission(request, submission_id):
         _dispatch_notification_rules(submission, "form_withdrawn")
 
         messages.success(request, "Submission withdrawn successfully.")
-        return redirect("forms_workflows:my_submissions")
+        return redirect("forms_workflows:form_submission_hub", slug=submission.form_definition.slug)
 
     return render(
         request,
@@ -3492,7 +3415,7 @@ def discard_draft(request, submission_id):
         messages.success(request, "Draft discarded.")
         if submission.form_definition:
             return redirect("forms_workflows:form_submission_hub", slug=submission.form_definition.slug)
-        return redirect("forms_workflows:my_submissions")
+        return redirect("forms_workflows:form_submission_hub", slug="permohonan-kontrak")
 
     return render(
         request,
@@ -3621,7 +3544,13 @@ def _resolve_spk_pdf_filename(submission_or_data, submission_id=None, suffix="")
     if not spk_raw or spk_raw.startswith("OTOMATIS") or spk_raw == "—" or "/" not in spk_raw:
         try:
             from .company_profiles import format_official_spk_number
-            spk_raw = format_official_spk_number(form_data, submission_id=sub_id)
+            spk_raw = format_official_spk_number(
+                nomor=form_data.get("nomor_spk") or sub_id or 1,
+                brand=form_data.get("brand"),
+                cabang=form_data.get("cabang"),
+                perusahaan=form_data.get("perusahaan"),
+                submission_id=sub_id,
+            )
         except Exception:
             spk_raw = ""
 
@@ -3717,12 +3646,12 @@ def form_preview_pdf(request, slug):
 @login_required
 def form_next_spk_number(request, slug):
     """
-    Return the next SPK number sequence for the given branch and year.
-    Used by the form wizard to display accurate sequence on load and branch change.
+    Return the next SPK number sequence for the given branch, brand, company, and year.
+    Used by the form wizard to display accurate sequence on load and branch/brand change.
     """
     from django.http import JsonResponse
     from .company_profiles import (
-        get_next_branch_spk_sequence,
+        get_next_spk_sequence,
         format_official_spk_number,
         resolve_company_profile,
     )
@@ -3730,23 +3659,46 @@ def form_next_spk_number(request, slug):
     form_def = get_object_or_404(FormDefinition, slug=slug)
     ep = getattr(request.user, "employee_profile", None)
     user_branch = ep.branch if ep and ep.branch else "PUSAT"
+    user_company = ep.company if ep and ep.company else None
 
     cabang = request.GET.get("cabang") or user_branch
-    brand = request.GET.get("brand") or "LADY"
+    brand = request.GET.get("brand")
+    if not brand or str(brand).strip() in ("", "-- Select --", "—"):
+        return JsonResponse({
+            "success": False,
+            "error": "Brand Produk wajib dipilih terlebih dahulu.",
+            "nomor_spk": "",
+            "sequence": None,
+        })
+    perusahaan = request.GET.get("perusahaan") or user_company
     year_str = request.GET.get("year")
     try:
         year = int(year_str) if year_str else timezone.now().year
     except (ValueError, TypeError):
         year = timezone.now().year
 
-    next_seq = get_next_branch_spk_sequence(cabang=cabang, year=year, form_slug=form_def.slug)
-    comp_prof = resolve_company_profile(form_data={"cabang": cabang, "brand": brand}, user=request.user)
+    comp_prof = resolve_company_profile(
+        form_data={"cabang": cabang, "brand": brand, "perusahaan": perusahaan},
+        user=request.user,
+    )
+    if not perusahaan or str(perusahaan).strip() in ("", "-- Select --", "—"):
+        perusahaan = user_company or comp_prof.get("display_name", "PT Anugrah Cemerlang Abadi")
+
+    next_seq = get_next_spk_sequence(
+        cabang=cabang,
+        brand=brand,
+        perusahaan=perusahaan,
+        year=year,
+        form_slug=form_def.slug,
+        company_profile=comp_prof,
+    )
     nomor_spk = format_official_spk_number(
         nomor=next_seq,
         brand=brand,
         cabang=cabang,
         date_val=timezone.now().date(),
         company_profile=comp_prof,
+        perusahaan=perusahaan,
     )
     return JsonResponse({
         "success": True,
@@ -3754,6 +3706,8 @@ def form_next_spk_number(request, slug):
         "sequence_str": f"{next_seq:03d}",
         "nomor_spk": nomor_spk,
         "cabang": cabang,
+        "brand": brand,
+        "perusahaan": perusahaan,
         "year": year,
     })
 

@@ -4,7 +4,7 @@
 {% block title %}Discard Draft #{{ submission.id }} — {{ submission.form_definition.name }} - {{ site_name }}{% endblock %}
 
 {% block topbar_title %}
-  <a href="{% url 'forms_workflows:my_submissions' %}" class="text-decoration-none text-muted">My Submissions</a>
+  <a href="{% url 'forms_workflows:form_submission_hub' submission.form_definition.slug %}" class="text-decoration-none text-muted">{{ submission.form_definition.name }}</a>
   <span class="crumb-sep">/</span>
   <span class="crumb-current">Discard Draft #{{ submission.id }}</span>
 {% endblock %}

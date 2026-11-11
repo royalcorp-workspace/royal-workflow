@@ -18,12 +18,7 @@
                 <i class="bi bi-speedometer2"></i>
                 <span>Dashboard</span>
             </a>
-            <!-- Menu 'My Submissions' disembunyikan sesuai arahan UI Polish
-            <a class="sidebar-link {% if 'my-submissions' in request.path %}active{% endif %}" href="{% url 'forms_workflows:my_submissions' %}">
-                <i class="bi bi-journal-text"></i>
-                <span>My Submissions</span>
-            </a>
-            -->
+            {# Menu 'My Submissions' dinonaktifkan sesuai arahan: pelacakan pengajuan berpusat di hub formulir masing-masing #}
             {% if user.is_staff or user_is_approver %}
             <a class="sidebar-link {% if 'approvals' in request.path %}active{% endif %}" href="/forms/approvals/">
                 <i class="bi bi-check2-square"></i>

@@ -15,8 +15,8 @@
                 </div>
                 <div class="d-grid gap-2 mt-4">
                     {% if request.user.is_authenticated %}
-                    <a href="{% url 'forms_workflows:my_submissions' %}" class="btn btn-primary">
-                        <i class="bi bi-list-check"></i> My Submissions
+                    <a href="{% url 'forms_workflows:form_submission_hub' form_def.slug %}" class="btn btn-primary">
+                        <i class="bi bi-list-check"></i> Lihat Daftar Pengajuan
                     </a>
                     {% endif %}
                     <a href="{% url 'forms_workflows:form_list' %}" class="btn btn-outline-secondary">
