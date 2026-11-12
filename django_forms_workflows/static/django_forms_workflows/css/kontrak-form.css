@@ -1323,23 +1323,31 @@ table.clause-table td.cell-currency {
 #div_id_email {
     display: flex !important;
     flex-direction: column !important;
+    align-items: flex-start !important;
     grid-template-rows: none !important;
 }
 
 #div_id_email > label,
 .field-email label {
     order: 1 !important;
+    align-self: flex-start !important;
+    text-align: left !important;
+    width: auto !important;
     margin-bottom: 0.35rem !important;
 }
 
 #div_id_email > :is(input, select, textarea, .input-group),
 .field-email :is(input, select, textarea, .input-group) {
     order: 2 !important;
+    align-self: stretch !important;
+    width: 100% !important;
 }
 
 #div_id_email > :is(.invalid-feedback, .valid-feedback, .email-feedback, [class*="-feedback"]),
 .field-email :is(.invalid-feedback, .valid-feedback, .email-feedback, [class*="-feedback"]) {
     order: 3 !important;
+    align-self: flex-start !important;
+    text-align: left !important;
     position: static !important;
     clear: both !important;
     width: 100% !important;
@@ -1356,6 +1364,8 @@ table.clause-table td.cell-currency {
 #div_id_email > :is(.form-text, .help-block, small),
 .field-email :is(.form-text, .help-block, small) {
     order: 4 !important;
+    align-self: flex-start !important;
+    text-align: left !important;
     position: static !important;
     clear: both !important;
     display: block !important;

@@ -120,7 +120,7 @@ def custom_form_submit(request, slug):
             month = today.month
             current_spk = post.get("nomor_spk", "").strip()
             if not current_spk or "OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-"):
-                seq = FormSubmission.objects.filter(form_definition__slug="permohonan-kontrak").count() + 1
+                seq = FormSubmission.objects.filter(form_definition__slug="permohonan-kontrak").exclude(status__in=["draft", "withdrawn"]).count() + 1
                 post["nomor_spk"] = f"No. {seq:04d}/{brand}/{cabang}/{month}/{year}"
 
             if not post.get("kota_penandatanganan"):

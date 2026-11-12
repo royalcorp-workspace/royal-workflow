@@ -474,6 +474,13 @@ def form_submit(request, slug):
         # Draft save: only for authenticated users.                          #
         # ------------------------------------------------------------------ #
         if ("save_draft" in request.POST or request.POST.get("action") == "draft") and not is_anonymous:
+            if revision_submission:
+                messages.warning(
+                    request,
+                    "Pengajuan dalam mode revisi tidak dapat disimpan sebagai draf terpisah. Silakan periksa kembali isian lalu klik 'Kirim Ulang Revisi'.",
+                )
+                return redirect(request.get_full_path())
+
             _skip = {"csrfmiddlewaretoken", "save_draft", "submit", "action", "_stashed_files"}
             raw_data = {}
             for k in request.POST:
@@ -691,13 +698,13 @@ def form_submit(request, slug):
                         already_taken = FormSubmission.objects.filter(
                             form_definition=form_def,
                             form_data__nomor_spk=current_spk,
-                        ).exclude(id=submission.id).exists()
+                        ).exclude(id=submission.id).exclude(status__in=["draft", "withdrawn"]).exists()
 
                     if already_taken or not current_spk or not m_curr or "OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-") or "____" in current_spk:
                         assigned_seq = latest_seq
                     else:
                         curr_num = int(m_curr.group(1))
-                        assigned_seq = max(curr_num, latest_seq)
+                        assigned_seq = curr_num
 
                     candidate_spk = format_official_spk_number(
                         nomor=assigned_seq,
@@ -707,11 +714,11 @@ def form_submit(request, slug):
                         company_profile=comp_prof,
                         perusahaan=perusahaan,
                     )
-                    # Collision guard loop to guarantee zero duplicate SPK numbers
+                    # Collision guard loop to guarantee zero duplicate SPK numbers against active/submitted forms
                     while FormSubmission.objects.filter(
                         form_definition=form_def,
                         form_data__nomor_spk=candidate_spk,
-                    ).exclude(id=submission.id).exists():
+                    ).exclude(id=submission.id).exclude(status__in=["draft", "withdrawn"]).exists():
                         assigned_seq += 1
                         candidate_spk = format_official_spk_number(
                             nomor=assigned_seq,
@@ -1164,6 +1171,23 @@ def form_auto_save(request, slug):
         raw = json.loads(request.body)
         data = {k: v for k, v in raw.items() if k not in _auto_save_skip}
 
+        # Defense-in-depth: Never allow auto-save to write or update drafts when editing a revision
+        is_revision_request = bool(
+            raw.get("revision_id")
+            or raw.get("revision")
+            or request.GET.get("revision_id")
+            or request.GET.get("revision")
+            or request.POST.get("revision_id")
+            or request.POST.get("revision")
+        )
+        if is_revision_request:
+            return JsonResponse({
+                "success": True,
+                "draft_id": None,
+                "ignored": True,
+                "message": "Auto-save is disabled in revision mode."
+            })
+
         # Upsert draft.  We avoid update_or_create so we can set
         # _skip_change_history *before* save() fires the signal.
         draft = FormSubmission.objects.filter(
@@ -1215,21 +1239,6 @@ def form_auto_save(request, slug):
                     user_company = ep.company if ep and ep.company else None
                     perusahaan = user_company or comp_prof.get("display_name", "PT Anugrah Cemerlang Abadi")
                     data["perusahaan"] = perusahaan
-
-                if not need_assign and m_curr:
-                    curr_num = int(m_curr.group(1))
-                    if curr_num <= 1:
-                        seq = get_next_spk_sequence(
-                            cabang=cabang,
-                            brand=brand,
-                            perusahaan=perusahaan,
-                            year=today.year,
-                            form_slug=form_def.slug,
-                            exclude_submission_id=draft.id if draft.pk else None,
-                            company_profile=comp_prof,
-                        )
-                        if seq > 1:
-                            need_assign = True
 
                 if need_assign:
                     seq = get_next_spk_sequence(
@@ -3684,12 +3693,48 @@ def form_next_spk_number(request, slug):
     if not perusahaan or str(perusahaan).strip() in ("", "-- Select --", "—"):
         perusahaan = user_company or comp_prof.get("display_name", "PT Anugrah Cemerlang Abadi")
 
+    # Idempotency guard: jika draft yang sedang dibuka sudah memiliki nomor SPK valid
+    # dan cabang serta brand masih cocok, kembalikan nomor SPK draft tersebut secara locked
+    draft_id_param = request.GET.get("draft_id") or request.GET.get("draft")
+    exclude_id = None
+    if draft_id_param:
+        try:
+            exclude_id = int(draft_id_param)
+        except (ValueError, TypeError):
+            exclude_id = None
+
+    if exclude_id:
+        existing_draft = FormSubmission.objects.filter(id=exclude_id, form_definition=form_def).first()
+        if existing_draft and existing_draft.form_data:
+            existing_spk = str(existing_draft.form_data.get("nomor_spk") or "").strip()
+            if existing_spk and not any(x in existing_spk.upper() for x in ["OTOMATIS", "AUTO-", "____", "{"]):
+                d_cab = str(existing_draft.form_data.get("cabang") or "").strip().upper()
+                d_brand = str(existing_draft.form_data.get("brand") or "").strip().upper()
+                req_cab = str(cabang or "").strip().upper()
+                req_brand = str(brand or "").strip().upper()
+                # Cek kesesuaian cabang dan brand
+                cab_ok = not d_cab or d_cab == req_cab or f"/{req_cab}/" in existing_spk.upper()
+                brand_ok = not d_brand or d_brand in req_brand or req_brand in d_brand or f"/{req_brand[:4]}/" in existing_spk.upper()
+                if cab_ok and brand_ok:
+                    return JsonResponse({
+                        "success": True,
+                        "sequence": None,
+                        "sequence_str": "",
+                        "nomor_spk": existing_spk,
+                        "cabang": cabang,
+                        "brand": brand,
+                        "perusahaan": perusahaan,
+                        "year": year,
+                        "is_locked_draft": True,
+                    })
+
     next_seq = get_next_spk_sequence(
         cabang=cabang,
         brand=brand,
         perusahaan=perusahaan,
         year=year,
         form_slug=form_def.slug,
+        exclude_submission_id=exclude_id,
         company_profile=comp_prof,
     )
     nomor_spk = format_official_spk_number(

@@ -1538,10 +1538,11 @@ class DynamicForm(forms.Form):
         """
         from django.urls import reverse
 
-        # Disable auto-save for anonymous users (no drafts without a user)
+        # Disable auto-save for anonymous users or when revising an existing submission
         auto_save_enabled = (
             getattr(self.form_definition, "enable_auto_save", True)
             and self.user is not None
+            and not getattr(self, "is_revision", False)
         )
 
         config = {

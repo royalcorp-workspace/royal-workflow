@@ -274,7 +274,9 @@
                   novalidate
                   id="form_{{ form_def.slug }}"
                   data-form-enhancements="true"
-                  data-form-slug="{{ form_def.slug }}">
+                  data-form-slug="{{ form_def.slug }}"
+                  data-is-revision="{% if is_revision %}true{% else %}false{% endif %}"
+                  data-revision-id="{{ revision_id|default:'' }}">
                 {% csrf_token %}
                 {% if is_draft and draft_id %}
                 <input type="hidden" name="draft_id" value="{{ draft_id }}">
@@ -285,7 +287,7 @@
                 {% if is_revision and revision_submission %}
                 {{ revision_submission.form_data|json_script:"active_server_revision_data" }}
                 {% endif %}
-                {% if active_server_draft %}
+                {% if active_server_draft and not is_revision %}
                 {{ active_server_draft.form_data|json_script:"active_server_draft_data" }}
                 <div id="activeServerDraftMeta"
                      data-draft-id="{{ active_server_draft.id }}"
@@ -319,7 +321,7 @@
                             <i class="bi bi-trash3 me-1"></i> Discard Draft
                         </a>
                         {% endif %}
-                        {% if form_def.allow_save_draft and user.is_authenticated %}
+                        {% if form_def.allow_save_draft and user.is_authenticated and not is_revision %}
                         <button type="submit" name="action" value="draft" class="btn btn-secondary btn-save-draft" id="btnSaveDraft" formnovalidate>
                             <i class="bi bi-save me-1"></i> Simpan Draft
                         </button>

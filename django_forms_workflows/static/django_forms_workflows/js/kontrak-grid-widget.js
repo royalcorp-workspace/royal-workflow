@@ -39,8 +39,16 @@
 
         const urlParams = new URLSearchParams(window.location.search);
         const isExplicitDraftUrl = urlParams.has('draft') || urlParams.has('draft_id');
-        const isRevision = urlParams.has('revision') || urlParams.has('revision_id') || Boolean(form.querySelector('input[name="revision_id"]')) || Boolean(document.getElementById('active_server_revision_data'));
+        const isRevision = urlParams.has('revision') || urlParams.has('revision_id') || (form.dataset.isRevision === 'true') || (form.getAttribute('data-is-revision') === 'true') || Boolean(form.querySelector('input[name="revision_id"]')) || Boolean(document.getElementById('active_server_revision_data'));
         form.dataset.isRevision = isRevision ? 'true' : 'false';
+
+        // Immediately hide draft action buttons if in revision mode
+        if (isRevision) {
+            const btnSaveDraft = form.querySelector('#btnSaveDraft');
+            if (btnSaveDraft) btnSaveDraft.style.display = 'none';
+            const btnDiscardDraft = form.querySelector('#btnDiscardDraft');
+            if (btnDiscardDraft) btnDiscardDraft.style.display = 'none';
+        }
 
         // Clean initial state ONLY for fresh new submissions (skip if loading draft or revising existing submission)
         if (!isExplicitDraftUrl && !isRevision) {
@@ -127,14 +135,18 @@
                     val = val[0] || '5';
                 }
 
-                // Nomor SPK selalu digenerate dinamis dari server saat Brand dipilih pada pengajuan baru,
-                // TETAPI harus dipertahankan jika dalam mode revisi pengajuan.
+                // Nomor SPK wajib dipertahankan jika sudah tersimpan pada draf atau revisi pengajuan,
+                // dan tidak boleh di-generate ulang kecuali pemohon mengganti Brand/Cabang secara aktif.
                 if (name === 'nomor_spk') {
-                    if ((isRevision || isRevisionMode) && val) {
+                    if (val && !val.includes('OTOMATIS') && !val.includes('AUTO-') && !val.includes('____') && !val.includes('{')) {
                         const sInput = form.querySelector('[name="nomor_spk"]');
                         if (sInput) {
                             sInput.value = val;
                             sInput.placeholder = val;
+                            sInput.dataset.originalSpk = val;
+                            sInput.dataset.lastCabang = (draftData.cabang || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+                            sInput.dataset.lastBrand = (draftData.brand || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+                            sInput.dataset.lastComp = (draftData.perusahaan || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
                         }
                     }
                     return;
@@ -240,9 +252,6 @@
             if (typeof form._syncRekeningPerusahaan === 'function') {
                 form._syncRekeningPerusahaan();
             }
-            if (typeof form._updateSPK === 'function') {
-                form._updateSPK();
-            }
             try { renderSummaryTab(form); } catch (e) {}
             try { renderSPKTab(form); } catch (e) {}
         }
@@ -343,6 +352,10 @@
                 refreshAllGridsAndHeaders(true);
             }
             updateAutoSaveStatus('saved_server');
+            const btnSaveDraft = form.querySelector('#btnSaveDraft');
+            if (btnSaveDraft) btnSaveDraft.style.display = 'none';
+            const btnDiscardDraft = form.querySelector('#btnDiscardDraft');
+            if (btnDiscardDraft) btnDiscardDraft.style.display = 'none';
         } else {
             // Check for server draft data embedded in template
             let serverDraftData = null;
@@ -1182,8 +1195,12 @@
         // 3. Visual Label synchronization for Email (Wajib *)
         if (wrapper) {
             const emailLabel = wrapper.querySelector('label');
-            if (emailLabel && !emailLabel.querySelector('.text-danger')) {
-                emailLabel.innerHTML = 'Email Toko / Pemilik <span class="text-danger">*</span>';
+            if (emailLabel) {
+                if (!emailLabel.querySelector('.text-danger')) {
+                    emailLabel.innerHTML = 'Email Toko / Pemilik <span class="text-danger">*</span>';
+                }
+                emailLabel.style.alignSelf = 'flex-start';
+                emailLabel.style.textAlign = 'left';
             }
         }
 
@@ -1432,11 +1449,15 @@
 
             const currentFetchId = ++latestFetchId;
             try {
+                const draftId = form.querySelector('input[name="draft_id"]')?.value || urlParams.get('draft') || urlParams.get('draft_id') || '';
                 const params = new URLSearchParams({
                     cabang: cleanCab,
                     brand: brandVal,
                     perusahaan: compVal || '',
                 });
+                if (draftId) {
+                    params.set('draft_id', draftId);
+                }
                 const res = await fetch(`/forms/${formSlug}/next-spk-number/?${params.toString()}`);
                 if (res.ok) {
                     const data = await res.json();
@@ -1451,7 +1472,7 @@
             return null;
         }
 
-        function updateSPK() {
+        function updateSPK(force = false) {
             const brandVal = (brandSelect && brandSelect.value ? brandSelect.value : '').trim();
             const cabangVal = (cabangSelect && cabangSelect.value ? cabangSelect.value : '').trim();
 
@@ -1473,10 +1494,33 @@
             const cleanComp = (compVal || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
             const cacheKey = `${cleanCab}_${cleanBrand}_${cleanComp}`;
 
+            // LOCK GUARD FOR EXISTING DRAFT / REVISION OR UNCHANGED COMPONENTS:
+            // Jika spkInput sudah memiliki nomor SPK valid (dari draft atau input sebelumnya)
+            // dan kombinasi Cabang + Brand + Perusahaan TIDAK berubah, JANGAN pernah timpa/generate ulang!
+            const currentSpk = (spkInput.value || '').trim();
+            const isValidCurrentSpk = currentSpk && !currentSpk.includes('OTOMATIS') && !currentSpk.includes('AUTO-') && !currentSpk.includes('____') && !currentSpk.includes('{');
+
+            const lastCab = spkInput.dataset.lastCabang;
+            const lastBrand = spkInput.dataset.lastBrand;
+            const lastComp = spkInput.dataset.lastComp;
+
+            const isUnchanged = (lastCab === cleanCab && lastBrand === cleanBrand && (lastComp === cleanComp || !lastComp));
+
+            if (!force && isValidCurrentSpk && (isUnchanged || form.dataset.isRevision === 'true' || urlParams.has('draft') || urlParams.has('draft_id'))) {
+                spkInput.dataset.lastCabang = cleanCab;
+                spkInput.dataset.lastBrand = cleanBrand;
+                spkInput.dataset.lastComp = cleanComp;
+                branchSeqCache[cacheKey] = { nomor_spk: currentSpk, success: true };
+                return;
+            }
+
             // 1. If in cache, use immediately
-            if (branchSeqCache[cacheKey] && branchSeqCache[cacheKey].nomor_spk) {
+            if (!force && branchSeqCache[cacheKey] && branchSeqCache[cacheKey].nomor_spk) {
                 spkInput.value = branchSeqCache[cacheKey].nomor_spk;
                 spkInput.placeholder = branchSeqCache[cacheKey].nomor_spk;
+                spkInput.dataset.lastCabang = cleanCab;
+                spkInput.dataset.lastBrand = cleanBrand;
+                spkInput.dataset.lastComp = cleanComp;
                 spkInput.dispatchEvent(new Event('input', { bubbles: true }));
                 spkInput.dispatchEvent(new Event('change', { bubbles: true }));
                 return;
@@ -1494,6 +1538,10 @@
                     if (currentBrand === brandVal && currentCabang === cabangVal) {
                         spkInput.value = data.nomor_spk;
                         spkInput.placeholder = data.nomor_spk;
+                        spkInput.dataset.lastCabang = cleanCab;
+                        spkInput.dataset.lastBrand = cleanBrand;
+                        spkInput.dataset.lastComp = cleanComp;
+                        branchSeqCache[cacheKey] = data;
                         spkInput.dispatchEvent(new Event('input', { bubbles: true }));
                         spkInput.dispatchEvent(new Event('change', { bubbles: true }));
                     }
@@ -1508,14 +1556,15 @@
         }
         form._updateSPK = updateSPK;
 
-        // Auto-initialize on load: Only if Brand is chosen, otherwise keep clean placeholder
+        // Auto-initialize on load: Only if Brand is chosen and no valid SPK exists, otherwise keep existing/clean placeholder
         const isFormRevision = form.dataset.isRevision === 'true';
+        const hasExistingValidSpk = Boolean(spkInput.value && !spkInput.value.includes('OTOMATIS') && !spkInput.value.includes('AUTO-') && !spkInput.value.includes('____') && !spkInput.value.includes('{'));
         if (cabangSelect && brandSelect && cabangSelect.value && brandSelect.value && !brandSelect.value.startsWith('--')) {
-            if (!isFormRevision || !spkInput.value) {
+            if (!isFormRevision && !hasExistingValidSpk) {
                 updateSPK();
             }
         } else {
-            if (!isFormRevision) {
+            if (!isFormRevision && !hasExistingValidSpk) {
                 spkInput.value = '';
                 spkInput.placeholder = '— Pilih Brand Produk terlebih dahulu —';
             }
@@ -1682,19 +1731,25 @@
                               Array.from(form.querySelectorAll('.spk-clause-card')).find(cardEl => (cardEl.textContent || '').includes('Tata Cara'))?.querySelector('.spk-clause-body');
             if (card4Body) {
                 const fallbackWrap = document.createElement('div');
-                fallbackWrap.className = 'mt-1';
+                fallbackWrap.id = 'companyBankContainer';
+                fallbackWrap.className = 'mb-1';
                 fallbackWrap.innerHTML = `
-                    <label class="form-label fw-semibold text-dark mb-1">Rekening Perusahaan</label>
-                    <div class="row g-2" id="companyBankContainer">
-                        <div class="col-12 col-md-4">
+                    <div class="row g-3 mb-3">
+                        <div class="col-12 col-md-6">
+                            <label class="form-label small fw-semibold text-secondary mb-1">TOP (Term of Payment) <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control form-control-sm" name="top" placeholder="Hari Kerja" required>
+                        </div>
+                        <div class="col-12 col-md-6">
                             <label class="form-label small fw-semibold text-secondary mb-1">Nama Bank</label>
                             <input type="text" class="form-control form-control-sm bg-light" name="bank_perusahaan" readonly style="cursor: not-allowed;" placeholder="Bank">
                         </div>
-                        <div class="col-12 col-md-3">
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
                             <label class="form-label small fw-semibold text-secondary mb-1">Nomor Rekening</label>
                             <input type="text" class="form-control form-control-sm bg-light" name="nomor_rekening_perusahaan" readonly style="cursor: not-allowed;" placeholder="No. Rekening">
                         </div>
-                        <div class="col-12 col-md-5">
+                        <div class="col-12 col-md-6">
                             <label class="form-label small fw-semibold text-secondary mb-1">Atas Nama (A/N)</label>
                             <input type="text" class="form-control form-control-sm bg-light" name="atas_nama_rekening" readonly style="cursor: not-allowed;" placeholder="Atas Nama">
                         </div>
@@ -1706,8 +1761,10 @@
         autoSelectPerusahaanFromBrand();
         syncRekeningPerusahaan();
 
-        // Run immediately to generate official SPK number
-        updateSPK();
+        // Run immediately to generate official SPK number only if not already present
+        if (!isFormRevision && !hasExistingValidSpk && !spkInput.value) {
+            updateSPK();
+        }
     }
 
     /* --------------------------------------------------------------------------
@@ -2397,6 +2454,11 @@
             const hasMprto = rows.some(r => DYNAMIC_DISCOUNTS.mprto.matches(r.komponen));
             const hasMlcd = rows.some(r => DYNAMIC_DISCOUNTS.mlcd.matches(r.komponen));
 
+            const hasDynamicRows = rows.some(r => {
+                const k = String(r.komponen || '').trim().toLowerCase();
+                return !FIXED_KOMPONEN.some(fk => fk.toLowerCase() === k);
+            });
+
             let html = `
                 <div class="kontrak-discount-toggles p-3 mb-3 bg-light rounded border">
                     <div class="fw-semibold text-dark small mb-2">
@@ -2432,22 +2494,39 @@
 
                 <div class="table-responsive">
                     <table class="table table-bordered kontrak-grid-table align-middle" data-grid="discount_scheme" style="table-layout: fixed !important; width: 100% !important;">
-                        <colgroup>
-                            <col style="width: 26%;">
-                            <col style="width: 18%;">
-                            <col style="width: 20%;">
-                            <col style="width: 28%;">
-                            <col style="width: 8%;">
-                        </colgroup>
-                        <thead>
-                            <tr class="table-light">
-                                <th>Komponen</th>
-                                <th class="text-center">Nilai</th>
-                                <th class="text-center">Tipe</th>
-                                <th>Keterangan</th>
-                                <th class="text-center">Aksi</th>
-                            </tr>
-                        </thead>
+                        ${hasDynamicRows ? `
+                            <colgroup>
+                                <col style="width: 26%;">
+                                <col style="width: 18%;">
+                                <col style="width: 18%;">
+                                <col style="width: 28%;">
+                                <col style="width: 10%;">
+                            </colgroup>
+                            <thead>
+                                <tr class="table-light">
+                                    <th>Komponen</th>
+                                    <th class="text-center">Nilai</th>
+                                    <th class="text-center">Tipe</th>
+                                    <th>Keterangan</th>
+                                    <th class="text-center">Aksi</th>
+                                </tr>
+                            </thead>
+                        ` : `
+                            <colgroup>
+                                <col style="width: 28%;">
+                                <col style="width: 22%;">
+                                <col style="width: 20%;">
+                                <col style="width: 30%;">
+                            </colgroup>
+                            <thead>
+                                <tr class="table-light">
+                                    <th>Komponen</th>
+                                    <th class="text-center">Nilai</th>
+                                    <th class="text-center">Tipe</th>
+                                    <th>Keterangan</th>
+                                </tr>
+                            </thead>
+                        `}
                         <tbody>
             `;
 
@@ -2528,13 +2607,15 @@
                                 <input type="text" class="cell-input" data-key="keterangan" value="${escapeHtml(r.keterangan || (isMthmt ? 'Program Thematic Yang Berlaku' : ''))}" placeholder="Catatan syarat">
                             `}
                         </td>
-                        <td class="text-center">
-                            ${isFixed ? `
-                                <span class="badge bg-light text-secondary border px-2 py-1 small" title="Baris standar baku"><i class="bi bi-lock-fill"></i> Baku</span>
-                            ` : `
-                                <button type="button" class="btn-delete-row" title="Hapus"><i class="bi bi-trash"></i></button>
-                            `}
-                        </td>
+                        ${hasDynamicRows ? `
+                            <td class="text-center">
+                                ${isFixed ? `
+                                    <span class="text-muted fw-bold">—</span>
+                                ` : `
+                                    <button type="button" class="btn-delete-row" title="Hapus"><i class="bi bi-trash"></i></button>
+                                `}
+                            </td>
+                        ` : ''}
                     </tr>
                 `;
             });
@@ -3481,56 +3562,6 @@
         cardBayar.card.id = 'cardClauseBayar';
         cardBayar.card.dataset.cardId = 'card-4';
         cardBayar.card.classList.add('card-tata-cara-pembayaran');
-        
-        const rowBayar = document.createElement('div');
-        rowBayar.className = 'row g-3 mb-2 align-items-start';
-
-        // 1. TOP (Term of Payment) - Flex cerdas & sejajar sempurna dengan Rekening Perusahaan
-        const elTop = extractFieldElement('top');
-        if (elTop) {
-            const colTop = document.createElement('div');
-            colTop.className = 'col-12 col-md-3';
-            colTop.style.cssText = 'min-width: 180px; max-width: 240px;';
-            elTop.classList.remove('col-md-3', 'col-md-4', 'col-md-6', 'col-md-12');
-
-            // Header Utama Level 1: sejajar dengan "Rekening Perusahaan"
-            const topHeader = document.createElement('div');
-            topHeader.className = 'form-label fw-semibold text-dark mb-1 text-nowrap';
-            topHeader.innerHTML = 'TOP (Term of Payment) <span class="text-danger">*</span>';
-
-            // Sub-label Level 2: sejajar dengan "Nama Bank", "Nomor Rekening", "Atas Nama (A/N)"
-            let topLabel = elTop.querySelector('label');
-            if (topLabel) {
-                topLabel.className = 'form-label small fw-semibold text-secondary mb-1 text-nowrap';
-                topLabel.textContent = 'Hari Kerja';
-            } else {
-                topLabel = document.createElement('label');
-                topLabel.className = 'form-label small fw-semibold text-secondary mb-1 text-nowrap';
-                topLabel.textContent = 'Hari Kerja';
-                elTop.prepend(topLabel);
-            }
-
-            // Input Level 3: selebar 100% kolom (tanpa batas 160px) & placeholder ringkas "60"
-            const topInput = elTop.querySelector('input');
-            if (topInput) {
-                topInput.classList.add('form-control-sm', 'w-100');
-                topInput.placeholder = '60';
-                topInput.style.removeProperty('max-width');
-                topInput.style.width = '100%';
-            }
-
-            // Hapus helper text bawah agar bersih & tidak duplikat dengan sub-label
-            const topHelp = elTop.querySelector('.form-text');
-            if (topHelp) topHelp.remove();
-
-            colTop.appendChild(topHeader);
-            colTop.appendChild(elTop);
-            rowBayar.appendChild(colTop);
-        }
-
-        // 2. Rekening Perusahaan - mengisi seluruh sisa ruang (col-12 col-md-9 flex-grow-1)
-        const colRek = document.createElement('div');
-        colRek.className = 'col-12 col-md-9 flex-grow-1';
 
         // Pastikan input hidden untuk rekening_perusahaan ada di form untuk payload backend
         let hiddenRek = form.querySelector('input[type="hidden"][name="rekening_perusahaan"]');
@@ -3554,30 +3585,86 @@
             }
         });
 
-        // Satu label utama tunggal yang bersih: "Rekening Perusahaan"
-        // Proporsi kolom: Bank (4), No. Rekening (3), Atas Nama (5) untuk memberi ruang maksimal pada nama PT panjang
-        const bankBlock = document.createElement('div');
-        bankBlock.className = 'mb-1';
-        bankBlock.innerHTML = `
-            <label class="form-label fw-semibold text-dark mb-1">Rekening Perusahaan</label>
-            <div class="row g-2" id="companyBankContainer">
-                <div class="col-12 col-md-4">
-                    <label class="form-label small fw-semibold text-secondary mb-1">Nama Bank</label>
-                    <input type="text" class="form-control form-control-sm bg-light" name="bank_perusahaan" readonly style="cursor: not-allowed;" placeholder="Bank" title="">
-                </div>
-                <div class="col-12 col-md-3">
-                    <label class="form-label small fw-semibold text-secondary mb-1">Nomor Rekening</label>
-                    <input type="text" class="form-control form-control-sm bg-light" name="nomor_rekening_perusahaan" readonly style="cursor: not-allowed;" placeholder="No. Rekening" title="">
-                </div>
-                <div class="col-12 col-md-5">
-                    <label class="form-label small fw-semibold text-secondary mb-1">Atas Nama (A/N)</label>
-                    <input type="text" class="form-control form-control-sm bg-light" name="atas_nama_rekening" readonly style="cursor: not-allowed;" placeholder="Atas Nama" title="">
-                </div>
-            </div>
+        // 1. Ekstrak atau siapkan input field TOP (Term of Payment) tunggal
+        const elTop = extractFieldElement('top');
+        let topInput = elTop ? (elTop.querySelector('input[name="top"]') || elTop.querySelector('input')) : null;
+        if (!topInput) {
+            topInput = form.querySelector('input[name="top"]');
+        }
+
+        if (topInput) {
+            topInput.className = 'form-control form-control-sm';
+            topInput.placeholder = 'Hari Kerja';
+            topInput.style.removeProperty('max-width');
+            topInput.style.removeProperty('min-width');
+            topInput.style.width = '100%';
+        } else {
+            topInput = document.createElement('input');
+            topInput.type = 'number';
+            topInput.name = 'top';
+            topInput.className = 'form-control form-control-sm';
+            topInput.placeholder = 'Hari Kerja';
+            topInput.required = true;
+        }
+
+        // Hapus elemen wrapper lama elTop dari DOM jika terpisah agar tidak meninggalkan sisa
+        if (elTop && elTop !== topInput) {
+            elTop.remove();
+        }
+
+        // 2. Tata Letak Grid 2x2 Simetris (BAB III: col-md-6 + col-md-6)
+        const bankContainer = document.createElement('div');
+        bankContainer.id = 'companyBankContainer';
+        bankContainer.className = 'mb-1';
+
+        // Baris 1 (row g-3 mb-3): Kolom Kiri TOP, Kolom Kanan Nama Bank
+        const row1 = document.createElement('div');
+        row1.className = 'row g-3 mb-3';
+
+        // Kolom Kiri: TOP (Term of Payment) *
+        const colTop = document.createElement('div');
+        colTop.className = 'col-12 col-md-6';
+        const topLabel = document.createElement('label');
+        topLabel.className = 'form-label small fw-semibold text-secondary mb-1';
+        topLabel.innerHTML = 'TOP (Term of Payment) <span class="text-danger">*</span>';
+        colTop.appendChild(topLabel);
+        colTop.appendChild(topInput);
+        row1.appendChild(colTop);
+
+        // Kolom Kanan: Nama Bank
+        const colBank = document.createElement('div');
+        colBank.className = 'col-12 col-md-6';
+        colBank.innerHTML = `
+            <label class="form-label small fw-semibold text-secondary mb-1">Nama Bank</label>
+            <input type="text" class="form-control form-control-sm bg-light" name="bank_perusahaan" readonly style="cursor: not-allowed;" placeholder="Bank" title="">
         `;
-        colRek.appendChild(bankBlock);
-        rowBayar.appendChild(colRek);
-        cardBayar.body.appendChild(rowBayar);
+        row1.appendChild(colBank);
+        bankContainer.appendChild(row1);
+
+        // Baris 2 (row g-3): Kolom Kiri Nomor Rekening, Kolom Kanan Atas Nama (A/N)
+        const row2 = document.createElement('div');
+        row2.className = 'row g-3';
+
+        // Kolom Kiri: Nomor Rekening
+        const colRekNo = document.createElement('div');
+        colRekNo.className = 'col-12 col-md-6';
+        colRekNo.innerHTML = `
+            <label class="form-label small fw-semibold text-secondary mb-1">Nomor Rekening</label>
+            <input type="text" class="form-control form-control-sm bg-light" name="nomor_rekening_perusahaan" readonly style="cursor: not-allowed;" placeholder="No. Rekening" title="">
+        `;
+        row2.appendChild(colRekNo);
+
+        // Kolom Kanan: Atas Nama (A/N)
+        const colRekAn = document.createElement('div');
+        colRekAn.className = 'col-12 col-md-6';
+        colRekAn.innerHTML = `
+            <label class="form-label small fw-semibold text-secondary mb-1">Atas Nama (A/N)</label>
+            <input type="text" class="form-control form-control-sm bg-light" name="atas_nama_rekening" readonly style="cursor: not-allowed;" placeholder="Atas Nama" title="">
+        `;
+        row2.appendChild(colRekAn);
+        bankContainer.appendChild(row2);
+
+        cardBayar.body.appendChild(bankContainer);
 
         // 5. Card Ttd: Ketentuan Akhir & Tempat Pengesahan (BAB IV & Penutup)
         const cardTtd = createClauseCard('BAB IV & Penutup', 'badge-bab4', 'Ketentuan Akhir & Tempat Pengesahan', 'Lokasi dan tanggal resmi pengesahan Surat Perjanjian Kerjasama (SPK).');
@@ -4926,6 +5013,21 @@
     }
 
     function showDraftPromptModal(form, draftData, serverDraftMeta, onContinue) {
+        // HARD GUARD: NEVER show draft prompt modal if revision mode is active
+        const urlParamsCheck = new URLSearchParams(window.location.search);
+        const isRevisionActive = (
+            form.dataset.isRevision === 'true' ||
+            form.getAttribute('data-is-revision') === 'true' ||
+            urlParamsCheck.has('revision') ||
+            urlParamsCheck.has('revision_id') ||
+            Boolean(form.querySelector('input[name="revision_id"]')) ||
+            Boolean(document.getElementById('active_server_revision_data'))
+        );
+        if (isRevisionActive) {
+            console.log('[KontrakRevision] Hard guard: Suppressing draft prompt modal in revision mode.');
+            return;
+        }
+
         const tokoName = draftData.nama_toko || serverDraftMeta?.dataset.toko || 'Toko Belum Diisi';
         const spkNo = draftData.nomor_spk || serverDraftMeta?.dataset.spk || 'Nomor SPK Otomatis';
         const brand = draftData.brand || serverDraftMeta?.dataset.brand || 'SERENITY';
@@ -5097,6 +5199,11 @@
     }
 
     function setupFormPersistence(form, hasRestoredDraft) {
+        if (form.dataset.isRevision === 'true') {
+            showDiscardDraftButton(form, false);
+            return;
+        }
+
         let autoSaveTimeout = null;
         let serverSaveTimeout = null;
 
