@@ -904,7 +904,7 @@ def get_next_spk_sequence(
     except Exception:
         return 1
 
-    submissions = FormSubmission.objects.filter(form_definition=form_def)
+    submissions = FormSubmission.objects.filter(form_definition=form_def).exclude(status__in=["draft", "withdrawn"])
     if exclude_submission_id:
         submissions = submissions.exclude(id=exclude_submission_id)
 
