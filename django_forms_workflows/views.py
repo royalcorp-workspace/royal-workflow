@@ -3920,6 +3920,11 @@ def submission_pdf(request, submission_id, filename=None):
     # Determine dynamic filename with guaranteed official SPK naming & .pdf extension
     if form_def.slug == "permohonan-kontrak":
         effective_filename = _resolve_spk_pdf_filename(submission)
+    elif form_def.slug == "pengajuan-biaya":
+        import re
+        no_peng = (submission.form_data or {}).get("nomor_pengajuan") or f"Sub-{submission.id}"
+        clean_no = re.sub(r'[/\\?%*:|"<>\s]+', '-', str(no_peng)).strip('-')
+        effective_filename = f"Pengajuan-Biaya-{clean_no}.pdf"
     elif filename:
         effective_filename = filename
     else:
@@ -4012,6 +4017,43 @@ def submission_pdf(request, submission_id, filename=None):
         if form_def.slug != "permohonan-kontrak" and not filename:
             template_name = custom_template.name.replace(" ", "_").lower()
             effective_filename = f"{template_name}_{submission_id}.pdf"
+    elif form_def.slug == "pengajuan-biaya":
+        import json
+        form_data = submission.form_data or {}
+        raw_items = form_data.get("items_data", "[]")
+        items_list = []
+        if isinstance(raw_items, str):
+            try:
+                items_list = json.loads(raw_items)
+            except Exception:
+                items_list = []
+        elif isinstance(raw_items, list):
+            items_list = raw_items
+
+        norm_items = []
+        for it in items_list:
+            if isinstance(it, dict):
+                norm_items.append({
+                    "nama": it.get("nama") or it.get("Nama Item") or it.get("deskripsi") or "Item Kebutuhan",
+                    "tujuan": it.get("tujuan") or it.get("Tujuan") or "Kebutuhan operasional kantor",
+                    "qty": it.get("qty") or it.get("Qty") or 1,
+                    "satuan": it.get("satuan") or it.get("Satuan") or "PCS",
+                    "harga": it.get("harga") or it.get("Harga Satuan") or 0,
+                    "subtotal": it.get("subtotal") or it.get("Subtotal") or 0,
+                })
+
+        from django.template.loader import render_to_string
+
+        html_string = render_to_string(
+            "django_forms_workflows/pengajuan_biaya_pdf.html",
+            {
+                "submission": submission,
+                "form_def": form_def,
+                "form_data": form_data,
+                "items_list": norm_items,
+                "request": request,
+            },
+        )
     else:
         # --- default built-in PDF layout ---
         pdf_rows = _build_pdf_rows(

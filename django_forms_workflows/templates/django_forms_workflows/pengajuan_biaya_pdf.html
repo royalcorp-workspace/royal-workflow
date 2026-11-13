@@ -1,0 +1,542 @@
+{% load forms_workflows_tags %}
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <title>Dokumen Pengajuan Biaya #{{ submission.id }} - {{ form_data.nomor_pengajuan|default:"Pengajuan Biaya" }}</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 10mm 10mm 12mm 10mm;
+      @bottom-left {
+        content: "RoyalOne Enterprise Workflow • Form Pengajuan Biaya (Non-PO)";
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        font-size: 7pt;
+        color: #64748b;
+        border-top: 1px solid #cbd5e1;
+        padding-top: 4pt;
+      }
+      @bottom-right {
+        content: "Halaman " counter(page) " dari " counter(pages) " • Ref: #{{ submission.id }}";
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        font-size: 7pt;
+        color: #64748b;
+        border-top: 1px solid #cbd5e1;
+        padding-top: 4pt;
+      }
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 8.5pt;
+      color: #0f172a;
+      line-height: 1.35;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* ── Kop Surat & Header ── */
+    .doc-header-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 8pt;
+      border-bottom: 2px solid #1e3a8a;
+      padding-bottom: 6pt;
+    }
+    .doc-header-left {
+      width: 65%;
+      vertical-align: middle;
+    }
+    .doc-header-right {
+      width: 35%;
+      text-align: right;
+      vertical-align: middle;
+    }
+    .company-title {
+      font-size: 13pt;
+      font-weight: 800;
+      color: #1e3a8a;
+      letter-spacing: -0.02em;
+      margin: 0 0 2pt 0;
+      text-transform: uppercase;
+    }
+    .doc-subtitle {
+      font-size: 8.5pt;
+      font-weight: 700;
+      color: #334155;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin: 0;
+    }
+    .doc-badge {
+      display: inline-block;
+      padding: 3pt 8pt;
+      background-color: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 3pt;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 8pt;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    /* ── Section Title ── */
+    .sec-heading {
+      font-size: 8.5pt;
+      font-weight: 700;
+      color: #1e3a8a;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-left: 3px solid #1e3a8a;
+      padding-left: 5pt;
+      margin: 8pt 0 4pt 0;
+    }
+
+    /* ── Two Column Meta Tables ── */
+    .meta-grid-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 6pt;
+    }
+    .meta-grid-table td {
+      vertical-align: top;
+      padding: 0;
+    }
+    .meta-card-table {
+      width: 98%;
+      border-collapse: collapse;
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 4pt;
+    }
+    .meta-card-table td {
+      padding: 3.5pt 6pt;
+      font-size: 8pt;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .meta-label {
+      width: 36%;
+      color: #64748b;
+      font-weight: 600;
+    }
+    .meta-val {
+      width: 64%;
+      color: #0f172a;
+      font-weight: 600;
+    }
+
+    /* ── Table Items ── */
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 5pt 0 8pt 0;
+      font-size: 8pt;
+    }
+    .items-table th {
+      background-color: #1e3a8a;
+      color: #ffffff;
+      padding: 4.5pt 5pt;
+      text-align: left;
+      font-weight: 700;
+      font-size: 7.5pt;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      border: 1px solid #1e3a8a;
+    }
+    .items-table td {
+      padding: 4pt 5pt;
+      border: 1px solid #e2e8f0;
+      vertical-align: top;
+    }
+    .items-table tr:nth-child(even) {
+      background-color: #f8fafc;
+    }
+    .text-center { text-align: center; }
+    .text-right { text-align: right; }
+    .fw-bold { font-weight: 700; }
+    .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+
+    /* ── Budget Summary Box ── */
+    .summary-box {
+      background-color: #f0fdf4;
+      border: 1.5px solid #86efac;
+      border-radius: 4pt;
+      padding: 6pt 10pt;
+      margin-bottom: 8pt;
+    }
+    .summary-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .summary-table td {
+      padding: 2pt 4pt;
+      font-size: 8pt;
+    }
+    .total-nominal-highlight {
+      font-size: 11pt;
+      font-weight: 800;
+      color: #1e3a8a;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    /* ── Realisasi & PPVM Box ── */
+    .ppvm-box {
+      background-color: #eff6ff;
+      border: 1.5px solid #bfdbfe;
+      border-radius: 4pt;
+      padding: 6pt 10pt;
+      margin-bottom: 8pt;
+    }
+
+    /* ── 5 Column Signature Grid ── */
+    .sig-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8pt;
+      page-break-inside: avoid;
+    }
+    .sig-cell {
+      width: 20%;
+      border: 1px solid #cbd5e1;
+      padding: 4pt;
+      vertical-align: top;
+      background-color: #ffffff;
+      text-align: center;
+      min-height: 90pt;
+    }
+    .sig-role-header {
+      font-size: 7pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #1e3a8a;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 2pt;
+      margin-bottom: 4pt;
+    }
+    .sig-space {
+      height: 48pt;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+    .sig-approved-badge {
+      font-size: 6.5pt;
+      font-weight: 800;
+      color: #15803d;
+      border: 1px dashed #22c55e;
+      padding: 3pt;
+      background-color: #f0fdf4;
+      border-radius: 3pt;
+      line-height: 1.2;
+    }
+    .sig-manual-badge {
+      font-size: 6.5pt;
+      font-weight: 700;
+      color: #b45309;
+      border: 1px dashed #f59e0b;
+      padding: 3pt;
+      background-color: #fffbeb;
+      border-radius: 3pt;
+      line-height: 1.2;
+    }
+    .sig-name {
+      font-size: 7.5pt;
+      font-weight: 700;
+      color: #0f172a;
+      border-top: 1px dotted #94a3b8;
+      padding-top: 2pt;
+      margin-top: 3pt;
+    }
+    .sig-date {
+      font-size: 6.5pt;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ==================== HEADER KOP SURAT ==================== -->
+  <table class="doc-header-table">
+    <tr>
+      <td class="doc-header-left">
+        <div class="company-title">PT ROYAL ABADI SEJAHTERA</div>
+        <div class="doc-subtitle">FORMULIR PENGAJUAN BIAYA &amp; ANGGARAN OPERASIONAL (NON-PO)</div>
+      </td>
+      <td class="doc-header-right">
+        <div class="doc-badge">{{ form_data.nomor_pengajuan|default:"DRAFT-WF" }}</div>
+        <div style="font-size: 7.5pt; color: #64748b; margin-top: 2pt;">
+          Tanggal: <strong>{{ form_data.tanggal_pengajuan|default:submission.created_at|date:"d-M-Y" }}</strong>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ==================== IDENTITAS & TUJUAN PENGAJUAN ==================== -->
+  <table class="meta-grid-table">
+    <tr>
+      <td style="width: 50%;">
+        <div class="sec-heading">A. Identitas Pemohon &amp; Cabang</div>
+        <table class="meta-card-table">
+          <tr>
+            <td class="meta-label">Cabang / Unit</td>
+            <td class="meta-val">{{ form_data.cabang|default:"Cabang Pusat" }}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Department / Bagian</td>
+            <td class="meta-val">{{ form_data.department_pembuat|default:"Operasional" }} / {{ form_data.bagian_pembuat|default:"Kasir" }}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Nama Kasir / Pemohon</td>
+            <td class="meta-val">{{ form_data.inisiator_nama|default:submission.submitter.get_full_name|default:submission.submitter.username }}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Atasan Langsung (ASM)</td>
+            <td class="meta-val">{{ form_data.nama_atasan|default:"Sales Area Manager" }}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">No. Petty Cash Cabang</td>
+            <td class="meta-val font-mono">{{ form_data.nomor_petty_cash|default:"-" }}</td>
+          </tr>
+        </table>
+      </td>
+      <td style="width: 50%;">
+        <div class="sec-heading">B. Tujuan &amp; Klasifikasi Pengajuan</div>
+        <table class="meta-card-table" style="margin-left: auto;">
+          <tr>
+            <td class="meta-label">Judul Pengajuan</td>
+            <td class="meta-val">{{ form_data.nama_kegiatan|default:"Pengajuan Biaya Operasional" }}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Department Penerima</td>
+            <td class="meta-val">{{ form_data.department_penerima|default:"Divisi Umum & PGA" }}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">PIC Penerima / Tembusan</td>
+            <td class="meta-val">{{ form_data.nama_pic|default:"PIC Pusat" }} / {{ form_data.tembusan|default:"-" }}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Kategori Biaya</td>
+            <td class="meta-val">{{ form_data.kategori_biaya|default:"ATK & Perlengkapan Kantor" }}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Tipe Transaksi / Urgensi</td>
+            <td class="meta-val">{{ form_data.tipe_transaksi|default:"Pengajuan" }} • {{ form_data.urgensi_pengajuan|default:"Normal" }}</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ==================== TABEL RINCIAN ITEM ==================== -->
+  <div class="sec-heading">C. Rincian Multi-Item Kebutuhan Barang / Jasa</div>
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th style="width: 5%;" class="text-center">No</th>
+        <th style="width: 33%;">Nama Barang / Jasa</th>
+        <th style="width: 25%;">Tujuan Penggunaan</th>
+        <th style="width: 7%;" class="text-center">Qty</th>
+        <th style="width: 8%;" class="text-center">Satuan</th>
+        <th style="width: 10%;" class="text-right">Harga Satuan (Rp)</th>
+        <th style="width: 12%;" class="text-right">Subtotal (Rp)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if items_list %}
+        {% for item in items_list %}
+        <tr>
+          <td class="text-center">{{ forloop.counter }}</td>
+          <td class="fw-bold">{{ item.nama }}</td>
+          <td>{{ item.tujuan }}</td>
+          <td class="text-center font-mono">{{ item.qty }}</td>
+          <td class="text-center">{{ item.satuan }}</td>
+          <td class="text-right font-mono">{{ item.harga }}</td>
+          <td class="text-right font-mono fw-bold">{{ item.subtotal }}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td class="text-center">1</td>
+          <td class="fw-bold">{{ form_data.nama_kegiatan|default:"Pengajuan Biaya Operasional" }}</td>
+          <td>{{ form_data.rincian_item|default:"Kebutuhan operasional kantor cabang" }}</td>
+          <td class="text-center font-mono">1</td>
+          <td class="text-center">Paket</td>
+          <td class="text-right font-mono">{{ form_data.total_nominal|default:"0" }}</td>
+          <td class="text-right font-mono fw-bold">{{ form_data.total_nominal|default:"0" }}</td>
+        </tr>
+      {% endif %}
+    </tbody>
+    <tfoot>
+      <tr style="background-color: #f1f5f9; font-weight: 700;">
+        <td colspan="6" class="text-right" style="padding: 5pt; font-size: 8.5pt;">TOTAL AKUMULASI PENGAJUAN BIAYA:</td>
+        <td class="text-right font-mono" style="padding: 5pt; font-size: 9.5pt; color: #1e3a8a;">
+          Rp {{ form_data.total_nominal|default:"0" }}
+        </td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <!-- ==================== RINGKASAN BUDGET & PENCAIRAN ==================== -->
+  <div class="summary-box">
+    <table class="summary-table">
+      <tr>
+        <td style="width: 50%; vertical-align: top;">
+          <div style="font-size: 7.5pt; font-weight: 700; color: #166534; text-transform: uppercase;">
+            Informasi Pencairan Dana
+          </div>
+          <div style="font-size: 8pt; margin-top: 2pt;">
+            Metode: <strong>{{ form_data.metode_pencairan|default:"Transfer Rekening Bank" }}</strong>
+          </div>
+          {% if form_data.nama_bank or form_data.nomor_rekening %}
+          <div style="font-size: 8pt; color: #334155;">
+            Rekening: <strong>{{ form_data.nama_bank|default:"Bank" }}</strong> - 
+            <span class="font-mono fw-bold">{{ form_data.nomor_rekening|default:"-" }}</span> 
+            (a.n. {{ form_data.atas_nama_rekening|default:"-" }})
+          </div>
+          {% endif %}
+        </td>
+        <td style="width: 50%; vertical-align: top; text-align: right;">
+          <div style="font-size: 7.5pt; color: #64748b; text-transform: uppercase;">Guardrail Budget Mingguan Cabang</div>
+          <div style="font-size: 8pt; margin-top: 2pt;">
+            Sisa Limit Lalu: <span class="font-mono">Rp {{ form_data.sisa_limit_pengajuan_lalu|default:"1.000.000" }}</span> | 
+            Sisa Limit Saat Ini: <span class="font-mono fw-bold" style="color: #15803d;">Rp {{ form_data.sisa_limit_saat_ini|default:"-" }}</span>
+          </div>
+          <div style="font-size: 7.5pt; color: #64748b; margin-top: 1pt;">
+            Proses Manual GM: <strong>{{ form_data.perlu_proses_manual|default:"Tidak" }}</strong>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ==================== REALISASI & DOKUMEN PPVM JDE ==================== -->
+  {% if form_data.nomor_ppvm or submission.current_stage_order >= 5 %}
+  <div class="ppvm-box">
+    <div style="font-size: 7.5pt; font-weight: 700; color: #1e40af; text-transform: uppercase; margin-bottom: 2pt;">
+      D. Laporan Realisasi &amp; Pencocokan Dokumen PPVM (JDE Process)
+    </div>
+    <table style="width: 100%; font-size: 8pt;">
+      <tr>
+        <td style="width: 35%;">No. Dokumen PPVM (JDE): <strong class="font-mono">{{ form_data.nomor_ppvm|default:"(Menunggu Input)" }}</strong></td>
+        <td style="width: 35%;">Total Realisasi Riil: <strong class="font-mono">Rp {{ form_data.realisasi_nominal|default:form_data.total_nominal|default:"0" }}</strong></td>
+        <td style="width: 30%; text-align: right;">Status Closing: <strong>{% if submission.status == 'approved' %}CLOSED / VERIFIED{% else %}MENUNGGU CLOSING{% endif %}</strong></td>
+      </tr>
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- ==================== LEMBAR PENGESAHAN (5 KOLOM SWIMLANE) ==================== -->
+  <div class="sec-heading">E. Lembar Pengesahan Bertingkat (5-Tier Approval Flow)</div>
+  <table class="sig-table">
+    <tr>
+      <!-- 1. Pemohon (Kasir Cabang) -->
+      <td class="sig-cell">
+        <div class="sig-role-header">1. Pemohon (Kasir)</div>
+        <div class="sig-space">
+          <div class="sig-approved-badge">
+            ✓ DIAJUKAN<br>
+            <span style="font-size: 6pt; color: #166534;">Sistem Valid</span>
+          </div>
+        </div>
+        <div class="sig-name">{{ form_data.inisiator_nama|default:submission.submitter.username }}</div>
+        <div class="sig-date">{{ submission.created_at|date:"d M Y, H:i" }}</div>
+      </td>
+
+      <!-- 2. ASM (Area Sales Manager) -->
+      <td class="sig-cell">
+        <div class="sig-role-header">2. ASM</div>
+        <div class="sig-space">
+          {% if submission.sig_stage_1 or submission.current_stage_order > 1 or submission.status == 'approved' %}
+            <div class="sig-approved-badge">
+              ✓ DISETUJUI ASM<br>
+              <span style="font-size: 6pt; color: #166534;">Verified</span>
+            </div>
+          {% else %}
+            <div style="color: #94a3b8; font-size: 7pt; font-style: italic;">(Menunggu Review)</div>
+          {% endif %}
+        </div>
+        <div class="sig-name">{% if submission.sig_stage_1 %}{{ submission.sig_stage_1.approver_name }}{% else %}{{ form_data.nama_atasan|default:"Sales Area Manager" }}{% endif %}</div>
+        <div class="sig-date">{% if submission.sig_stage_1 %}{{ submission.sig_stage_1.stamped_at }}{% else %}-{% endif %}</div>
+      </td>
+
+      <!-- 3. PIC Pusat -->
+      <td class="sig-cell">
+        <div class="sig-role-header">3. PIC Pusat</div>
+        <div class="sig-space">
+          {% if submission.sig_stage_2 or submission.current_stage_order > 2 or submission.status == 'approved' %}
+            <div class="sig-approved-badge">
+              ✓ TERVERIFIKASI<br>
+              <span style="font-size: 6pt; color: #166534;">Administrasi OK</span>
+            </div>
+          {% else %}
+            <div style="color: #94a3b8; font-size: 7pt; font-style: italic;">(Menunggu Verifikasi)</div>
+          {% endif %}
+        </div>
+        <div class="sig-name">{% if submission.sig_stage_2 %}{{ submission.sig_stage_2.approver_name }}{% else %}{{ form_data.nama_pic|default:"PIC Divisi Pusat" }}{% endif %}</div>
+        <div class="sig-date">{% if submission.sig_stage_2 %}{{ submission.sig_stage_2.stamped_at }}{% else %}-{% endif %}</div>
+      </td>
+
+      <!-- 4. GM Pusat (Digital / Tanda Tangan Manual) -->
+      <td class="sig-cell">
+        <div class="sig-role-header">4. GM Pusat</div>
+        <div class="sig-space">
+          {% if submission.sig_stage_3 or submission.current_stage_order > 3 or submission.status == 'approved' %}
+            {% if form_data.perlu_proses_manual == 'Ya' %}
+              <div class="sig-manual-badge">
+                ✍️ TTD MANUAL<br>
+                <span style="font-size: 6pt; color: #b45309;">Dokumen Fisik Sah</span>
+              </div>
+            {% else %}
+              <div class="sig-approved-badge">
+                ✓ DISETUJUI GM<br>
+                <span style="font-size: 6pt; color: #166534;">Digital Sign</span>
+              </div>
+            {% endif %}
+          {% else %}
+            {% if form_data.perlu_proses_manual == 'Ya' %}
+              <div class="sig-manual-badge">
+                [ TTD MANUAL ]<br>
+                <span style="font-size: 6pt;">Cetak &amp; TTD Basah</span>
+              </div>
+            {% else %}
+              <div style="color: #94a3b8; font-size: 7pt; font-style: italic;">(Menunggu Approval)</div>
+            {% endif %}
+          {% endif %}
+        </div>
+        <div class="sig-name">{% if submission.sig_stage_3 %}{{ submission.sig_stage_3.approver_name }}{% else %}General Manager Pusat{% endif %}</div>
+        <div class="sig-date">{% if submission.sig_stage_3 %}{{ submission.sig_stage_3.stamped_at }}{% else %}-{% endif %}</div>
+      </td>
+
+      <!-- 5. Finance (Pencairan & Closing PPVM) -->
+      <td class="sig-cell">
+        <div class="sig-role-header">5. Finance</div>
+        <div class="sig-space">
+          {% if submission.status == 'approved' %}
+            <div class="sig-approved-badge">
+              ✓ DANA DITRANSFER &amp;<br>
+              <span style="font-size: 6pt; color: #166534;">CLOSING SAH</span>
+            </div>
+          {% elif submission.current_stage_order > 4 %}
+            <div class="sig-approved-badge">
+              ✓ DANA DITRANSFER<br>
+              <span style="font-size: 6pt; color: #166534;">Tunggu Closing</span>
+            </div>
+          {% else %}
+            <div style="color: #94a3b8; font-size: 7pt; font-style: italic;">(Menunggu Finance)</div>
+          {% endif %}
+        </div>
+        <div class="sig-name">{% if submission.sig_stage_6 %}{{ submission.sig_stage_6.approver_name }}{% elif submission.sig_stage_4 %}{{ submission.sig_stage_4.approver_name }}{% else %}Finance &amp; Accounting{% endif %}</div>
+        <div class="sig-date">{% if submission.sig_stage_6 %}{{ submission.sig_stage_6.stamped_at }}{% elif submission.sig_stage_4 %}{{ submission.sig_stage_4.stamped_at }}{% else %}-{% endif %}</div>
+      </td>
+    </tr>
+  </table>
+
+  <div style="margin-top: 10pt; font-size: 7pt; color: #64748b; text-align: center;">
+    Dokumen ini dicetak secara resmi dari sistem RoyalOne Workflow Engine PT Royal Abadi Sejahtera.<br>
+    Keabsahan persetujuan digital tercatat dan tervalidasi secara hukum melalui audit trail sistem.
+  </div>
+
+</body>
+</html>

@@ -67,6 +67,19 @@
         var fKategori = getFieldWrapper('kategori_biaya');
         var fTipeTransaksi = getFieldWrapper('tipe_transaksi');
         var fUrgensi = getFieldWrapper('urgensi_pengajuan');
+        var fPerluManual = getFieldWrapper('perlu_proses_manual');
+
+        // Closing & Realisasi fields (hidden during initial submission)
+        var fNomorPpvm = getFieldWrapper('nomor_ppvm');
+        var fRealisasiNominal = getFieldWrapper('realisasi_nominal');
+        var fCatatanRealisasi = getFieldWrapper('catatan_realisasi');
+        var fStatusTransfer = getFieldWrapper('status_transfer_dana');
+        var fTanggalTransfer = getFieldWrapper('tanggal_transfer_dana');
+        var fNomorRefTransfer = getFieldWrapper('nomor_referensi_transfer');
+
+        [fNomorPpvm, fRealisasiNominal, fCatatanRealisasi, fStatusTransfer, fTanggalTransfer, fNomorRefTransfer].forEach(function(fw) {
+            if (fw) fw.style.display = 'none';
+        });
 
         // Attachment fields
         var fDokPendukung = getFieldWrapper('dokumen_pendukung');
@@ -340,6 +353,7 @@
         bTujuan.appendChild(rowTj3);
 
         if (fUrgensi) bTujuan.appendChild(fUrgensi);
+        if (fPerluManual) bTujuan.appendChild(fPerluManual);
 
         // Panel Lampiran
         var bLampiran = document.getElementById('body_lampiran');
@@ -518,16 +532,35 @@
             if (inputTotal) inputTotal.value = total;
             if (inputLimitSaatIni) inputLimitSaatIni.value = sisaSaatIni;
 
-            // Guardrail Visual Styling
+            // Guardrail Visual Styling & Submission Blocker (feedback-wf.jpeg & FR-08)
+            var btnSubmit = form.querySelector('button[type="submit"]:not([value="save_draft"]), input[type="submit"]:not([value="save_draft"])');
             if (sisaSaatIni < 0) {
                 cardLimitSaatIni.className = 'wf-metric-card limit-sisa danger';
-                if (guardrailMsg) guardrailMsg.style.display = 'block';
-            } else if (sisaSaatIni < 200000) {
-                cardLimitSaatIni.className = 'wf-metric-card limit-sisa warning';
-                if (guardrailMsg) guardrailMsg.style.display = 'none';
+                if (guardrailMsg) {
+                    guardrailMsg.innerHTML = '<i class="bi bi-exclamation-octagon-fill me-1"></i><strong>Limit Pengajuan Tidak Mencukupi!</strong> Total pengajuan (' + formatRupiah(total) + ') melebihi sisa limit mingguan cabang (' + formatRupiah(limitLaluNominal) + '). Formulir tidak dapat diajukan.';
+                    guardrailMsg.style.display = 'block';
+                }
+                if (btnSubmit) {
+                    btnSubmit.disabled = true;
+                    btnSubmit.classList.add('disabled');
+                    btnSubmit.setAttribute('title', 'Limit pengajuan tidak mencukupi');
+                }
             } else {
-                cardLimitSaatIni.className = 'wf-metric-card limit-sisa';
-                if (guardrailMsg) guardrailMsg.style.display = 'none';
+                if (btnSubmit) {
+                    btnSubmit.disabled = false;
+                    btnSubmit.classList.remove('disabled');
+                    btnSubmit.removeAttribute('title');
+                }
+                if (sisaSaatIni < 200000) {
+                    cardLimitSaatIni.className = 'wf-metric-card limit-sisa warning';
+                    if (guardrailMsg) {
+                        guardrailMsg.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>Peringatan: Total pengajuan mendekati batas limit mingguan cabang.';
+                        guardrailMsg.style.display = 'block';
+                    }
+                } else {
+                    cardLimitSaatIni.className = 'wf-metric-card limit-sisa';
+                    if (guardrailMsg) guardrailMsg.style.display = 'none';
+                }
             }
 
             // Serialize structured JSON to items_data
@@ -660,6 +693,24 @@
             selectTipeTransaksi.addEventListener('change', updateTipeTransaksiRules);
             updateTipeTransaksiRules();
         }
+
+        // Form Submit Guardrail Interceptor (feedback-wf.jpeg & FR-08)
+        form.addEventListener('submit', function (e) {
+            var submitter = e.submitter || document.activeElement;
+            var isDraft = submitter && (
+                submitter.value === 'save_draft' || 
+                submitter.name === 'save_draft' || 
+                (submitter.textContent && submitter.textContent.toLowerCase().indexOf('draft') !== -1)
+            );
+            if (isDraft) return;
+
+            var currentTotal = itemsList.reduce(function (acc, it) { return acc + (it.subtotal || 0); }, 0);
+            if (currentTotal > limitLaluNominal) {
+                e.preventDefault();
+                alert('Pengajuan Gagal: Limit pengajuan tidak mencukupi!\nTotal biaya (' + formatRupiah(currentTotal) + ') melebihi sisa limit mingguan cabang (' + formatRupiah(limitLaluNominal) + ').\nHarap sesuaikan atau kurangi nominal rincian item.');
+                return false;
+            }
+        });
 
         // 5. Initial Repeater Render
         renderItems();

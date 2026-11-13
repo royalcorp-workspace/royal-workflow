@@ -10,6 +10,8 @@ services:
     env_file:
       - .env
     volumes:
+      - ./django_forms_workflows:/app/django_forms_workflows
+      - ./templates:/app/templates
       - ./media:/app/media
       - ./staticfiles:/app/staticfiles
       - ./db.sqlite3:/app/db.sqlite3

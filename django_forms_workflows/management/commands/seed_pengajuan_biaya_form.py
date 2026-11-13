@@ -169,6 +169,7 @@ class Command(BaseCommand):
                 "is_listed": True,
                 "allow_save_draft": True,
                 "allow_resubmit": True,
+                "pdf_generation": "anytime",
             },
         )
 
@@ -182,6 +183,7 @@ class Command(BaseCommand):
             form.category = category
             form.is_active = True
             form.is_listed = True
+            form.pdf_generation = "anytime"
             form.save()
             form.fields.all().delete()
             self.stdout.write("Updated existing FormDefinition and refreshed fields.")
@@ -603,6 +605,90 @@ class Command(BaseCommand):
                 "placeholder": "",
                 "help_text": "Uraian justifikasi kebutuhan operasional dan urgensi pemakaian dana.",
             },
+
+            # ── PROSES MANUAL PENGAJUAN BIAYA & PERSETUJUAN GM PUSAT (feedback-wf.jpeg) ──
+            {
+                "field_name": "perlu_proses_manual",
+                "field_label": "Perlu Proses Cetak & Persetujuan Manual GM Pusat?",
+                "field_type": "select",
+                "required": False,
+                "order": 29,
+                "width": "half",
+                "choices": [
+                    {"value": "Tidak", "label": "Tidak (Persetujuan Digital Sistem)"},
+                    {"value": "Ya", "label": "Ya (Perlu Cetak PDF & Tanda Tangan Fisik GM Pusat)"},
+                ],
+                "default_value": "Tidak",
+                "help_text": "Pilih 'Ya' jika PIC Pusat atau regulasi divisi mewajibkan cetak form & TTD basah GM.",
+            },
+
+            # ── LAPORAN REALISASI & PENCOCOKAN DOKUMEN PPVM JDE (Closing) ──
+            {
+                "field_name": "nomor_ppvm",
+                "field_label": "No. Dokumen PPVM (JDE)",
+                "field_type": "text",
+                "required": False,
+                "order": 30,
+                "width": "half",
+                "placeholder": "",
+                "help_text": "Nomor dokumen Payment Without Voucher Match yang diperoleh dari JDE saat realisasi.",
+            },
+            {
+                "field_name": "realisasi_nominal",
+                "field_label": "Total Nominal Realisasi Biaya (Rp)",
+                "field_type": "number",
+                "required": False,
+                "order": 31,
+                "width": "half",
+                "placeholder": "",
+                "help_text": "Total biaya riil yang dikeluarkan sesuai bukti/nota fisik.",
+            },
+            {
+                "field_name": "catatan_realisasi",
+                "field_label": "Catatan / Keterangan Realisasi Pengeluaran",
+                "field_type": "textarea",
+                "required": False,
+                "order": 32,
+                "width": "full",
+                "placeholder": "",
+                "help_text": "Penjelasan rincian penggunaan riil dan deviasi/selisih budget jika ada.",
+            },
+
+            # ── EKSEKUSI TRANSFER DANA FINANCE ──
+            {
+                "field_name": "status_transfer_dana",
+                "field_label": "Status Transfer Dana (Finance)",
+                "field_type": "select",
+                "required": False,
+                "order": 33,
+                "width": "third",
+                "choices": [
+                    {"value": "Pending", "label": "Pending Transfer"},
+                    {"value": "Berhasil", "label": "Transfer Dana Berhasil"},
+                    {"value": "Gagal", "label": "Transfer Gagal / Perlu Ulang"},
+                ],
+                "default_value": "Pending",
+                "help_text": "Status eksekusi transfer dana dari Finance ke cabang/pemohon.",
+            },
+            {
+                "field_name": "tanggal_transfer_dana",
+                "field_label": "Tanggal Transfer Dana",
+                "field_type": "date",
+                "required": False,
+                "order": 34,
+                "width": "third",
+                "help_text": "Tanggal pencairan dana dilakukan oleh Finance.",
+            },
+            {
+                "field_name": "nomor_referensi_transfer",
+                "field_label": "No. Referensi Bank / Transfer",
+                "field_type": "text",
+                "required": False,
+                "order": 35,
+                "width": "third",
+                "placeholder": "",
+                "help_text": "Nomor referensi bukti transaksi transfer bank.",
+            },
         ]
 
         for spec in field_specs:
@@ -640,18 +726,49 @@ class Command(BaseCommand):
         workflow.send_reminder_after_days = 1
         workflow.save()
 
-        # Definisikan 6 Tahap Alur Persetujuan Operasional
+        # Definisikan 6 Tahap Alur Persetujuan Operasional sesuai feedback-wf.jpeg:
+        # 1. Review Pengajuan oleh ASM (Role: ASM)
+        # 2. Review Pengajuan oleh PIC Pusat (Role: PIC Pusat)
+        # 3. Review Pengajuan oleh GM Pusat (Role: GM Pusat)
+        # 4. Review Pengajuan & Transfer Dana (Role: Finance)
+        # 5. Input No. PPVM & Laporan Realisasi (Role: Pemohon)
+        # 6. Pencocokan PPVM & Approval Realisasi (Role: Finance)
+        group_asm_list = [
+            Group.objects.get_or_create(name="Sales Area Manager")[0],
+            Group.objects.get_or_create(name="Manager Cabang & Atasan Langsung")[0],
+            Group.objects.get_or_create(name="Atasan Cabang (Manager Cabang)")[0],
+        ]
+        group_pic_pusat_list = [
+            Group.objects.get_or_create(name="PIC Pusat (Operasional & Umum)")[0],
+            Group.objects.get_or_create(name="PIC Operasional & Umum Pusat")[0],
+        ]
+        group_gm_pusat_list = [
+            Group.objects.get_or_create(name="General Manager Sales")[0],
+            Group.objects.get_or_create(name="Atasan PIC Pusat (Head of Division)")[0],
+        ]
+        group_finance_transfer_list = [
+            Group.objects.get_or_create(name="Finance (Transfer & Pencairan)")[0],
+            Group.objects.get_or_create(name="Finance Team")[0],
+        ]
+        group_maker_list = [
+            Group.objects.get_or_create(name="Kasir Cabang (Pemohon)")[0],
+        ]
+        group_finance_closing_list = [
+            Group.objects.get_or_create(name="Finance (Verifikasi Realisasi Closing)")[0],
+            Group.objects.get_or_create(name="Finance Team")[0],
+        ]
+
         stages_config = [
-            (1, "Review Atasan Cabang", group_atasan_cabang),
-            (2, "Verifikasi PIC Pusat", group_pic_pusat),
-            (3, "Persetujuan Head of Division (Atasan PIC)", group_atasan_pic),
-            (4, "Pencairan Dana (Finance)", group_finance_transfer),
-            (5, "Pelaporan Realisasi Biaya (Kasir Cabang)", group_maker),
-            (6, "Verifikasi Closing (Finance)", group_finance_closing),
+            (1, "Review Pengajuan oleh ASM", group_asm_list),
+            (2, "Review Pengajuan oleh PIC Pusat", group_pic_pusat_list),
+            (3, "Review Pengajuan oleh GM Pusat", group_gm_pusat_list),
+            (4, "Review Pengajuan & Transfer Dana (Finance)", group_finance_transfer_list),
+            (5, "Input No. PPVM & Laporan Realisasi (Pemohon)", group_maker_list),
+            (6, "Pencocokan PPVM & Approval Realisasi (Finance)", group_finance_closing_list),
         ]
 
         created_stages = []
-        for order, stage_name, group_obj in stages_config:
+        for order, stage_name, groups in stages_config:
             stage, _ = WorkflowStage.objects.get_or_create(
                 workflow=workflow,
                 order=order,
@@ -665,15 +782,18 @@ class Command(BaseCommand):
             stage.allow_send_back = True
             stage.allow_reassign = True
             stage.save()
-            StageApprovalGroup.objects.update_or_create(
-                stage=stage,
-                group=group_obj,
-                role="approval",
-                defaults={"position": 1},
-            )
+            # Clear old stage approval groups to ensure sync
+            stage.stageapprovalgroup_set.all().delete()
+            for pos, g in enumerate(groups, start=1):
+                StageApprovalGroup.objects.create(
+                    stage=stage,
+                    group=g,
+                    role="approval",
+                    position=pos,
+                )
             created_stages.append(stage)
 
-        self.stdout.write("Configured 6-Stage Approval Workflow (Atasan Cabang -> PIC Pusat -> Atasan PIC -> Finance Transfer -> Realisasi Kasir -> Finance Closing).")
+        self.stdout.write("Configured 6-Stage Approval Workflow (ASM -> PIC Pusat -> GM Pusat -> Finance Transfer -> Realisasi & PPVM Kasir -> Pencocokan PPVM Finance).")
 
         # 6. Notification Rules
         html_email_style = """
