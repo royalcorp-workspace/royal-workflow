@@ -871,6 +871,27 @@ def _create_stage_tasks(
                 except Exception:
                     pass
 
+        # Branch fallback for Super Admin / submitter with no direct supervisor
+        if not manager and submission:
+            try:
+                from .services.branch_resolver import (
+                    find_branch_manager_for_stage,
+                    resolve_submission_branch,
+                )
+                sub_branch = resolve_submission_branch(submission)
+                if sub_branch:
+                    manager = find_branch_manager_for_stage(sub_branch, stage.order, stage_or_groups=stage)
+                    if manager:
+                        logger.info(
+                            "Resolved manager %s for submission %s via branch %s (stage %d)",
+                            manager.username,
+                            submission.id,
+                            sub_branch,
+                            stage_num,
+                        )
+            except Exception as _res_err:
+                logger.debug("Branch manager resolution error: %s", _res_err)
+
         if manager:
             task = ApprovalTask.objects.create(
                 submission=submission,

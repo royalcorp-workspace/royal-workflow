@@ -1183,17 +1183,18 @@ def _collect_notification_recipients(
 
     # 4. Stage assignees (NotificationRule only)
     if getattr(notif, "notify_stage_assignees", False) and submission is not None:
-        qs = (
-            submission.approval_tasks.select_related("assigned_to", "workflow_stage")
-            .filter(assigned_to__isnull=False)
-            .exclude(workflow_stage__assignee_form_field__isnull=True)
-            .exclude(workflow_stage__assignee_form_field="")
-        )
-        eff_stage = _effective_stage_id()
-        if eff_stage:
-            qs = qs.filter(workflow_stage_id=eff_stage)
-        for email in qs.values_list("assigned_to__email", flat=True):
-            _add(email)
+        if task and getattr(task, "assigned_to_id", None):
+            _add(getattr(task.assigned_to, "email", None))
+        else:
+            qs = (
+                submission.approval_tasks.select_related("assigned_to", "workflow_stage")
+                .filter(assigned_to__isnull=False)
+            )
+            eff_stage = _effective_stage_id()
+            if eff_stage:
+                qs = qs.filter(workflow_stage_id=eff_stage)
+            for email in qs.values_list("assigned_to__email", flat=True):
+                _add(email)
 
     # 5. Stage approval groups (NotificationRule only)
     #
@@ -1257,38 +1258,87 @@ def _collect_notification_recipients(
 
         if effective_stage_ids:
             # Step 3 — only role="approval" rows on those stages count.
-            # Validation/reassignment-role groups must not spawn tasks
-            # (engine fix in 0.74.6) and must not receive notifications
-            # (parity with that fix).
-            group_ids = list(
-                StageApprovalGroup.objects.filter(
-                    stage_id__in=effective_stage_ids, role="approval"
-                ).values_list("group_id", flat=True)
-            )
-            if group_ids:
-                for email in (
-                    user_model.objects.filter(groups__id__in=group_ids)
+            # If the dispatch is for a specific task with an assigned_group,
+            # narrow strictly to that task's group to prevent cross-group duplicate blasts.
+            if task and getattr(task, "assigned_group_id", None):
+                target_group_ids = [task.assigned_group_id]
+            else:
+                target_group_ids = list(
+                    StageApprovalGroup.objects.filter(
+                        stage_id__in=effective_stage_ids, role="approval"
+                    ).values_list("group_id", flat=True)
+                )
+
+            if target_group_ids:
+                from django.contrib.auth.models import Group
+                from .services.branch_resolver import is_user_eligible_for_submission
+
+                groups_map = {g.id: g for g in Group.objects.filter(id__in=target_group_ids)}
+                candidate_users = (
+                    user_model.objects.filter(groups__id__in=target_group_ids)
                     .exclude(email="")
-                    .values_list("email", flat=True)
+                    .select_related("employee_profile")
+                    .prefetch_related("groups")
                     .distinct()
-                ):
-                    _add(email)
+                )
+                for u in candidate_users:
+                    # Do not send approval request/reminder to the submitter themselves
+                    if (
+                        submission
+                        and submission.submitter_id
+                        and u.id == submission.submitter_id
+                        and getattr(notif, "event", "") in ("approval_request", "approval_reminder")
+                        and not getattr(notif, "notify_submitter", False)
+                    ):
+                        continue
+
+                    user_group_objs = [
+                        groups_map[gid]
+                        for gid in target_group_ids
+                        if u.groups.filter(id=gid).exists()
+                    ]
+                    for grp in user_group_objs:
+                        if is_user_eligible_for_submission(u, grp, submission, form_data):
+                            _add(u.email)
+                            break
 
     # 6. Explicit notify_groups M2M (NotificationRule only)
     if hasattr(notif, "notify_groups"):
         try:
             from django.contrib.auth import get_user_model
+            from .services.branch_resolver import is_user_eligible_for_submission
 
             user_model = get_user_model()
-            group_ids = list(notif.notify_groups.values_list("id", flat=True))
+            m2m_groups = list(notif.notify_groups.all())
+            group_ids = [g.id for g in m2m_groups]
             if group_ids:
-                for email in (
+                groups_map = {g.id: g for g in m2m_groups}
+                candidate_users = (
                     user_model.objects.filter(groups__id__in=group_ids)
                     .exclude(email="")
-                    .values_list("email", flat=True)
+                    .select_related("employee_profile")
+                    .prefetch_related("groups")
                     .distinct()
-                ):
-                    _add(email)
+                )
+                for u in candidate_users:
+                    if (
+                        submission
+                        and submission.submitter_id
+                        and u.id == submission.submitter_id
+                        and getattr(notif, "event", "") in ("approval_request", "approval_reminder")
+                        and not getattr(notif, "notify_submitter", False)
+                    ):
+                        continue
+
+                    user_group_objs = [
+                        groups_map[gid]
+                        for gid in group_ids
+                        if u.groups.filter(id=gid).exists()
+                    ]
+                    for grp in user_group_objs:
+                        if is_user_eligible_for_submission(u, grp, submission, form_data):
+                            _add(u.email)
+                            break
         except ValueError:
             # M2M not available (unsaved instance)
             pass
