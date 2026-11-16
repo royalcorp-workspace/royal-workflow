@@ -438,8 +438,66 @@
     /* --------------------------------------------------------------------------
      * 0. Force Readonly & Slate-200 Lock
      * -------------------------------------------------------------------------- */
+    function lockTopField(form) {
+        const topInput = form.querySelector('[name="top"]');
+        if (topInput) {
+            topInput.setAttribute('readonly', 'readonly');
+            topInput.classList.add('jde-readonly-locked', 'jde-autofill-readonly', 'bg-light');
+            topInput.style.setProperty('background-color', '#e2e8f0', 'important');
+            topInput.style.setProperty('border-color', '#94a3b8', 'important');
+            topInput.style.setProperty('color', '#0f172a', 'important');
+            topInput.style.setProperty('cursor', 'not-allowed', 'important');
+            topInput.dataset.readonlyBound = 'true';
+            delete topInput.dataset.unlockedFallback;
+        }
+    }
+
+    function unlockTopField(form) {
+        const topInput = form.querySelector('[name="top"]');
+        if (topInput) {
+            topInput.removeAttribute('readonly');
+            topInput.classList.remove('jde-readonly-locked', 'jde-autofill-readonly', 'bg-light');
+            topInput.style.removeProperty('background-color');
+            topInput.style.removeProperty('border-color');
+            topInput.style.removeProperty('color');
+            topInput.style.removeProperty('cursor');
+            topInput.dataset.readonlyBound = 'false';
+            topInput.dataset.unlockedFallback = 'true';
+        }
+    }
+
+    function lockNpwpField(form) {
+        const npwpInput = form.querySelector('[name="nomor_npwp"]');
+        if (npwpInput) {
+            npwpInput.setAttribute('readonly', 'readonly');
+            npwpInput.classList.add('jde-readonly-locked', 'jde-autofill-readonly', 'bg-light');
+            npwpInput.style.setProperty('background-color', '#e2e8f0', 'important');
+            npwpInput.style.setProperty('border-color', '#94a3b8', 'important');
+            npwpInput.style.setProperty('color', '#0f172a', 'important');
+            npwpInput.style.setProperty('cursor', 'not-allowed', 'important');
+            npwpInput.style.setProperty('font-weight', '500', 'important');
+            npwpInput.dataset.readonlyBound = 'true';
+            delete npwpInput.dataset.unlockedFallback;
+        }
+    }
+
+    function unlockNpwpField(form) {
+        const npwpInput = form.querySelector('[name="nomor_npwp"]');
+        if (npwpInput) {
+            npwpInput.removeAttribute('readonly');
+            npwpInput.classList.remove('jde-readonly-locked', 'jde-autofill-readonly', 'bg-light');
+            npwpInput.style.removeProperty('background-color');
+            npwpInput.style.removeProperty('border-color');
+            npwpInput.style.removeProperty('color');
+            npwpInput.style.removeProperty('cursor');
+            npwpInput.style.removeProperty('font-weight');
+            npwpInput.dataset.readonlyBound = 'false';
+            npwpInput.dataset.unlockedFallback = 'true';
+        }
+    }
+
     function lockReadonlyFields(form) {
-        const targetReadonlyFields = ['nama_toko', 'nama_pemilik', 'alamat_toko', 'no_telepon', 'kota', 'nomor_spk'];
+        const targetReadonlyFields = ['nama_toko', 'alamat_toko', 'no_telepon', 'kota', 'nomor_npwp', 'top', 'nomor_spk'];
         const cabangSelect = form.querySelector('[name="cabang"]');
         if (cabangSelect) {
             cabangSelect.classList.add('jde-readonly-locked', 'field-readonly');
@@ -449,9 +507,25 @@
             cabangSelect.setAttribute('tabindex', '-1');
         }
 
+        // Pastikan nama_pemilik, nomor_nik, email TETAP DAPAT DIEDIT (tidak terkunci readonly)
+        const namaPemilikEl = form.querySelector('[name="nama_pemilik"]');
+        if (namaPemilikEl) {
+            namaPemilikEl.removeAttribute('readonly');
+            namaPemilikEl.classList.remove('jde-readonly-locked', 'jde-autofill-readonly', 'field-readonly');
+            namaPemilikEl.style.removeProperty('background-color');
+            namaPemilikEl.style.removeProperty('border-color');
+            namaPemilikEl.style.removeProperty('color');
+            namaPemilikEl.style.removeProperty('cursor');
+            namaPemilikEl.style.removeProperty('pointer-events');
+            namaPemilikEl.dataset.readonlyBound = 'false';
+        }
+
         targetReadonlyFields.forEach(fieldName => {
             const el = form.querySelector(`[name="${fieldName}"]`);
             if (el) {
+                if (el.dataset.unlockedFallback === 'true') {
+                    return;
+                }
                 el.setAttribute('readonly', 'readonly');
                 el.classList.add('jde-readonly-locked');
                 el.classList.add('jde-autofill-readonly');
@@ -470,12 +544,14 @@
                 if (!el.dataset.readonlyBound) {
                     el.dataset.readonlyBound = 'true';
                     el.addEventListener('keydown', function (e) {
-                        if (e.key !== 'Tab') {
+                        if (this.readOnly && e.key !== 'Tab') {
                             e.preventDefault();
                         }
                     });
                     el.addEventListener('paste', function (e) {
-                        e.preventDefault();
+                        if (this.readOnly) {
+                            e.preventDefault();
+                        }
                     });
                 }
             }
@@ -784,22 +860,33 @@
         // Enforce readonly lock & styling on target fields
         lockReadonlyFields(form);
 
-        // Ensure nomor_nik, nomor_npwp, email, and legacy identity fields are strictly editable
-        const editableFieldNames = ['nomor_nik', 'nomor_npwp', 'email', 'jenis_identitas', 'nomor_identitas'];
+        // Ensure nama_pemilik, nomor_nik, email, and legacy identity fields are strictly editable
+        const editableFieldNames = ['nama_pemilik', 'nomor_nik', 'email', 'jenis_identitas', 'nomor_identitas'];
         editableFieldNames.forEach(fieldName => {
             const el = form.querySelector(`[name="${fieldName}"]`);
             if (el) {
                 el.removeAttribute('readonly');
-                el.classList.remove('jde-autofill-readonly');
-                el.style.cursor = 'auto';
+                el.classList.remove('jde-autofill-readonly', 'jde-readonly-locked', 'field-readonly');
+                el.style.removeProperty('background-color');
+                el.style.removeProperty('cursor');
+                el.style.removeProperty('pointer-events');
+                el.dataset.readonlyBound = 'false';
             }
         });
+
+        function normalizeJdeAddress(alamat) {
+            if (!alamat) return '';
+            let s = String(alamat).replace(/\s*[\u2013\u2014\-]\s*/g, ', ');
+            s = s.replace(/,\s*,+/g, ',');
+            s = s.replace(/\s+/g, ' ').replace(/^[\s,]+|[\s,]+$/g, '');
+            return s;
+        }
 
         async function doLookup() {
             const code = jdeInput.value.trim();
             if (!code) {
                 alertBox.className = 'jde-lookup-alert alert alert-warning d-block';
-                alertBox.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i> Silakan masukkan Kode Customer JDE (contoh: 150731).';
+                alertBox.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i> Silakan masukkan Kode Customer JDE (contoh: 100228).';
                 return;
             }
 
@@ -812,54 +899,104 @@
 
                 if (res.ok && data.success && data.customer) {
                     const c = data.customer;
+                    const cleanAlamat = normalizeJdeAddress(c.alamat_toko || c.alamat_lengkap);
+
                     setFieldValue(form, 'nama_toko', c.nama_toko);
-                    setFieldValue(form, 'nama_pemilik', c.nama_pemilik);
-                    setFieldValue(form, 'alamat_toko', c.alamat_toko);
+                    setFieldValue(form, 'alamat_toko', cleanAlamat);
                     setFieldValue(form, 'no_telepon', c.no_telepon);
                     setFieldValue(form, 'kota', c.kota);
+
+                    // Nama pemilik: jika JDE mengirim ada nilai diisi, jika tidak jangan timpa ketikan user
+                    if (c.nama_pemilik) {
+                        setFieldValue(form, 'nama_pemilik', c.nama_pemilik);
+                    } else {
+                        const pemInput = form.querySelector('[name="nama_pemilik"]');
+                        if (pemInput && !pemInput.value.trim()) {
+                            setTimeout(() => {
+                                try { pemInput.focus(); } catch (e) {}
+                            }, 150);
+                        }
+                    }
+
+                    // Nomor NPWP & Badge Status JDE
+                    const npwpVal = c.nomor_npwp || c.npwp || '';
+                    const npwpInput = form.querySelector('[name="nomor_npwp"]');
+                    if (npwpVal) {
+                        if (npwpInput) npwpInput.dataset.jdeOriginalNpwp = npwpVal;
+                        setFieldValue(form, 'nomor_npwp', npwpVal);
+                    }
+                    if (npwpInput) {
+                        const npwpWrap = npwpInput.closest('.field-wrapper') || npwpInput.closest('.mb-3') || npwpInput.parentElement;
+                        let statusBadge = npwpWrap ? npwpWrap.querySelector('.jde-npwp-status-badge') : null;
+                        if (!statusBadge && npwpWrap) {
+                            statusBadge = document.createElement('div');
+                            statusBadge.className = 'jde-npwp-status-badge mt-1';
+                            const npwpFeedback = npwpWrap.querySelector('.nomor-npwp-feedback');
+                            if (npwpFeedback && npwpFeedback.nextSibling) {
+                                npwpFeedback.parentNode.insertBefore(statusBadge, npwpFeedback.nextSibling);
+                            } else {
+                                npwpInput.parentNode.appendChild(statusBadge);
+                            }
+                        }
+                        if (statusBadge) {
+                            statusBadge.style.display = 'block';
+                            const stNpwp = String(c.status_npwp || '').toLowerCase();
+                            if (stNpwp === 'valid') {
+                                statusBadge.innerHTML = '<span class="badge bg-success-subtle text-success border border-success-subtle py-1 px-2"><i class="bi bi-patch-check-fill me-1"></i> NPWP Valid (JDE)</span>';
+                            } else if (npwpVal) {
+                                statusBadge.innerHTML = `<span class="badge bg-warning-subtle text-dark border border-warning-subtle py-1 px-2"><i class="bi bi-exclamation-triangle-fill text-warning me-1"></i> Status NPWP JDE: ${escapeHtml(c.status_npwp || 'Tidak Valid')}</span>`;
+                            } else {
+                                statusBadge.innerHTML = '<span class="badge bg-warning-subtle text-dark border border-warning-subtle py-1 px-2"><i class="bi bi-exclamation-triangle-fill text-warning me-1"></i> NPWP Belum Terdaftar di JDE — Silakan lengkapi manual</span>';
+                            }
+                        }
+                    }
+
                     if (c.nomor_nik || c.nik) {
                         setFieldValue(form, 'nomor_nik', c.nomor_nik || c.nik);
-                    } else if (c.nomor_identitas || c.no_identitas) {
-                        const rawId = String(c.nomor_identitas || c.no_identitas).replace(/\D/g, '');
-                        if (rawId.length === 16) {
-                            setFieldValue(form, 'nomor_nik', rawId);
-                        } else if (rawId.length === 15) {
-                            setFieldValue(form, 'nomor_npwp', rawId);
-                        } else {
-                            setFieldValue(form, 'nomor_nik', rawId);
+                    }
+                    if (c.email) {
+                        setFieldValue(form, 'email', c.email);
+                        if (typeof form._validateEmail === 'function') form._validateEmail(false);
+                    }
+
+                    // Auto prefill TOP (Term of Payment) di Step 2 jika ada data payment terms dari JDE
+                    if (c.top_days) {
+                        const topInput = form.querySelector('[name="top"]');
+                        if (topInput) {
+                            setFieldValue(form, 'top', c.top_days);
+                            lockTopField(form);
                         }
+                    } else {
+                        unlockTopField(form);
                     }
-                    if (c.nomor_npwp || c.npwp) {
-                        setFieldValue(form, 'nomor_npwp', c.nomor_npwp || c.npwp);
-                    }
-                    if (c.nomor_identitas || c.no_identitas) {
-                        setFieldValue(form, 'nomor_identitas', c.nomor_identitas || c.no_identitas);
-                    }
-                    if (c.jenis_identitas) {
-                        let cleanJenis = c.jenis_identitas;
-                        if (cleanJenis.includes('/') || cleanJenis.includes('KTP')) {
-                            cleanJenis = 'NIK';
-                        }
-                        setFieldValue(form, 'jenis_identitas', cleanJenis);
-                    }
+
                     if (typeof form._validateNomorNik === 'function') {
                         form._validateNomorNik(false);
                     }
                     if (typeof form._validateNomorNpwp === 'function') {
                         form._validateNomorNpwp(false);
                     }
-                    if (typeof form._validateNomorIdentitas === 'function') {
-                        form._validateNomorIdentitas(false);
-                    }
-                    if (c.email) {
-                        setFieldValue(form, 'email', c.email);
-                        if (typeof form._validateEmail === 'function') form._validateEmail(false);
-                    }
-                    // JDE lookup HANYA mengisi data toko, TIDAK BOLEH menimpa Cabang pemohon maupun nomor SPK
+
+                    // Kunci kembali field readonly (nama_toko, alamat_toko, no_telepon, kota, nomor_spk)
                     lockReadonlyFields(form);
 
+                    // Evaluasi status kunci nomor_npwp berdasarkan status validitas JDE
+                    const stNpwp = String(c.status_npwp || '').toLowerCase();
+                    if (stNpwp === 'valid' && npwpVal) {
+                        lockNpwpField(form);
+                    } else {
+                        unlockNpwpField(form);
+                    }
+
+                    // Evaluasi status kunci TOP
+                    if (c.top_days) {
+                        lockTopField(form);
+                    } else {
+                        unlockTopField(form);
+                    }
+
                     alertBox.className = 'jde-lookup-alert alert alert-success d-block';
-                    alertBox.innerHTML = `<i class="bi bi-check-circle me-1"></i> Data JDE Ditemukan: <strong>${c.nama_toko}</strong> (${c.nama_pemilik}) - ${c.kota}`;
+                    alertBox.innerHTML = `<i class="bi bi-check-circle me-1"></i> Data JDE Ditemukan: <strong>${escapeHtml(c.nama_toko)}</strong> (${escapeHtml(c.kota || 'Kota')})`;
 
                     // Also prepopulate asset_toko first row if empty
                     const assetField = form.querySelector('[name="asset_toko"]');
@@ -867,18 +1004,22 @@
                         const initAsset = [{
                             no: 1,
                             keterangan: c.nama_toko,
-                            alamat: c.alamat_toko,
+                            alamat: cleanAlamat,
                             status: 'Pribadi'
                         }];
                         assetField.value = JSON.stringify(initAsset);
                         if (window.renderAssetGrid) window.renderAssetGrid();
                     }
                 } else {
+                    unlockTopField(form);
+                    unlockNpwpField(form);
                     alertBox.className = 'jde-lookup-alert alert alert-danger d-block';
                     alertBox.innerHTML = `<i class="bi bi-x-circle me-1"></i> ${data.message || 'Customer JDE tidak ditemukan.'}`;
                 }
             } catch (err) {
                 console.error('Error lookup JDE:', err);
+                unlockTopField(form);
+                unlockNpwpField(form);
                 alertBox.className = 'jde-lookup-alert alert alert-danger d-block';
                 alertBox.innerHTML = '<i class="bi bi-x-circle me-1"></i> Gagal menghubungi layanan JDE Lookup.';
             } finally {
@@ -1026,7 +1167,21 @@
                     e.preventDefault();
                 }
             });
-            npwpInput.addEventListener('input', () => validateNomorNpwp(false));
+            npwpInput.addEventListener('input', () => {
+                validateNomorNpwp(false);
+                const npwpWrap = npwpInput.closest('.field-wrapper') || npwpInput.closest('.mb-3') || npwpInput.parentElement;
+                const statusBadge = npwpWrap ? npwpWrap.querySelector('.jde-npwp-status-badge') : null;
+                if (statusBadge) {
+                    const currentVal = npwpInput.value.replace(/\D/g, '');
+                    const originalJde = (npwpInput.dataset.jdeOriginalNpwp || '').replace(/\D/g, '');
+                    if (!originalJde || currentVal !== originalJde) {
+                        statusBadge.style.display = 'none';
+                        statusBadge.innerHTML = '';
+                    } else {
+                        statusBadge.style.display = 'block';
+                    }
+                }
+            });
             npwpInput.addEventListener('blur', () => validateNomorNpwp(true));
             if (npwpInput.value) validateNomorNpwp(false);
         }
@@ -3603,7 +3758,12 @@
         }
 
         if (topInput) {
-            topInput.className = 'form-control form-control-sm';
+            topInput.className = 'form-control form-control-sm bg-light jde-readonly-locked jde-autofill-readonly';
+            topInput.setAttribute('readonly', 'readonly');
+            topInput.style.setProperty('background-color', '#e2e8f0', 'important');
+            topInput.style.setProperty('border-color', '#94a3b8', 'important');
+            topInput.style.setProperty('color', '#0f172a', 'important');
+            topInput.style.setProperty('cursor', 'not-allowed', 'important');
             topInput.placeholder = 'Hari Kerja';
             topInput.style.removeProperty('max-width');
             topInput.style.removeProperty('min-width');
@@ -3612,7 +3772,12 @@
             topInput = document.createElement('input');
             topInput.type = 'number';
             topInput.name = 'top';
-            topInput.className = 'form-control form-control-sm';
+            topInput.className = 'form-control form-control-sm bg-light jde-readonly-locked jde-autofill-readonly';
+            topInput.setAttribute('readonly', 'readonly');
+            topInput.style.setProperty('background-color', '#e2e8f0', 'important');
+            topInput.style.setProperty('border-color', '#94a3b8', 'important');
+            topInput.style.setProperty('color', '#0f172a', 'important');
+            topInput.style.setProperty('cursor', 'not-allowed', 'important');
             topInput.placeholder = 'Hari Kerja';
             topInput.required = true;
         }

@@ -232,4 +232,14 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
 TELEGRAM_NOTIFICATIONS_ENABLED = os.getenv('TELEGRAM_NOTIFICATIONS_ENABLED', 'True').lower() in ('true', '1', 'yes')
 TELEGRAM_API_TIMEOUT = int(os.getenv('TELEGRAM_API_TIMEOUT', '10'))
 
+# JDE Orchestrator REST API Configuration
+JDE_ORCHESTRATOR_URL = os.getenv('JDE_ORCHESTRATOR_URL', 'http://192.215.215.99:9282/jderest/v3/orchestrator/Get_Customer')
+JDE_USERNAME = os.getenv('JDE_USERNAME', 'UDO')
+JDE_PASSWORD = os.getenv('JDE_PASSWORD', 'udoroyal')
+JDE_ENVIRONMENT = os.getenv('JDE_ENVIRONMENT', 'JPY920')
+JDE_ROLE = os.getenv('JDE_ROLE', '*ALL')
+JDE_API_TIMEOUT = int(os.getenv('JDE_API_TIMEOUT', '10'))
+JDE_CACHE_TIMEOUT = int(os.getenv('JDE_CACHE_TIMEOUT', '600'))  # 10 menit
+
+
 

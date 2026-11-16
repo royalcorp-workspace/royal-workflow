@@ -441,58 +441,50 @@ def toggle_notification_preference(request):
     return JsonResponse({"success": True, "enabled": current_enabled})
 
 
+def _normalize_jde_address(alamat: str) -> str:
+    """
+    Normalisasi format alamat JDE:
+    Mengubah pemisah tanda hubung (– atau - yang diapit spasi) menjadi tanda koma standar ', '.
+    Contoh: 'JL. JEND. SUDIRMAN NO. 510 CIROYOM – ANDIR – BANDUNG'
+         -> 'JL. JEND. SUDIRMAN NO. 510 CIROYOM, ANDIR, BANDUNG'
+    """
+    if not alamat:
+        return ""
+    import re
+    cleaned = re.sub(r'\s*[\u2013\u2014\-]\s*', ', ', str(alamat))
+    cleaned = re.sub(r',\s*,+', ',', cleaned)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip(', ')
+    return cleaned
+
+
+def _extract_city_from_address(alamat: str) -> str:
+    """
+    Ekstrak kota dari segmen terakhir alamat toko JDE.
+    Contoh: '... CIROYOM – ANDIR – BANDUNG' -> 'Bandung'
+    """
+    if not alamat:
+        return ""
+    import re
+    # Split by en-dash, em-dash, hyphen, or comma
+    parts = re.split(r'[\u2013\u2014\-,]+', str(alamat))
+    if parts:
+        candidate = parts[-1].strip()
+        candidate = re.sub(r'^\s*(KOTA|KABUPATEN|KAB\.)\s*', '', candidate, flags=re.IGNORECASE)
+        candidate = re.sub(r'\s*\d{5}\s*$', '', candidate).strip()
+        if len(candidate) >= 3:
+            return candidate.title()
+    return ""
+
+
 def jde_customer_lookup(request):
     """
-    Mock API endpoint for JDE customer lookup (/api/lookup/jde-customer/).
-    Returns mock customer data for auto-filling Step 1 of Permohonan Kontrak.
+    Live API endpoint proxy for JDE Orchestrator customer lookup (/api/lookup/jde-customer/).
+    Connects to JDE Orchestrator REST service (Get_Customer) with caching and graceful fallbacks.
     """
-    mock_customers = {
-        "150731": {
-            "customer_code": "150731",
-            "nama_toko": "SENIKMAT MEUBEL",
-            "nama_pemilik": "ABDUL MURAD",
-            "jabatan_pihak_kedua": "Owner / Pemilik",
-            "no_identitas": "5108011205750001",
-            "nomor_identitas": "5108011205750001",
-            "nomor_nik": "5108011205750001",
-            "nomor_npwp": "08.123.456.7-901.000",
-            "jenis_identitas": "NIK",
-            "alamat_toko": "JLN IMAM BONJOL NO 92 SINGARAJA",
-            "kota": "Singaraja",
-            "no_telepon": "0812-3456-7890",
-            "cabang": "Bali",
-        },
-        "150820": {
-            "customer_code": "150820",
-            "nama_toko": "MEUBEL MAJU JAYA",
-            "nama_pemilik": "HENDRA WIJAYA",
-            "jabatan_pihak_kedua": "Direktur Utama",
-            "no_identitas": "3171012304800002",
-            "nomor_identitas": "3171012304800002",
-            "nomor_nik": "3171012304800002",
-            "nomor_npwp": "01.987.654.3-123.000",
-            "jenis_identitas": "NIK",
-            "alamat_toko": "JL. RAYA SERPONG KM 7",
-            "kota": "Tangerang",
-            "no_telepon": "0818-0812-3456",
-            "cabang": "Jakarta",
-        },
-        "150999": {
-            "customer_code": "150999",
-            "nama_toko": "INDAH FURNITURE",
-            "nama_pemilik": "SITI RAHMAWATI",
-            "jabatan_pihak_kedua": "Pemilik Toko",
-            "no_identitas": "3273014506820003",
-            "nomor_identitas": "3273014506820003",
-            "nomor_nik": "3273014506820003",
-            "nomor_npwp": "02.345.678.9-456.000",
-            "jenis_identitas": "NIK",
-            "alamat_toko": "JL. SOEKARNO HATTA NO. 120",
-            "kota": "Bandung",
-            "no_telepon": "0821-1987-6543",
-            "cabang": "Bandung",
-        },
-    }
+    import re
+    import requests
+    from django.conf import settings
+    from django.core.cache import cache
 
     code = (
         request.GET.get("code")
@@ -502,32 +494,179 @@ def jde_customer_lookup(request):
         or ""
     ).strip()
 
-    if code:
-        customer = mock_customers.get(code)
-        if not customer:
-            # Case-insensitive / partial search
-            for c_code, c_data in mock_customers.items():
-                if code.lower() in c_code.lower() or code.lower() in c_data["nama_toko"].lower():
-                    customer = c_data
-                    break
+    if not code:
+        return JsonResponse({
+            "success": False,
+            "message": "Kode customer wajib diisi.",
+        }, status=400)
 
-        if customer:
+    # 1. Cek layer cache terlebih dahulu
+    cache_key = f"jde_customer_{code}"
+    cached_customer = cache.get(cache_key)
+    if cached_customer:
+        return JsonResponse({
+            "success": True,
+            "found": True,
+            "cached": True,
+            "customer": cached_customer,
+            "data": cached_customer,
+        })
+
+    # 2. Panggilan HTTP ke JDE Orchestrator
+    jde_url = getattr(settings, 'JDE_ORCHESTRATOR_URL', 'http://192.215.215.99:9282/jderest/v3/orchestrator/Get_Customer')
+    jde_user = getattr(settings, 'JDE_USERNAME', 'UDO')
+    jde_pass = getattr(settings, 'JDE_PASSWORD', 'udoroyal')
+    jde_env = getattr(settings, 'JDE_ENVIRONMENT', 'JPY920')
+    jde_role = getattr(settings, 'JDE_ROLE', '*ALL')
+    jde_timeout = getattr(settings, 'JDE_API_TIMEOUT', 10)
+    jde_cache_timeout = getattr(settings, 'JDE_CACHE_TIMEOUT', 600)
+
+    payload = {
+        "username": jde_user,
+        "password": jde_pass,
+        "environment": jde_env,
+        "role": jde_role,
+        "CustomerCode": code,
+    }
+
+    try:
+        resp = requests.post(
+            jde_url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=jde_timeout,
+        )
+
+        if resp.status_code == 200:
+            jde_data = resp.json()
+
+            # Verifikasi apakah JDE mengembalikan error payload atau data kosong
+            if jde_data.get("status") == "ERROR" or (not jde_data.get("nama_toko") and not jde_data.get("alamat_lengkap")):
+                return JsonResponse({
+                    "success": False,
+                    "found": False,
+                    "message": f"Customer JDE dengan kode '{code}' tidak ditemukan.",
+                }, status=404)
+
+            raw_alamat = jde_data.get("alamat_lengkap") or ""
+            normalized_alamat = _normalize_jde_address(raw_alamat)
+            extracted_city = _extract_city_from_address(raw_alamat)
+
+            # Parse payment terms (misal '045' -> 45)
+            raw_top = jde_data.get("payment_terms") or ""
+            top_days = None
+            top_digits = re.sub(r'\D', '', str(raw_top))
+            if top_digits:
+                try:
+                    top_days = int(top_digits)
+                except ValueError:
+                    top_days = None
+
+            customer = {
+                "customer_code": jde_data.get("kode_customer") or code,
+                "kode_customer": jde_data.get("kode_customer") or code,
+                "nama_toko": jde_data.get("nama_toko") or "",
+                "nama_pemilik": "",  # Dibuka untuk input manual
+                "alamat_lengkap": normalized_alamat,
+                "alamat_toko": normalized_alamat,
+                "raw_alamat": raw_alamat,
+                "no_telepon": jde_data.get("no_telepon") or "",
+                "npwp": jde_data.get("npwp") or "",
+                "nomor_npwp": jde_data.get("npwp") or "",
+                "status_npwp": jde_data.get("status_npwp") or "",
+                "payment_terms": raw_top,
+                "top_days": top_days,
+                "kota": extracted_city,
+            }
+
+            # Simpan ke cache
+            cache.set(cache_key, customer, timeout=jde_cache_timeout)
+
             return JsonResponse({
                 "success": True,
                 "found": True,
                 "customer": customer,
                 "data": customer,
             })
+
+        elif resp.status_code == 500:
+            return JsonResponse({
+                "success": False,
+                "found": False,
+                "message": f"Customer JDE dengan kode '{code}' tidak ditemukan.",
+            }, status=404)
+
+        else:
+            return JsonResponse({
+                "success": False,
+                "found": False,
+                "message": f"Layanan JDE mengembalikan status HTTP {resp.status_code}.",
+            }, status=resp.status_code)
+
+    except requests.Timeout:
         return JsonResponse({
             "success": False,
             "found": False,
-            "message": f"Customer dengan kode/nama '{code}' tidak ditemukan di database JDE.",
-        }, status=404)
+            "error": "timeout",
+            "message": "Koneksi ke JDE Orchestrator melebihi batas waktu (timeout). Silakan coba lagi.",
+        }, status=504)
 
-    return JsonResponse({
-        "success": True,
-        "customers": list(mock_customers.values()),
-    })
+    except requests.ConnectionError:
+        # Fallback ke mock data jika dalam environment development/offline
+        mock_fallback = {
+            "100228": {
+                "kode_customer": "100228",
+                "nama_toko": "VERONICA SB ( GAYA ABADI )",
+                "npwp": "094389459428000",
+                "status_npwp": "Valid",
+                "payment_terms": "045",
+                "alamat_lengkap": "JL. JEND. SUDIRMAN NO. 510 CIROYOM – ANDIR – BANDUNG",
+                "no_telepon": "6285220031919"
+            }
+        }
+        if code in mock_fallback:
+            mf = mock_fallback[code]
+            raw_alamat = mf.get("alamat_lengkap", "")
+            normalized_alamat = _normalize_jde_address(raw_alamat)
+            customer = {
+                "customer_code": mf["kode_customer"],
+                "kode_customer": mf["kode_customer"],
+                "nama_toko": mf["nama_toko"],
+                "nama_pemilik": "",
+                "alamat_lengkap": normalized_alamat,
+                "alamat_toko": normalized_alamat,
+                "raw_alamat": raw_alamat,
+                "no_telepon": mf["no_telepon"],
+                "npwp": mf["npwp"],
+                "nomor_npwp": mf["npwp"],
+                "status_npwp": mf["status_npwp"],
+                "payment_terms": mf["payment_terms"],
+                "top_days": 45,
+                "kota": _extract_city_from_address(raw_alamat),
+            }
+            return JsonResponse({
+                "success": True,
+                "found": True,
+                "offline_fallback": True,
+                "customer": customer,
+                "data": customer,
+            })
+
+        return JsonResponse({
+            "success": False,
+            "found": False,
+            "error": "offline",
+            "offline": True,
+            "message": "Server JDE Orchestrator (192.215.215.99) tidak dapat dijangkau. Silakan periksa koneksi VPN/jaringan.",
+        }, status=503)
+
+    except Exception as e:
+        return JsonResponse({
+            "success": False,
+            "found": False,
+            "message": f"Terjadi kesalahan saat menghubungi JDE: {str(e)}",
+        }, status=500)
+
 
 
 
