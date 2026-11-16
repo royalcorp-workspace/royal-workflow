@@ -413,12 +413,22 @@
                             draftInput.value = serverDraftMeta.dataset.draftId;
                         }
                         refreshAllGridsAndHeaders();
+                        const targetStepAfterModal = getSavedWizardStep(form, 3);
+                        if (targetStepAfterModal > 0 && typeof window.switchWizardStep === 'function') {
+                            window.switchWizardStep(targetStepAfterModal, false, false);
+                        }
                     });
                     updateAutoSaveStatus('idle');
                 }
             } else {
                 updateAutoSaveStatus('idle');
             }
+        }
+
+        // Ensure active wizard step is synchronized after draft or revision restoration
+        const targetSavedStep = getSavedWizardStep(form, 3);
+        if (targetSavedStep > 0 && typeof window.switchWizardStep === 'function') {
+            window.switchWizardStep(targetSavedStep, false, false);
         }
 
         // 9. Setup Client-side Draft Persistence & Auto-save
@@ -4195,7 +4205,79 @@
     /* --------------------------------------------------------------------------
      * 7. Wizard Footer Actions & Interactive Stepper Header Navigation
      * -------------------------------------------------------------------------- */
-            function setupWizardFooter(form) {
+    function getRecordStorageKey(form) {
+        const formSlug = form.dataset.formSlug || 'permohonan-kontrak';
+        const urlParams = new URLSearchParams(window.location.search);
+        const recordId = urlParams.get('draft') || urlParams.get('draft_id') || urlParams.get('revision') || urlParams.get('revision_id') || form.dataset.currentDraftId || 'new';
+        return `wizard_step_${formSlug}_${recordId}`;
+    }
+
+    function getSavedWizardStep(form, totalSteps = 3) {
+        const urlParams = new URLSearchParams(window.location.search);
+        // 1. URL parameter ?step=<n> (1-based: 1, 2, 3)
+        const stepParam = urlParams.get('step');
+        if (stepParam !== null) {
+            const parsed = parseInt(stepParam, 10);
+            if (!isNaN(parsed) && parsed >= 1) {
+                const idx = parsed - 1;
+                if (idx >= 0 && idx < totalSteps) {
+                    return idx;
+                }
+            }
+        }
+
+        // If fresh new form navigation (no step, no draft, no revision), clear stale new key and return 0
+        if (!urlParams.has('step') && !urlParams.has('draft') && !urlParams.has('draft_id') && !urlParams.has('revision') && !urlParams.has('revision_id')) {
+            try {
+                const formSlug = form.dataset.formSlug || 'permohonan-kontrak';
+                sessionStorage.removeItem(`wizard_step_${formSlug}_new`);
+            } catch (e) {}
+            return 0;
+        }
+
+        // 2. SessionStorage fallback if working on an existing draft or revision
+        const recordKey = getRecordStorageKey(form);
+        if (!recordKey.endsWith('_new')) {
+            try {
+                const saved = sessionStorage.getItem(recordKey);
+                if (saved !== null) {
+                    const parsed = parseInt(saved, 10);
+                    if (!isNaN(parsed) && parsed >= 0 && parsed < totalSteps) {
+                        return parsed;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        return 0; // Default to Step 1 (index 0)
+    }
+
+    function persistWizardStep(form, stepIndex) {
+        const stepNumber = stepIndex + 1; // 1-based (1, 2, 3)
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set('step', String(stepNumber));
+            window.history.replaceState(window.history.state, '', url.toString());
+        } catch (e) {
+            console.warn('[KontrakWizard] Failed to update step in URL:', e);
+        }
+
+        try {
+            const recordKey = getRecordStorageKey(form);
+            sessionStorage.setItem(recordKey, String(stepIndex));
+        } catch (e) {}
+    }
+
+    function clearWizardStepStorage(form) {
+        try {
+            const recordKey = getRecordStorageKey(form);
+            sessionStorage.removeItem(recordKey);
+            const formSlug = form.dataset.formSlug || 'permohonan-kontrak';
+            sessionStorage.removeItem(`wizard_step_${formSlug}_new`);
+        } catch (e) {}
+    }
+
+    function setupWizardFooter(form) {
         // Ambil elemen seluruh tombol yang relevan di form
         const btnBackToForms = form.querySelector('#btnBackToForms') || Array.from(form.querySelectorAll('a, button')).find(el => (el.textContent || '').includes('Kembali ke Riwayat'));
         const btnPrev = form.querySelector('#btnWizardPrev') || document.getElementById('btnWizardPrev') || form.querySelector('.btn-wizard-prev') || document.querySelector('.btn-wizard-prev');
@@ -4399,7 +4481,7 @@
         }
 
         // Core Step Switching Function
-        function switchWizardStep(targetStep, validate) {
+        function switchWizardStep(targetStep, validate, shouldScroll = true) {
             console.log(`[Wizard Navigation] switchWizardStep dipanggil: targetStep=${targetStep}, validate=${validate}`);
             if (targetStep < 0 || targetStep > 2) return false;
 
@@ -4717,13 +4799,16 @@
             }
 
             // 7. Smooth Scroll to top of form
-            const formCard = form.closest('.card') || form;
-            if (formCard) {
-                const rect = formCard.getBoundingClientRect();
-                const topY = window.pageYOffset + rect.top - 80;
-                window.scrollTo({ top: Math.max(0, topY), behavior: 'smooth' });
+            if (shouldScroll) {
+                const formCard = form.closest('.card') || form;
+                if (formCard) {
+                    const rect = formCard.getBoundingClientRect();
+                    const topY = window.pageYOffset + rect.top - 80;
+                    window.scrollTo({ top: Math.max(0, topY), behavior: 'smooth' });
+                }
             }
 
+            persistWizardStep(form, targetStep);
             window.switchWizardStep = switchWizardStep;
             console.log(`[Wizard Navigation] Berhasil berpindah ke Step ${targetStep + 1}.`);
             return true;
@@ -4872,8 +4957,17 @@
             bodyObs.observe(document.body, { childList: true, subtree: true });
         }
 
-        // Initial UI synchronization (ensure Step 1 is isolated on load)
-        switchWizardStep(0, false);
+        // Initial UI synchronization (restore saved active step or default to Step 1)
+        const initialSavedStep = getSavedWizardStep(form, 3);
+        switchWizardStep(initialSavedStep, false, false);
+
+        // Bind popstate to support browser Back / Forward buttons smoothly
+        window.addEventListener('popstate', function () {
+            const popStep = getSavedWizardStep(form, 3);
+            if (getCurrentStepIndex() !== popStep && typeof switchWizardStep === 'function') {
+                switchWizardStep(popStep, false, false);
+            }
+        });
     }
 
     /* --------------------------------------------------------------------------
@@ -5155,6 +5249,7 @@
 
     async function discardDraft(form, skipConfirm) {
         if (skipConfirm || confirm('Apakah Anda yakin ingin membuang draft dan mengosongkan seluruh formulir?')) {
+            clearWizardStepStorage(form);
             try {
                 localStorage.removeItem(STORAGE_KEY);
             } catch (e) {}
@@ -5419,6 +5514,7 @@
                 try {
                     localStorage.removeItem(STORAGE_KEY);
                 } catch (err) {}
+                clearWizardStepStorage(form);
             }
         });
 
