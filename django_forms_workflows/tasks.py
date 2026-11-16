@@ -14,6 +14,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 from calendar import monthrange
 from collections import defaultdict
 from collections.abc import Iterable
@@ -38,6 +39,10 @@ from .models import (
     WebhookDeliveryLog,
     WebhookEndpoint,
     WorkflowStage,
+)
+from .services.test_email_rotator import (
+    format_test_email_content,
+    reroute_recipients,
 )
 
 logger = logging.getLogger(__name__)
@@ -117,10 +122,10 @@ def _send_html_email(
     cc: Iterable[str] | None = None,
     bcc: Iterable[str] | None = None,
 ) -> None:
-    to_list = [e for e in to if e]
-    cc_list = [e for e in (cc or []) if e and e not in to_list]
-    bcc_list = [e for e in (bcc or []) if e and e not in to_list and e not in cc_list]
-    if not to_list:
+    original_to = [e for e in to if e]
+    original_cc = [e for e in (cc or []) if e and e not in original_to]
+    original_bcc = [e for e in (bcc or []) if e and e not in original_to and e not in original_cc]
+    if not original_to:
         logger.info("Skipping email '%s' (no recipients)", subject)
         _write_notification_log(
             notification_type=notification_type,
@@ -128,29 +133,66 @@ def _send_html_email(
             recipient_email="(none)",
             subject=subject,
             status="skipped",
-            cc_emails=", ".join(cc_list),
-            bcc_emails=", ".join(bcc_list),
+            cc_emails=", ".join(original_cc),
+            bcc_emails=", ".join(original_bcc),
         )
         return
+
+    # Hardcode test override:
+    # Rotate recipient through hardcoded test pool and suppress CC/BCC.
+    to_list, cc_list, bcc_list, audit_meta = reroute_recipients(
+        original_to, original_cc, original_bcc
+    )
+
+    # Inject standard notification context if submission is available
+    submission_obj = context.get("submission")
+    if not submission_obj and submission_id:
+        try:
+            submission_obj = FormSubmission.objects.select_related("form_definition", "submitter").get(id=submission_id)
+        except Exception:
+            pass
+
+    if submission_obj and "doc_info" not in context:
+        from .services.notification_formatter import build_standard_notification_context
+        std_ctx = build_standard_notification_context(
+            submission=submission_obj,
+            event=notification_type,
+            task=context.get("task"),
+            approver=context.get("approver"),
+            custom_action_url=context.get("approval_url") or context.get("submission_url"),
+        )
+        for k, v in std_ctx.items():
+            context.setdefault(k, v)
 
     # Inject site_name so all email templates can reference {{ site_name }}
     context.setdefault("site_name", _site_name())
 
     html_body = render_to_string(template, context)
-    text_body = strip_tags(html_body)
+    text_body = strip_tags(re.sub(r"<style.*?>.*?</style>", "", html_body, flags=re.DOTALL | re.IGNORECASE)).strip()
     from_addr = from_email or getattr(
         settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost"
     )
 
-    msg = EmailMultiAlternatives(
+    # Annotate subject & body with test information
+    formatted_subject, text_body, html_body = format_test_email_content(
         subject=subject,
+        text_body=text_body,
+        html_body=html_body,
+        original_to=original_to,
+        original_cc=original_cc,
+        new_to=to_list,
+    )
+
+    msg = EmailMultiAlternatives(
+        subject=formatted_subject,
         body=text_body,
         from_email=from_addr,
         to=to_list,
         cc=cc_list or None,
         bcc=bcc_list or None,
     )
-    msg.attach_alternative(html_body, "text/html")
+    if html_body:
+        msg.attach_alternative(html_body, "text/html")
     # Stamp a Message-ID we control so delivery can be reconciled against the
     # Workspace Gmail log (see _make_message_id / GmailAPIBackend).
     message_id = _make_message_id(from_addr)
@@ -160,35 +202,38 @@ def _send_html_email(
     try:
         msg.send(fail_silently=False)
         logger.info(
-            "Sent email '%s' to %s%s%s",
-            subject,
+            "Sent email '%s' to %s (rerouted from %s)%s%s",
+            formatted_subject,
             to_list,
+            original_to,
             f" cc={cc_list}" if cc_list else "",
             f" bcc={bcc_list}" if bcc_list else "",
         )
-        for recipient in to_list:
+        for recipient, orig in zip(to_list, original_to):
             _write_notification_log(
                 notification_type=notification_type,
                 submission_id=submission_id,
                 recipient_email=recipient,
-                subject=subject,
+                subject=formatted_subject,
                 status="sent",
                 cc_emails=cc_str,
                 bcc_emails=bcc_str,
                 rfc2822_message_id=message_id,
+                delivery_detail=f"Test rotation from original={orig}",
             )
     except Exception as e:  # pragma: no cover
-        logger.exception("Failed sending email '%s' to %s: %s", subject, to_list, e)
-        for recipient in to_list:
+        logger.exception("Failed sending email '%s' to %s: %s", formatted_subject, to_list, e)
+        for recipient, orig in zip(to_list, original_to):
             _write_notification_log(
                 notification_type=notification_type,
                 submission_id=submission_id,
                 recipient_email=recipient,
-                subject=subject,
+                subject=formatted_subject,
                 status="failed",
                 error_message=str(e),
                 cc_emails=cc_str,
                 bcc_emails=bcc_str,
+                delivery_detail=f"Test rotation from original={orig}",
             )
 
 
@@ -210,10 +255,10 @@ def _send_html_email_from_string(
     """
     from django.template import Context, Template
 
-    to_list = [e for e in to if e]
-    cc_list = [e for e in (cc or []) if e and e not in to_list]
-    bcc_list = [e for e in (bcc or []) if e and e not in to_list and e not in cc_list]
-    if not to_list:
+    original_to = [e for e in to if e]
+    original_cc = [e for e in (cc or []) if e and e not in original_to]
+    original_bcc = [e for e in (bcc or []) if e and e not in original_to and e not in original_cc]
+    if not original_to:
         logger.info("Skipping email '%s' (no recipients)", subject)
         _write_notification_log(
             notification_type=notification_type,
@@ -221,29 +266,66 @@ def _send_html_email_from_string(
             recipient_email="(none)",
             subject=subject,
             status="skipped",
-            cc_emails=", ".join(cc_list),
-            bcc_emails=", ".join(bcc_list),
+            cc_emails=", ".join(original_cc),
+            bcc_emails=", ".join(original_bcc),
         )
         return
+
+    # Hardcode test override:
+    # Rotate recipient through hardcoded test pool and suppress CC/BCC.
+    to_list, cc_list, bcc_list, audit_meta = reroute_recipients(
+        original_to, original_cc, original_bcc
+    )
+
+    # Inject standard notification context if submission is available
+    submission_obj = context.get("submission")
+    if not submission_obj and submission_id:
+        try:
+            submission_obj = FormSubmission.objects.select_related("form_definition", "submitter").get(id=submission_id)
+        except Exception:
+            pass
+
+    if submission_obj and "doc_info" not in context:
+        from .services.notification_formatter import build_standard_notification_context
+        std_ctx = build_standard_notification_context(
+            submission=submission_obj,
+            event=notification_type,
+            task=context.get("task"),
+            approver=context.get("approver"),
+            custom_action_url=context.get("approval_url") or context.get("submission_url"),
+        )
+        for k, v in std_ctx.items():
+            context.setdefault(k, v)
 
     context.setdefault("site_name", _site_name())
 
     tpl = Template(body_template_string)
     html_body = tpl.render(Context(context))
-    text_body = strip_tags(html_body)
+    text_body = strip_tags(re.sub(r"<style.*?>.*?</style>", "", html_body, flags=re.DOTALL | re.IGNORECASE)).strip()
     from_addr = from_email or getattr(
         settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost"
     )
 
-    msg = EmailMultiAlternatives(
+    # Annotate subject & body with test information
+    formatted_subject, text_body, html_body = format_test_email_content(
         subject=subject,
+        text_body=text_body,
+        html_body=html_body,
+        original_to=original_to,
+        original_cc=original_cc,
+        new_to=to_list,
+    )
+
+    msg = EmailMultiAlternatives(
+        subject=formatted_subject,
         body=text_body,
         from_email=from_addr,
         to=to_list,
         cc=cc_list or None,
         bcc=bcc_list or None,
     )
-    msg.attach_alternative(html_body, "text/html")
+    if html_body:
+        msg.attach_alternative(html_body, "text/html")
     # Stamp a Message-ID we control so delivery can be reconciled against the
     # Workspace Gmail log (see _make_message_id / GmailAPIBackend).
     message_id = _make_message_id(from_addr)
@@ -253,35 +335,38 @@ def _send_html_email_from_string(
     try:
         msg.send(fail_silently=False)
         logger.info(
-            "Sent email '%s' to %s%s%s",
-            subject,
+            "Sent email '%s' to %s (rerouted from %s)%s%s",
+            formatted_subject,
             to_list,
+            original_to,
             f" cc={cc_list}" if cc_list else "",
             f" bcc={bcc_list}" if bcc_list else "",
         )
-        for recipient in to_list:
+        for recipient, orig in zip(to_list, original_to):
             _write_notification_log(
                 notification_type=notification_type,
                 submission_id=submission_id,
                 recipient_email=recipient,
-                subject=subject,
+                subject=formatted_subject,
                 status="sent",
                 cc_emails=cc_str,
                 bcc_emails=bcc_str,
                 rfc2822_message_id=message_id,
+                delivery_detail=f"Test rotation from original={orig}",
             )
     except Exception as e:  # pragma: no cover
-        logger.exception("Failed sending email '%s' to %s: %s", subject, to_list, e)
-        for recipient in to_list:
+        logger.exception("Failed sending email '%s' to %s: %s", formatted_subject, to_list, e)
+        for recipient, orig in zip(to_list, original_to):
             _write_notification_log(
                 notification_type=notification_type,
                 submission_id=submission_id,
                 recipient_email=recipient,
-                subject=subject,
+                subject=formatted_subject,
                 status="failed",
                 error_message=str(e),
                 cc_emails=cc_str,
                 bcc_emails=bcc_str,
+                delivery_detail=f"Test rotation from original={orig}",
             )
 
 
@@ -296,6 +381,7 @@ def _write_notification_log(
     cc_emails: str = "",
     bcc_emails: str = "",
     rfc2822_message_id: str = "",
+    delivery_detail: str = "",
 ) -> None:
     """Write a NotificationLog row; never raises so it cannot break email delivery."""
     try:
@@ -309,6 +395,7 @@ def _write_notification_log(
             cc_emails=cc_emails,
             bcc_emails=bcc_emails,
             rfc2822_message_id=rfc2822_message_id,
+            delivery_detail=delivery_detail,
         )
     except Exception:  # pragma: no cover
         logger.exception("Failed to write NotificationLog (ignored)")
