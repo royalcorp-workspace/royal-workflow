@@ -1374,4 +1374,101 @@ table.clause-table td.cell-currency {
     line-height: 1.4 !important;
 }
 
+/* ==========================================================================
+   Nomor NPWP Field Layout Isolation Anti-Overlap & Dynamic Badge Ordering
+   ========================================================================== */
+.row.fields-aligned-row > .field-wrapper.field-nomor_npwp,
+.row.fields-aligned-row > .field-wrapper.field-nomor_npwp > .mb-3,
+.field-nomor_npwp #div_id_nomor_npwp,
+#div_id_nomor_npwp {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    grid-template-rows: none !important;
+}
+
+/* Order 1: Label */
+#div_id_nomor_npwp > label,
+.field-nomor_npwp label {
+    order: 1 !important;
+    align-self: flex-start !important;
+    text-align: left !important;
+    width: auto !important;
+    margin-bottom: 0.35rem !important;
+}
+
+/* Order 2: Input Field */
+#div_id_nomor_npwp > :is(input, select, textarea, .input-group),
+.field-nomor_npwp :is(input, select, textarea, .input-group) {
+    order: 2 !important;
+    align-self: stretch !important;
+    width: 100% !important;
+}
+
+/* Order 3: Feedback Validasi Internal (Error Merah / Sukses Hijau) */
+#div_id_nomor_npwp > :is(.invalid-feedback, .valid-feedback, .nomor-npwp-feedback, [class*="-feedback"]),
+.field-nomor_npwp :is(.invalid-feedback, .valid-feedback, .nomor-npwp-feedback, [class*="-feedback"]) {
+    order: 3 !important;
+    align-self: flex-start !important;
+    text-align: left !important;
+    position: static !important;
+    clear: both !important;
+    width: 100% !important;
+    margin-top: 0.35rem !important;
+    margin-bottom: 0.25rem !important;
+    line-height: 1.4 !important;
+}
+
+#div_id_nomor_npwp > :is(.invalid-feedback, .valid-feedback, .nomor-npwp-feedback, [class*="-feedback"])[style*="display: none"],
+#div_id_nomor_npwp > :is(.invalid-feedback, .valid-feedback, .nomor-npwp-feedback, [class*="-feedback"]).d-none {
+    display: none !important;
+}
+
+/* Order 4: Badge Status JDE (Baris Mandiri) */
+#div_id_nomor_npwp > .jde-npwp-status-badge,
+.field-nomor_npwp .jde-npwp-status-badge {
+    order: 4 !important;
+    align-self: flex-start !important;
+    display: block !important;
+    width: 100% !important;
+    margin-top: 0.35rem !important;
+    margin-bottom: 0.25rem !important;
+    line-height: 1.4 !important;
+}
+
+#div_id_nomor_npwp > .jde-npwp-status-badge[style*="display: none"],
+#div_id_nomor_npwp > .jde-npwp-status-badge.d-none {
+    display: none !important;
+}
+
+/* Order 5: Helper Text Bawaan */
+#div_id_nomor_npwp > :is(.form-text, .help-block, small),
+.field-nomor_npwp :is(.form-text, .help-block, small) {
+    order: 5 !important;
+    align-self: flex-start !important;
+    text-align: left !important;
+    position: static !important;
+    clear: both !important;
+    display: block !important;
+    width: 100% !important;
+    margin-top: 0.35rem !important;
+    margin-bottom: 0 !important;
+    line-height: 1.4 !important;
+}
+
+/* ==========================================================================
+   TOP (Term of Payment) & Nomor NPWP Readonly Locked Styling (JDE Autofill)
+   ========================================================================== */
+input[name="top"].jde-autofill-readonly,
+input[name="top"][readonly],
+input[name="nomor_npwp"].jde-autofill-readonly,
+input[name="nomor_npwp"][readonly] {
+    background-color: #e2e8f0 !important;
+    border-color: #94a3b8 !important;
+    color: #0f172a !important;
+    cursor: not-allowed !important;
+    font-weight: 500 !important;
+}
+
+
 
