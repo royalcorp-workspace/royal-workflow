@@ -117,107 +117,44 @@ def send_telegram_message(
 
 def format_workflow_telegram_message(submission, event: str, task=None) -> str:
     """
-    Formats a clean, enterprise-grade Markdown message for Telegram.
+    Formats a clean Telegram message matching Telegram Notifikasi standard.
     """
-    form_data = submission.form_data or {}
-    form_name = submission.form_definition.name
-    submitter_name = (
-        submission.submitter.get_full_name() or submission.submitter.username
-        if submission.submitter
-        else "Inisiator"
-    )
-    base_url = os.getenv("SITE_URL", "http://localhost:8069").rstrip("/")
-    detail_url = f"{base_url}/forms/submissions/{submission.id}/"
-    approval_url = f"{base_url}/forms/approvals/"
-
-    task_name = (
-        form_data.get("nama_kegiatan")
-        or form_data.get("nama_task")
-        or form_data.get("nomor_spk")
-        or form_name
+    from django_forms_workflows.services.notification_formatter import (
+        extract_document_info,
+        get_event_wording,
+        get_notification_action_url,
     )
 
-    # Dynamic extra fields for financial or technical forms
-    extra_lines = []
-    total_nominal = form_data.get("total_nominal")
-    if total_nominal:
-        try:
-            nom_formatted = f"Rp {int(float(total_nominal)):,}".replace(",", ".")
-            extra_lines.append(f"💰 *Nominal Biaya:* `{nom_formatted}`")
-        except Exception:
-            extra_lines.append(f"💰 *Nominal Biaya:* `Rp {total_nominal}`")
+    doc_info = extract_document_info(submission, task=task)
+    wording = get_event_wording(event, submission=submission, task=task)
+    action_url = get_notification_action_url(submission, task=task)
 
-    cabang = form_data.get("cabang")
-    divisi = form_data.get("divisi_pemohon")
-    if cabang:
-        unit_str = f"{cabang} ({divisi})" if divisi else cabang
-        extra_lines.append(f"🏢 *Unit Kerja:* `{unit_str}`")
-    elif form_data.get("target_environment"):
-        extra_lines.append(f"🏢 *Target Server:* `{form_data.get('target_environment')}`")
+    emoji = wording["emoji"]
+    judul = wording["judul_notifikasi"]
+    info_singkat = wording["event_message"]
+    status_label = wording["status_label"]
+    action_inst = wording["action_instruction"]
 
-    if form_data.get("kategori_biaya"):
-        extra_lines.append(f"📂 *Kategori:* `{form_data.get('kategori_biaya')}`")
-    elif form_data.get("mail_provider"):
-        extra_lines.append(f"⚙️ *Provider:* `{form_data.get('mail_provider')}`")
+    action_block = f"\n{action_inst}\n" if action_inst else ""
 
-    extra_info_block = "\n".join(extra_lines) + "\n" if extra_lines else ""
-
-    if event == "approval_reminder":
-        return (
-            f"⏰ *[REMINDER] PERSETUJUAN TERTUNDA*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📌 *Pengajuan:* {task_name}\n"
-            f"{extra_info_block}"
-            f"👤 *Inisiator:* {submitter_name}\n"
-            f"🆔 *Ref Tiket:* `#{submission.id}`\n\n"
-            f"⚠️ *Perhatian:* Pengajuan ini masih menunggu review dan persetujuan dari peninjau.\n\n"
-            f"👉 [Review & Selesaikan Sekarang]({approval_url})\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"_Royal Workflow Automated Reminder_"
-        )
-
-    elif event == "approval_request":
-        return (
-            f"🔔 *[ROYAL WORKFLOW] PERSETUJUAN DIPERLUKAN*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📌 *Pengajuan:* {task_name}\n"
-            f"{extra_info_block}"
-            f"👤 *Diajukan Oleh:* {submitter_name}\n"
-            f"🆔 *Ref Pengajuan:* `#{submission.id}`\n\n"
-            f"Dokumen dan rincian telah diajukan dan siap dievaluasi oleh Tim Reviewer.\n\n"
-            f"👉 [Review & Otorisasi di Sistem]({approval_url})\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"_Royal Workflow Notifications_"
-        )
-
-    elif event == "workflow_approved":
-        return (
-            f"✅ *[APPROVED] PENGAJUAN DISETUJUI PENUH*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📌 *Pengajuan:* {task_name}\n"
-            f"{extra_info_block}"
-            f"👤 *Inisiator:* {submitter_name}\n"
-            f"🆔 *Ref Tiket:* `#{submission.id}`\n\n"
-            f"Seluruh tahap persetujuan telah selesai dan pengajuan resmi disahkan.\n\n"
-            f"📄 [Lihat Detail Pengajuan]({detail_url})\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"_Royal Workflow Notifications_"
-        )
-
-    else:
-        # Default: submission_received
-        return (
-            f"📥 *[ROYAL WORKFLOW] PENGAJUAN BARU DITERIMA*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"📌 *Pengajuan:* {task_name}\n"
-            f"{extra_info_block}"
-            f"👤 *Inisiator:* {submitter_name}\n"
-            f"🆔 *Ref Tiket:* `#{submission.id}`\n\n"
-            f"Pengajuan berhasil dicatat dan masuk ke antrean review persetujuan.\n\n"
-            f"📄 [Buka Detail Tiket]({detail_url})\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"_Royal Workflow Notifications_"
-        )
+    message = (
+        f"{emoji} [ROYAL WORKFLOW] [{judul}]\n\n"
+        f"{info_singkat}\n\n"
+        f"📄 Informasi Dokumen\n"
+        f"Jenis Dokumen: {doc_info['jenis_dokumen']}\n"
+        f"No. Pengajuan: {doc_info['nomor_pengajuan']}\n"
+        f"Unit Kerja: {doc_info['unit_kerja']}\n"
+        f"Pemohon: {doc_info['pemohon']}\n\n"
+        f"🎯 Tujuan Pengajuan\n"
+        f"{doc_info['tujuan_pengajuan']}\n\n"
+        f"📌 Status\n"
+        f"{status_label}\n"
+        f"{action_block}\n"
+        f"📑 Detail Pengajuan\n"
+        f"{action_url}\n\n"
+        f"Royal Workflow Notifications"
+    )
+    return message
 
 
 def dispatch_telegram_workflow_event(submission_id: int, event: str, task_id: int | None = None) -> bool:

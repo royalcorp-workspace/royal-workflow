@@ -14,6 +14,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 from calendar import monthrange
 from collections import defaultdict
 from collections.abc import Iterable
@@ -143,11 +144,31 @@ def _send_html_email(
         original_to, original_cc, original_bcc
     )
 
+    # Inject standard notification context if submission is available
+    submission_obj = context.get("submission")
+    if not submission_obj and submission_id:
+        try:
+            submission_obj = FormSubmission.objects.select_related("form_definition", "submitter").get(id=submission_id)
+        except Exception:
+            pass
+
+    if submission_obj and "doc_info" not in context:
+        from .services.notification_formatter import build_standard_notification_context
+        std_ctx = build_standard_notification_context(
+            submission=submission_obj,
+            event=notification_type,
+            task=context.get("task"),
+            approver=context.get("approver"),
+            custom_action_url=context.get("approval_url") or context.get("submission_url"),
+        )
+        for k, v in std_ctx.items():
+            context.setdefault(k, v)
+
     # Inject site_name so all email templates can reference {{ site_name }}
     context.setdefault("site_name", _site_name())
 
     html_body = render_to_string(template, context)
-    text_body = strip_tags(html_body)
+    text_body = strip_tags(re.sub(r"<style.*?>.*?</style>", "", html_body, flags=re.DOTALL | re.IGNORECASE)).strip()
     from_addr = from_email or getattr(
         settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost"
     )
@@ -256,11 +277,31 @@ def _send_html_email_from_string(
         original_to, original_cc, original_bcc
     )
 
+    # Inject standard notification context if submission is available
+    submission_obj = context.get("submission")
+    if not submission_obj and submission_id:
+        try:
+            submission_obj = FormSubmission.objects.select_related("form_definition", "submitter").get(id=submission_id)
+        except Exception:
+            pass
+
+    if submission_obj and "doc_info" not in context:
+        from .services.notification_formatter import build_standard_notification_context
+        std_ctx = build_standard_notification_context(
+            submission=submission_obj,
+            event=notification_type,
+            task=context.get("task"),
+            approver=context.get("approver"),
+            custom_action_url=context.get("approval_url") or context.get("submission_url"),
+        )
+        for k, v in std_ctx.items():
+            context.setdefault(k, v)
+
     context.setdefault("site_name", _site_name())
 
     tpl = Template(body_template_string)
     html_body = tpl.render(Context(context))
-    text_body = strip_tags(html_body)
+    text_body = strip_tags(re.sub(r"<style.*?>.*?</style>", "", html_body, flags=re.DOTALL | re.IGNORECASE)).strip()
     from_addr = from_email or getattr(
         settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost"
     )
