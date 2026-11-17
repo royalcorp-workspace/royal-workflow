@@ -112,16 +112,33 @@ def custom_form_submit(request, slug):
                     post["cabang"] = ep.branch
                 if not post.get("perusahaan") and ep.company:
                     post["perusahaan"] = ep.company
-            brand = (post.get("brand") or "LADY").upper().replace(" ", "")
-            cabang_raw = post.get("cabang") or (ep.branch if ep else "Tangerang")
-            cabang = cabang_raw.title().replace(" ", "")
             today = datetime.date.today()
-            year = today.year
-            month = today.month
             current_spk = post.get("nomor_spk", "").strip()
-            if not current_spk or "OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-"):
-                seq = FormSubmission.objects.filter(form_definition__slug="permohonan-kontrak").exclude(status__in=["draft", "withdrawn"]).count() + 1
-                post["nomor_spk"] = f"No. {seq:04d}/{brand}/{cabang}/{month}/{year}"
+            if not current_spk or "OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-") or "No." in current_spk or "/SK-" not in current_spk:
+                from django_forms_workflows.company_profiles import format_official_spk_number, get_next_spk_sequence, resolve_company_profile
+                comp_prof = resolve_company_profile(
+                    form_data={"cabang": post.get("cabang"), "brand": post.get("brand"), "perusahaan": post.get("perusahaan")},
+                    user=request.user,
+                )
+                perusahaan_val = post.get("perusahaan") or comp_prof.get("display_name", "PT Anugrah Cemerlang Abadi")
+                brand_val = post.get("brand") or "Lady Americana"
+                cabang_val = post.get("cabang") or (ep.branch if ep else "PUSAT")
+                seq = get_next_spk_sequence(
+                    cabang=cabang_val,
+                    brand=brand_val,
+                    perusahaan=perusahaan_val,
+                    year=today.year,
+                    form_slug="permohonan-kontrak",
+                    company_profile=comp_prof,
+                )
+                post["nomor_spk"] = format_official_spk_number(
+                    nomor=seq,
+                    brand=brand_val,
+                    cabang=cabang_val,
+                    date_val=today,
+                    company_profile=comp_prof,
+                    perusahaan=perusahaan_val,
+                )
 
             if not post.get("kota_penandatanganan"):
                 from django_forms_workflows.views import resolve_default_signing_city
@@ -139,12 +156,34 @@ def custom_form_submit(request, slug):
         latest = FormSubmission.objects.filter(form_definition__slug="permohonan-kontrak").order_by("-id").first()
         if latest and latest.form_data:
             updated = False
-            spk = latest.form_data.get("nomor_spk", "")
-            if not spk or "OTOMATIS" in str(spk).upper() or str(spk).startswith("AUTO-") or "{" in str(spk) or str(spk).startswith("SPK-"):
-                b = str(latest.form_data.get("brand", "LADY")).upper().replace(" ", "")
-                c = str(latest.form_data.get("cabang", "Tangerang")).title().replace(" ", "")
-                today = latest.submitted_at if latest.submitted_at else datetime.date.today()
-                latest.form_data["nomor_spk"] = f"No. {latest.id:04d}/{b}/{c}/{today.month}/{today.year}"
+            spk = str(latest.form_data.get("nomor_spk") or "").strip()
+            if not spk or "OTOMATIS" in spk.upper() or spk.startswith("AUTO-") or "{" in spk or spk.startswith("SPK-") or "No." in spk or "/SK-" not in spk:
+                from django_forms_workflows.company_profiles import format_official_spk_number, get_next_spk_sequence, resolve_company_profile
+                comp_prof = resolve_company_profile(
+                    form_data=latest.form_data,
+                    user=latest.submitter,
+                )
+                perusahaan_val = latest.form_data.get("perusahaan") or comp_prof.get("display_name", "PT Anugrah Cemerlang Abadi")
+                brand_val = latest.form_data.get("brand") or "Lady Americana"
+                cabang_val = latest.form_data.get("cabang") or "PUSAT"
+                tgl = latest.submitted_at.date() if latest.submitted_at else datetime.date.today()
+                seq = get_next_spk_sequence(
+                    cabang=cabang_val,
+                    brand=brand_val,
+                    perusahaan=perusahaan_val,
+                    year=tgl.year,
+                    form_slug="permohonan-kontrak",
+                    exclude_submission_id=latest.id,
+                    company_profile=comp_prof,
+                )
+                latest.form_data["nomor_spk"] = format_official_spk_number(
+                    nomor=seq,
+                    brand=brand_val,
+                    cabang=cabang_val,
+                    date_val=tgl,
+                    company_profile=comp_prof,
+                    perusahaan=perusahaan_val,
+                )
                 updated = True
 
             if not latest.form_data.get("kota_penandatanganan"):
@@ -562,11 +601,22 @@ def jde_customer_lookup(request):
                 except ValueError:
                     top_days = None
 
+            # Parse nama_pemilik, email, dan nik dari JDE
+            raw_nama_pemilik = str(jde_data.get("nama_pemilik") or "").strip()
+            nama_pemilik = "" if raw_nama_pemilik in ("", "-", "—") else raw_nama_pemilik
+
+            raw_email = str(jde_data.get("email") or "").strip().lower()
+            email = "" if raw_email in ("", "-", "—") else raw_email
+
+            raw_nik = str(jde_data.get("nik") or jde_data.get("nomor_nik") or "").strip()
+            nik_digits = re.sub(r'\D', '', raw_nik)
+            nik = nik_digits if len(nik_digits) == 16 else (nik_digits if nik_digits else "")
+
             customer = {
                 "customer_code": jde_data.get("kode_customer") or code,
                 "kode_customer": jde_data.get("kode_customer") or code,
                 "nama_toko": jde_data.get("nama_toko") or "",
-                "nama_pemilik": "",  # Dibuka untuk input manual
+                "nama_pemilik": nama_pemilik,
                 "alamat_lengkap": normalized_alamat,
                 "alamat_toko": normalized_alamat,
                 "raw_alamat": raw_alamat,
@@ -577,6 +627,9 @@ def jde_customer_lookup(request):
                 "payment_terms": raw_top,
                 "top_days": top_days,
                 "kota": extracted_city,
+                "nik": nik,
+                "nomor_nik": nik,
+                "email": email,
             }
 
             # Simpan ke cache
@@ -614,6 +667,18 @@ def jde_customer_lookup(request):
     except requests.ConnectionError:
         # Fallback ke mock data jika dalam environment development/offline
         mock_fallback = {
+            "100107": {
+                "kode_customer": "100107",
+                "nama_toko": "Yudi Cahyadi",
+                "npwp": "000000000000000",
+                "status_npwp": "Valid",
+                "payment_terms": "045",
+                "alamat_lengkap": "Jl. Dayeuh Kolot Bandung",
+                "no_telepon": "6285860313007",
+                "nik": "3204321002760002",
+                "nama_pemilik": "Yudi Cahyadi",
+                "email": "yudiaman37@gmail.com",
+            },
             "100228": {
                 "kode_customer": "100228",
                 "nama_toko": "VERONICA SB ( GAYA ABADI )",
@@ -621,18 +686,32 @@ def jde_customer_lookup(request):
                 "status_npwp": "Valid",
                 "payment_terms": "045",
                 "alamat_lengkap": "JL. JEND. SUDIRMAN NO. 510 CIROYOM – ANDIR – BANDUNG",
-                "no_telepon": "6285220031919"
+                "no_telepon": "6285220031919",
+                "nik": "",
+                "nama_pemilik": "Veronica SB",
+                "email": "",
             }
         }
         if code in mock_fallback:
             mf = mock_fallback[code]
             raw_alamat = mf.get("alamat_lengkap", "")
             normalized_alamat = _normalize_jde_address(raw_alamat)
+
+            raw_nama_pemilik = str(mf.get("nama_pemilik") or "").strip()
+            nama_pemilik = "" if raw_nama_pemilik in ("", "-", "—") else raw_nama_pemilik
+
+            raw_email = str(mf.get("email") or "").strip().lower()
+            email = "" if raw_email in ("", "-", "—") else raw_email
+
+            raw_nik = str(mf.get("nik") or mf.get("nomor_nik") or "").strip()
+            nik_digits = re.sub(r'\D', '', raw_nik)
+            nik = nik_digits if len(nik_digits) == 16 else (nik_digits if nik_digits else "")
+
             customer = {
                 "customer_code": mf["kode_customer"],
                 "kode_customer": mf["kode_customer"],
                 "nama_toko": mf["nama_toko"],
-                "nama_pemilik": "",
+                "nama_pemilik": nama_pemilik,
                 "alamat_lengkap": normalized_alamat,
                 "alamat_toko": normalized_alamat,
                 "raw_alamat": raw_alamat,
@@ -643,6 +722,9 @@ def jde_customer_lookup(request):
                 "payment_terms": mf["payment_terms"],
                 "top_days": 45,
                 "kota": _extract_city_from_address(raw_alamat),
+                "nik": nik,
+                "nomor_nik": nik,
+                "email": email,
             }
             return JsonResponse({
                 "success": True,

@@ -1457,12 +1457,10 @@ table.clause-table td.cell-currency {
 }
 
 /* ==========================================================================
-   TOP (Term of Payment) & Nomor NPWP Readonly Locked Styling (JDE Autofill)
+   TOP (Term of Payment) Readonly Locked Styling (JDE Autofill)
    ========================================================================== */
 input[name="top"].jde-autofill-readonly,
-input[name="top"][readonly],
-input[name="nomor_npwp"].jde-autofill-readonly,
-input[name="nomor_npwp"][readonly] {
+input[name="top"][readonly] {
     background-color: #e2e8f0 !important;
     border-color: #94a3b8 !important;
     color: #0f172a !important;
