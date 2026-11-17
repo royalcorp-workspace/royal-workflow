@@ -203,6 +203,7 @@ class EMeteraiService:
         from reportlab.lib import colors
         from django.utils import timezone
         from django_forms_workflows.company_profiles import (
+            DEFAULT_COURT_JURISDICTION,
             resolve_company_profile,
             get_company_logo_abs_path,
             format_official_spk_number,
@@ -502,7 +503,7 @@ class EMeteraiService:
         rekening_no = form_data.get("nomor_rekening_perusahaan") or comp_prof["bank_account_no"]
         rekening_an = form_data.get("atas_nama_rekening") or comp_prof["bank_account_name"]
         rekening_display = form_data.get("rekening_perusahaan") or f"{rekening_bank} {rekening_no} a/n {rekening_an}"
-        domisili_pn = comp_prof["court_jurisdiction"]
+        domisili_pn = comp_prof.get("court_jurisdiction") or DEFAULT_COURT_JURISDICTION
         logo_path = get_company_logo_abs_path(company_name=perusahaan, submission=submission, user=submission.submitter)
 
         nama_toko = (form_data.get("nama_toko") or "Mitra Toko").strip().upper()

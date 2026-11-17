@@ -1375,39 +1375,72 @@ table.clause-table td.cell-currency {
 }
 
 /* ==========================================================================
-   Nomor NPWP Field Layout Isolation Anti-Overlap & Dynamic Badge Ordering
+   Nomor NPWP & Nomor NIK (KTP) Side-by-Side Horizontal Alignment & Ordering
    ========================================================================== */
+.row.fields-aligned-row:has(.field-nomor_npwp),
+.row:has(.field-nomor_npwp):has(.field-nomor_nik) {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: flex-start !important;
+}
+
 .row.fields-aligned-row > .field-wrapper.field-nomor_npwp,
-.row.fields-aligned-row > .field-wrapper.field-nomor_npwp > .mb-3,
-.field-nomor_npwp #div_id_nomor_npwp,
-#div_id_nomor_npwp {
+.row.fields-aligned-row > .field-wrapper.field-nomor_nik,
+.field-wrapper.field-nomor_npwp,
+.field-wrapper.field-nomor_nik {
     display: flex !important;
     flex-direction: column !important;
     align-items: flex-start !important;
+    justify-content: flex-start !important;
     grid-template-rows: none !important;
 }
 
-/* Order 1: Label */
+.row.fields-aligned-row > .field-wrapper.field-nomor_npwp > .mb-3,
+.row.fields-aligned-row > .field-wrapper.field-nomor_nik > .mb-3,
+.field-nomor_npwp #div_id_nomor_npwp,
+.field-nomor_nik #div_id_nomor_nik,
+#div_id_nomor_npwp,
+#div_id_nomor_nik {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    width: 100% !important;
+    margin-bottom: 0 !important;
+    grid-template-rows: none !important;
+}
+
+/* Order 1: Label (min-height seragam, alignment top baseline) */
 #div_id_nomor_npwp > label,
-.field-nomor_npwp label {
+#div_id_nomor_nik > label,
+.field-nomor_npwp label,
+.field-nomor_nik label {
     order: 1 !important;
     align-self: flex-start !important;
     text-align: left !important;
     width: auto !important;
+    min-height: 24px !important;
+    display: flex !important;
+    align-items: center !important;
     margin-bottom: 0.35rem !important;
 }
 
-/* Order 2: Input Field */
+/* Order 2: Input Field (tinggi seragam 38px) */
 #div_id_nomor_npwp > :is(input, select, textarea, .input-group),
-.field-nomor_npwp :is(input, select, textarea, .input-group) {
+#div_id_nomor_nik > :is(input, select, textarea, .input-group),
+.field-nomor_npwp :is(input, select, textarea, .input-group),
+.field-nomor_nik :is(input, select, textarea, .input-group) {
     order: 2 !important;
     align-self: stretch !important;
     width: 100% !important;
+    height: 38px !important;
 }
 
-/* Order 3: Feedback Validasi Internal (Error Merah / Sukses Hijau) */
+/* Order 3: Feedback Validasi Internal (Format Valid / Invalid / Terverifikasi JDE) */
 #div_id_nomor_npwp > :is(.invalid-feedback, .valid-feedback, .nomor-npwp-feedback, [class*="-feedback"]),
-.field-nomor_npwp :is(.invalid-feedback, .valid-feedback, .nomor-npwp-feedback, [class*="-feedback"]) {
+#div_id_nomor_nik > :is(.invalid-feedback, .valid-feedback, .nomor-nik-feedback, [class*="-feedback"]),
+.field-nomor_npwp :is(.invalid-feedback, .valid-feedback, .nomor-npwp-feedback, [class*="-feedback"]),
+.field-nomor_nik :is(.invalid-feedback, .valid-feedback, .nomor-nik-feedback, [class*="-feedback"]) {
     order: 3 !important;
     align-self: flex-start !important;
     text-align: left !important;
@@ -1420,40 +1453,32 @@ table.clause-table td.cell-currency {
 }
 
 #div_id_nomor_npwp > :is(.invalid-feedback, .valid-feedback, .nomor-npwp-feedback, [class*="-feedback"])[style*="display: none"],
-#div_id_nomor_npwp > :is(.invalid-feedback, .valid-feedback, .nomor-npwp-feedback, [class*="-feedback"]).d-none {
+#div_id_nomor_npwp > :is(.invalid-feedback, .valid-feedback, .nomor-npwp-feedback, [class*="-feedback"]).d-none,
+#div_id_nomor_nik > :is(.invalid-feedback, .valid-feedback, .nomor-nik-feedback, [class*="-feedback"])[style*="display: none"],
+#div_id_nomor_nik > :is(.invalid-feedback, .valid-feedback, .nomor-nik-feedback, [class*="-feedback"]).d-none {
     display: none !important;
 }
 
-/* Order 4: Badge Status JDE (Baris Mandiri) */
-#div_id_nomor_npwp > .jde-npwp-status-badge,
-.field-nomor_npwp .jde-npwp-status-badge {
-    order: 4 !important;
-    align-self: flex-start !important;
-    display: block !important;
-    width: 100% !important;
-    margin-top: 0.35rem !important;
-    margin-bottom: 0.25rem !important;
-    line-height: 1.4 !important;
-}
-
-#div_id_nomor_npwp > .jde-npwp-status-badge[style*="display: none"],
-#div_id_nomor_npwp > .jde-npwp-status-badge.d-none {
-    display: none !important;
-}
-
-/* Order 5: Helper Text Bawaan */
+/* Order 4: Helper Text Bawaan */
 #div_id_nomor_npwp > :is(.form-text, .help-block, small),
-.field-nomor_npwp :is(.form-text, .help-block, small) {
-    order: 5 !important;
+#div_id_nomor_nik > :is(.form-text, .help-block, small),
+.field-nomor_npwp :is(.form-text, .help-block, small),
+.field-nomor_nik :is(.form-text, .help-block, small) {
+    order: 4 !important;
     align-self: flex-start !important;
     text-align: left !important;
     position: static !important;
     clear: both !important;
     display: block !important;
     width: 100% !important;
-    margin-top: 0.35rem !important;
+    margin-top: 0.25rem !important;
     margin-bottom: 0 !important;
     line-height: 1.4 !important;
+}
+
+/* Sembunyikan badge status terpisah jika masih ada di DOM */
+.jde-npwp-status-badge {
+    display: none !important;
 }
 
 /* ==========================================================================

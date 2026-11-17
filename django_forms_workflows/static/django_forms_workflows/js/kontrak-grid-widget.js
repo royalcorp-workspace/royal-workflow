@@ -909,41 +909,21 @@
                         }
                     }
 
-                    // Nomor NPWP & Badge Status JDE (TETAP EDITABLE)
+                    // Nomor NPWP & Status JDE (TETAP EDITABLE)
                     const npwpVal = c.nomor_npwp || c.npwp || '';
                     const npwpInput = form.querySelector('[name="nomor_npwp"]');
-                    if (npwpVal) {
-                        if (npwpInput) npwpInput.dataset.jdeOriginalNpwp = npwpVal;
-                        setFieldValue(form, 'nomor_npwp', npwpVal);
+                    if (npwpInput) {
+                        if (npwpVal) {
+                            npwpInput.dataset.jdeOriginalNpwp = npwpVal.replace(/\D/g, '');
+                            npwpInput.dataset.jdeStatusNpwp = c.status_npwp || 'Valid';
+                            setFieldValue(form, 'nomor_npwp', npwpVal);
+                        }
                         if (typeof form._validateNomorNpwp === 'function') {
                             form._validateNomorNpwp(false);
                         }
                     }
-                    if (npwpInput) {
-                        const npwpWrap = npwpInput.closest('.field-wrapper') || npwpInput.closest('.mb-3') || npwpInput.parentElement;
-                        let statusBadge = npwpWrap ? npwpWrap.querySelector('.jde-npwp-status-badge') : null;
-                        if (!statusBadge && npwpWrap) {
-                            statusBadge = document.createElement('div');
-                            statusBadge.className = 'jde-npwp-status-badge mt-1';
-                            const npwpFeedback = npwpWrap.querySelector('.nomor-npwp-feedback');
-                            if (npwpFeedback && npwpFeedback.nextSibling) {
-                                npwpFeedback.parentNode.insertBefore(statusBadge, npwpFeedback.nextSibling);
-                            } else {
-                                npwpInput.parentNode.appendChild(statusBadge);
-                            }
-                        }
-                        if (statusBadge) {
-                            statusBadge.style.display = 'block';
-                            const stNpwp = String(c.status_npwp || '').toLowerCase();
-                            if (stNpwp === 'valid') {
-                                statusBadge.innerHTML = '<span class="badge bg-success-subtle text-success border border-success-subtle py-1 px-2"><i class="bi bi-patch-check-fill me-1"></i> NPWP Valid (JDE)</span>';
-                            } else if (npwpVal) {
-                                statusBadge.innerHTML = `<span class="badge bg-warning-subtle text-dark border border-warning-subtle py-1 px-2"><i class="bi bi-exclamation-triangle-fill text-warning me-1"></i> Status NPWP JDE: ${escapeHtml(c.status_npwp || 'Tidak Valid')}</span>`;
-                            } else {
-                                statusBadge.innerHTML = '<span class="badge bg-warning-subtle text-dark border border-warning-subtle py-1 px-2"><i class="bi bi-exclamation-triangle-fill text-warning me-1"></i> NPWP Belum Terdaftar di JDE — Silakan lengkapi manual</span>';
-                            }
-                        }
-                    }
+                    const oldBadge = form.querySelector('.jde-npwp-status-badge');
+                    if (oldBadge) oldBadge.remove();
 
                     // Nomor NIK (KTP): Autofill dari JDE dan langsung validasi real-time
                     const nikVal = c.nomor_nik || c.nik;
@@ -1132,7 +1112,17 @@
                     npwpInput.classList.add('is-valid');
                     if (npwpFeedback) {
                         npwpFeedback.className = 'nomor-npwp-feedback mt-1 small text-success';
-                        npwpFeedback.innerHTML = `<i class="bi bi-check-circle me-1"></i> Format NPWP ${val.length} digit valid.`;
+                        const originalJde = (npwpInput.dataset.jdeOriginalNpwp || '').replace(/\D/g, '');
+                        const stNpwp = String(npwpInput.dataset.jdeStatusNpwp || '').toLowerCase();
+                        let badgeHtml = '';
+                        if (originalJde && val === originalJde) {
+                            if (stNpwp === 'valid') {
+                                badgeHtml = ' <span class="badge bg-success-subtle text-success border border-success-subtle py-0 px-1 ms-1 fw-semibold"><i class="bi bi-patch-check-fill me-1"></i>Terverifikasi JDE</span>';
+                            } else {
+                                badgeHtml = ` <span class="badge bg-warning-subtle text-dark border border-warning-subtle py-0 px-1 ms-1"><i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>Status JDE: ${escapeHtml(npwpInput.dataset.jdeStatusNpwp || 'Tidak Valid')}</span>`;
+                            }
+                        }
+                        npwpFeedback.innerHTML = `<i class="bi bi-check-circle me-1"></i> Format NPWP ${val.length} digit valid.${badgeHtml}`;
                     }
                     return true;
                 } else {
@@ -1160,18 +1150,6 @@
             });
             npwpInput.addEventListener('input', () => {
                 validateNomorNpwp(false);
-                const npwpWrap = npwpInput.closest('.field-wrapper') || npwpInput.closest('.mb-3') || npwpInput.parentElement;
-                const statusBadge = npwpWrap ? npwpWrap.querySelector('.jde-npwp-status-badge') : null;
-                if (statusBadge) {
-                    const currentVal = npwpInput.value.replace(/\D/g, '');
-                    const originalJde = (npwpInput.dataset.jdeOriginalNpwp || '').replace(/\D/g, '');
-                    if (!originalJde || currentVal !== originalJde) {
-                        statusBadge.style.display = 'none';
-                        statusBadge.innerHTML = '';
-                    } else {
-                        statusBadge.style.display = 'block';
-                    }
-                }
             });
             npwpInput.addEventListener('blur', () => validateNomorNpwp(true));
             if (npwpInput.value) validateNomorNpwp(false);
@@ -1527,6 +1505,7 @@
      * 3. Auto SPK Number Preview & Readonly Lock
      * -------------------------------------------------------------------------- */
     function setupSPKAutoNumber(form) {
+        const urlParams = new URLSearchParams(window.location.search);
         const formSlug = form.dataset.formSlug || (() => {
             const m = window.location.pathname.match(/\/forms\/([^\/]+)/);
             return m ? m[1] : 'permohonan-kontrak';
@@ -1626,6 +1605,7 @@
 
             const currentFetchId = ++activeFetchSeqId;
             try {
+                const urlParams = new URLSearchParams(window.location.search);
                 const draftId = form.querySelector('input[name="draft_id"]')?.value || urlParams.get('draft') || urlParams.get('draft_id') || '';
                 const params = new URLSearchParams({
                     cabang: cleanCab,
