@@ -1039,6 +1039,7 @@ class DocumentTemplate(models.Model):
 
         # Resolve corporate profile & official logos
         from .company_profiles import (
+            DEFAULT_COURT_JURISDICTION,
             resolve_company_profile,
             get_company_logo_html,
             get_company_logo_data_uri,
@@ -1069,7 +1070,7 @@ class DocumentTemplate(models.Model):
         context["bank_name"] = form_data.get("bank_perusahaan") or comp_prof["bank_name"]
         context["bank_account_no"] = form_data.get("nomor_rekening_perusahaan") or comp_prof["bank_account_no"]
         context["bank_account_name"] = form_data.get("atas_nama_rekening") or comp_prof["bank_account_name"]
-        context["pengadilan_negeri"] = comp_prof["court_jurisdiction"]
+        context["pengadilan_negeri"] = comp_prof.get("court_jurisdiction") or DEFAULT_COURT_JURISDICTION
         if not context.get("rekening_perusahaan"):
             context["rekening_perusahaan"] = f"{context['bank_name']} {context['bank_account_no']} a/n {context['bank_account_name']}"
         # Standardisasi metode pembayaran baku (Non-Tunai Perbankan Resmi)

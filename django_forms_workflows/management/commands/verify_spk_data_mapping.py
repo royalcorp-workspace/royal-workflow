@@ -297,16 +297,16 @@ class Command(BaseCommand):
             else:
                 self.stderr.write(self.style.ERROR(f"  [ERR] Input '{brand_input}' -> SPK: '{spk_no}' (code: {expected_code}?), Canonical: '{canonical}' (expected: {expected_canonical})"))
 
-        # Verify Branch-based Court Jurisdiction Helper
+        # Verify Standardized Court Jurisdiction Helper (All Branches -> Bale Bandung)
         jurisdiction_tests = [
-            ("bali", "Kantor Panitera Pengadilan Negeri Denpasar"),
+            ("bali", "Kantor Panitera Pengadilan Negeri Bale Bandung"),
             ("bandung", "Kantor Panitera Pengadilan Negeri Bale Bandung"),
-            ("surabaya", "Kantor Panitera Pengadilan Negeri Surabaya"),
-            ("tangerang", "Kantor Panitera Pengadilan Negeri Tangerang"),
-            ("jakarta", "Kantor Panitera Pengadilan Negeri Tangerang"),
-            ("makassar", "Kantor Panitera Pengadilan Negeri Makassar"),
+            ("surabaya", "Kantor Panitera Pengadilan Negeri Bale Bandung"),
+            ("tangerang", "Kantor Panitera Pengadilan Negeri Bale Bandung"),
+            ("jakarta", "Kantor Panitera Pengadilan Negeri Bale Bandung"),
+            ("makassar", "Kantor Panitera Pengadilan Negeri Bale Bandung"),
         ]
-        self.stdout.write("\n" + self.style.MIGRATE_HEADING("--- AUDIT RESOLUSI DOMISILI HUKUM (PENGADILAN NEGERI) BERBASIS CABANG ---"))
+        self.stdout.write("\n" + self.style.MIGRATE_HEADING("--- AUDIT RESOLUSI DOMISILI HUKUM BAKU (PN BALE BANDUNG SELURUH CABANG) ---"))
         for br, expected_pn in jurisdiction_tests:
             actual_pn = resolve_court_jurisdiction(cabang=br)
             if actual_pn == expected_pn:
@@ -591,7 +591,7 @@ class Command(BaseCommand):
                     snippet = "001/SK-RAS/BANDUNG/LADY/X/2026 Terformat"
                 elif f_name == "pengadilan_negeri":
                     is_rendered = "Bale Bandung" in rendered_html
-                    snippet = "PN Bale Bandung (Cabang Bandung)"
+                    snippet = "PN Bale Bandung (Standar Baku)"
                 elif f_name == "target_incentive_table":
                     is_rendered = "250.000.000" in rendered_html or "Tier Platinum" in rendered_html
                     snippet = "Tabel Tier 250 Jt Ter-render"
@@ -737,7 +737,7 @@ class Command(BaseCommand):
 
             # Verify Dynamic Court Jurisdiction
             if "Kantor Panitera Pengadilan Negeri Bale Bandung" in rendered_html:
-                self.stdout.write(self.style.SUCCESS("✅ Klausul Domisili Hukum (Pasal 12): Ter-render dinamis 'Kantor Panitera Pengadilan Negeri Bale Bandung' mengikuti Cabang Bandung!"))
+                self.stdout.write(self.style.SUCCESS("✅ Klausul Domisili Hukum (Pasal 12): Ter-render baku 'Kantor Panitera Pengadilan Negeri Bale Bandung'!"))
             else:
                 self.stderr.write(self.style.ERROR("❌ Klausul Domisili Hukum (Pasal 12): Pengadilan Negeri Bale Bandung tidak ditemukan!"))
                 all_passed = False

@@ -29,57 +29,39 @@ CABANG_CODES = {
     "tangerang": "TGR",
 }
 
+DEFAULT_COURT_JURISDICTION = "Kantor Panitera Pengadilan Negeri Bale Bandung"
+
 BRANCH_COURT_JURISDICTIONS = {
-    "bali": "Kantor Panitera Pengadilan Negeri Denpasar",
-    "denpasar": "Kantor Panitera Pengadilan Negeri Denpasar",
-    "bandung": "Kantor Panitera Pengadilan Negeri Bale Bandung",
-    "banyumas": "Kantor Panitera Pengadilan Negeri Banyumas",
-    "cirebon": "Kantor Panitera Pengadilan Negeri Cirebon",
-    "jakarta": "Kantor Panitera Pengadilan Negeri Tangerang",
-    "kediri": "Kantor Panitera Pengadilan Negeri Kediri",
-    "lampung": "Kantor Panitera Pengadilan Negeri Tanjung Karang",
-    "makassar": "Kantor Panitera Pengadilan Negeri Makassar",
-    "manado": "Kantor Panitera Pengadilan Negeri Manado",
-    "medan": "Kantor Panitera Pengadilan Negeri Medan",
-    "palembang": "Kantor Panitera Pengadilan Negeri Palembang",
-    "pekanbaru": "Kantor Panitera Pengadilan Negeri Pekanbaru",
-    "pusat": "Kantor Panitera Pengadilan Negeri Tangerang",
-    "r1": "Kantor Panitera Pengadilan Negeri Tangerang",
-    "r2": "Kantor Panitera Pengadilan Negeri Tangerang",
-    "semarang": "Kantor Panitera Pengadilan Negeri Semarang",
-    "surabaya": "Kantor Panitera Pengadilan Negeri Surabaya",
-    "tangerang": "Kantor Panitera Pengadilan Negeri Tangerang",
+    "bali": DEFAULT_COURT_JURISDICTION,
+    "denpasar": DEFAULT_COURT_JURISDICTION,
+    "bandung": DEFAULT_COURT_JURISDICTION,
+    "banyumas": DEFAULT_COURT_JURISDICTION,
+    "cirebon": DEFAULT_COURT_JURISDICTION,
+    "jakarta": DEFAULT_COURT_JURISDICTION,
+    "kediri": DEFAULT_COURT_JURISDICTION,
+    "lampung": DEFAULT_COURT_JURISDICTION,
+    "makassar": DEFAULT_COURT_JURISDICTION,
+    "manado": DEFAULT_COURT_JURISDICTION,
+    "medan": DEFAULT_COURT_JURISDICTION,
+    "palembang": DEFAULT_COURT_JURISDICTION,
+    "pekanbaru": DEFAULT_COURT_JURISDICTION,
+    "pusat": DEFAULT_COURT_JURISDICTION,
+    "r1": DEFAULT_COURT_JURISDICTION,
+    "r2": DEFAULT_COURT_JURISDICTION,
+    "semarang": DEFAULT_COURT_JURISDICTION,
+    "surabaya": DEFAULT_COURT_JURISDICTION,
+    "tangerang": DEFAULT_COURT_JURISDICTION,
 }
 
 
 def resolve_court_jurisdiction(cabang=None, kota=None, default=None) -> str:
     """
-    Resolve legal court jurisdiction (Pengadilan Negeri) dynamically based on Cabang / Kota Pengaju:
-    - Bali -> Kantor Panitera Pengadilan Negeri Denpasar
-    - Bandung -> Kantor Panitera Pengadilan Negeri Bale Bandung
-    - Surabaya / Jatim -> Kantor Panitera Pengadilan Negeri Surabaya
-    - Tangerang / Jakarta / Pusat -> Kantor Panitera Pengadilan Negeri Tangerang
-    - etc.
+    Resolve legal court jurisdiction (Pengadilan Negeri).
+    Berdasarkan standardisasi domisili hukum resmi Royal Group, seluruh SPK (tanpa kecuali)
+    menggunakan domisili hukum baku: Kantor Panitera Pengadilan Negeri Bale Bandung.
+    Nilai ini independen dari cabang, unit kerja, lokasi customer, maupun alamat toko.
     """
-    candidates = []
-    if cabang:
-        candidates.append(str(cabang).strip().lower())
-    if kota:
-        candidates.append(str(kota).strip().lower())
-        
-    for cand in candidates:
-        for k, v in BRANCH_COURT_JURISDICTIONS.items():
-            if k in cand or cand in k:
-                return v
-                
-    if cabang:
-        c_title = str(cabang).strip().title()
-        return f"Kantor Panitera Pengadilan Negeri {c_title}"
-    if kota:
-        k_title = str(kota).strip().title()
-        return f"Kantor Panitera Pengadilan Negeri {k_title}"
-        
-    return default or "Kantor Panitera Pengadilan Negeri Tangerang"
+    return DEFAULT_COURT_JURISDICTION
 
 
 OFFICIAL_BRANDS = {
@@ -529,7 +511,7 @@ COMPANY_PROFILES = {
         "bank_name": "BCA Cimahi – Bandung",
         "bank_account_no": "139 9183 888 (IDR)",
         "bank_account_name": "PT. ANUGRAH CEMERLANG ABADI",
-        "court_jurisdiction": "Kantor Panitera Pengadilan Negeri Bale Bandung",
+        "court_jurisdiction": DEFAULT_COURT_JURISDICTION,
         "logo_filename": "aca.png",
     },
     "PT BANGUN CIPTA PRIMATARA": {
@@ -541,7 +523,7 @@ COMPANY_PROFILES = {
         "bank_name": "BCA Cimahi – Bandung",
         "bank_account_no": "139.9888.777 (IDR)",
         "bank_account_name": "PT. BANGUN CIPTA PRIMATARA",
-        "court_jurisdiction": "Kantor Panitera Pengadilan Negeri Tangerang",
+        "court_jurisdiction": DEFAULT_COURT_JURISDICTION,
         "logo_filename": "bcp.png",
     },
     "PT BESTARI MULIA": {
@@ -553,7 +535,7 @@ COMPANY_PROFILES = {
         "bank_name": "BCA Cimahi – Bandung",
         "bank_account_no": "139 8075 888 (IDR)",
         "bank_account_name": "PT. BESTARI MULIA",
-        "court_jurisdiction": "Kantor Panitera Pengadilan Negeri Surabaya",
+        "court_jurisdiction": DEFAULT_COURT_JURISDICTION,
         "logo_filename": "bm.png",
     },
     "PT CEMERLANG ABADI MULIA": {
@@ -565,7 +547,7 @@ COMPANY_PROFILES = {
         "bank_name": "BCA Cimahi – Bandung",
         "bank_account_no": "139 9183 888 (IDR)",
         "bank_account_name": "PT. CEMERLANG ABADI MULIA",
-        "court_jurisdiction": "Kantor Panitera Pengadilan Negeri Bale Bandung",
+        "court_jurisdiction": DEFAULT_COURT_JURISDICTION,
         "logo_filename": "cam.png",
     },
     "PT ROYAL ABADI SEJAHTERA": {
@@ -577,7 +559,7 @@ COMPANY_PROFILES = {
         "bank_name": "BCA Cimahi – Bandung",
         "bank_account_no": "139 8826 999 (IDR)",
         "bank_account_name": "PT. ROYAL ABADI SEJAHTERA",
-        "court_jurisdiction": "Kantor Panitera Pengadilan Negeri Bale Bandung",
+        "court_jurisdiction": DEFAULT_COURT_JURISDICTION,
         "logo_filename": "ras.png",
     },
 }
