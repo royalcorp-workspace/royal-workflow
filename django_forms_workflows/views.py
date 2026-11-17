@@ -1231,7 +1231,16 @@ def form_auto_save(request, slug):
                 today = timezone.now().date()
                 current_spk = str(data.get("nomor_spk", "")).strip()
                 m_curr = re.match(r"^(?:No\.\s*)?(\d+)/", current_spk) if current_spk else None
-                need_assign = not current_spk or "OTOMATIS" in current_spk.upper() or current_spk.startswith("AUTO-") or "{" in current_spk or current_spk.startswith("SPK-") or "____" in current_spk
+                need_assign = (
+                    not current_spk
+                    or "OTOMATIS" in current_spk.upper()
+                    or current_spk.startswith("AUTO-")
+                    or "{" in current_spk
+                    or current_spk.startswith("SPK-")
+                    or "____" in current_spk
+                    or "No." in current_spk
+                    or "/SK-" not in current_spk
+                )
 
                 comp_prof = resolve_company_profile(form_data=data, user=request.user)
                 if not perusahaan or str(perusahaan).strip() in ("", "-- Select --", "—"):
@@ -1241,15 +1250,18 @@ def form_auto_save(request, slug):
                     data["perusahaan"] = perusahaan
 
                 if need_assign:
-                    seq = get_next_spk_sequence(
-                        cabang=cabang,
-                        brand=brand,
-                        perusahaan=perusahaan,
-                        year=today.year,
-                        form_slug=form_def.slug,
-                        exclude_submission_id=draft.id if draft.pk else None,
-                        company_profile=comp_prof,
-                    )
+                    if m_curr:
+                        seq = int(m_curr.group(1))
+                    else:
+                        seq = get_next_spk_sequence(
+                            cabang=cabang,
+                            brand=brand,
+                            perusahaan=perusahaan,
+                            year=today.year,
+                            form_slug=form_def.slug,
+                            exclude_submission_id=draft.id if draft.pk else None,
+                            company_profile=comp_prof,
+                        )
                     data["nomor_spk"] = format_official_spk_number(
                         nomor=seq,
                         brand=brand,
@@ -1393,6 +1405,25 @@ def form_submission_hub(request, slug):
 
         # 1. No. SPK (semi-bold)
         spk_no = fd.get("nomor_spk") or f"SPK-{sub.id:04d}"
+        if sub.form_definition and sub.form_definition.slug == "permohonan-kontrak":
+            spk_str = str(spk_no).strip()
+            if not spk_str or "No." in spk_str or "/SK-" not in spk_str or spk_str.startswith("SPK-"):
+                try:
+                    from .company_profiles import format_official_spk_number, resolve_company_profile
+                    import re
+                    m_spk = re.search(r"(\d+)", spk_str)
+                    seq_val = int(m_spk.group(1)) if m_spk else sub.id
+                    c_prof = resolve_company_profile(form_data=fd, user=sub.user)
+                    spk_no = format_official_spk_number(
+                        nomor=seq_val,
+                        brand=fd.get("brand") or "LADY",
+                        cabang=fd.get("cabang") or "PUSAT",
+                        date_val=sub.submitted_at or sub.created_at,
+                        company_profile=c_prof,
+                        perusahaan=fd.get("perusahaan"),
+                    )
+                except Exception:
+                    pass
 
         # 2. Toko / Dealer
         toko = fd.get("nama_toko") or fd.get("kode_customer_jde") or "—"
@@ -1711,6 +1742,25 @@ def submission_detail(request, submission_id):
 
     # Resolve fresh presigned URLs for any file-upload fields
     form_data = _resolve_form_data_urls(submission.form_data)
+    if submission.form_definition and submission.form_definition.slug == "permohonan-kontrak":
+        spk_str = str(form_data.get("nomor_spk") or "").strip()
+        if not spk_str or "No." in spk_str or "/SK-" not in spk_str or spk_str.startswith("SPK-"):
+            try:
+                from .company_profiles import format_official_spk_number, resolve_company_profile
+                import re
+                m_spk = re.search(r"(\d+)", spk_str)
+                seq_val = int(m_spk.group(1)) if m_spk else submission.id
+                c_prof = resolve_company_profile(form_data=form_data, user=submission.user)
+                form_data["nomor_spk"] = format_official_spk_number(
+                    nomor=seq_val,
+                    brand=form_data.get("brand") or "LADY",
+                    cabang=form_data.get("cabang") or "PUSAT",
+                    date_val=submission.submitted_at or submission.created_at,
+                    company_profile=c_prof,
+                    perusahaan=form_data.get("perusahaan"),
+                )
+            except Exception:
+                pass
     form_data_ordered = _build_ordered_form_data(submission, form_data)
 
     # Resolve presigned URLs for model-level attachments (e.g. migrated SP files)
@@ -2819,6 +2869,25 @@ def approve_submission(request, task_id):
 
     # Resolve fresh presigned URLs for any file-upload fields
     form_data = _resolve_form_data_urls(submission.form_data)
+    if submission.form_definition and submission.form_definition.slug == "permohonan-kontrak":
+        spk_str = str(form_data.get("nomor_spk") or "").strip()
+        if not spk_str or "No." in spk_str or "/SK-" not in spk_str or spk_str.startswith("SPK-"):
+            try:
+                from .company_profiles import format_official_spk_number, resolve_company_profile
+                import re
+                m_spk = re.search(r"(\d+)", spk_str)
+                seq_val = int(m_spk.group(1)) if m_spk else submission.id
+                c_prof = resolve_company_profile(form_data=form_data, user=submission.user)
+                form_data["nomor_spk"] = format_official_spk_number(
+                    nomor=seq_val,
+                    brand=form_data.get("brand") or "LADY",
+                    cabang=form_data.get("cabang") or "PUSAT",
+                    date_val=submission.submitted_at or submission.created_at,
+                    company_profile=c_prof,
+                    perusahaan=form_data.get("perusahaan"),
+                )
+            except Exception:
+                pass
     form_data_ordered = _build_ordered_form_data(submission, form_data)
 
     # Resolve presigned URLs for model-level attachments (e.g. migrated SP files)
@@ -3550,7 +3619,7 @@ def _resolve_spk_pdf_filename(submission_or_data, submission_id=None, suffix="")
         sub_id = submission_id
 
     spk_raw = str(form_data.get("nomor_spk") or "").strip()
-    if not spk_raw or spk_raw.startswith("OTOMATIS") or spk_raw == "—" or "/" not in spk_raw:
+    if not spk_raw or spk_raw.startswith("OTOMATIS") or spk_raw == "—" or "/" not in spk_raw or "No." in spk_raw or "/SK-" not in spk_raw:
         try:
             from .company_profiles import format_official_spk_number
             spk_raw = format_official_spk_number(
@@ -3708,13 +3777,39 @@ def form_next_spk_number(request, slug):
         if existing_draft and existing_draft.form_data:
             existing_spk = str(existing_draft.form_data.get("nomor_spk") or "").strip()
             if existing_spk and not any(x in existing_spk.upper() for x in ["OTOMATIS", "AUTO-", "____", "{"]):
-                d_cab = str(existing_draft.form_data.get("cabang") or "").strip().upper()
-                d_brand = str(existing_draft.form_data.get("brand") or "").strip().upper()
-                req_cab = str(cabang or "").strip().upper()
-                req_brand = str(brand or "").strip().upper()
-                # Cek kesesuaian cabang dan brand
-                cab_ok = not d_cab or d_cab == req_cab or f"/{req_cab}/" in existing_spk.upper()
-                brand_ok = not d_brand or d_brand in req_brand or req_brand in d_brand or f"/{req_brand[:4]}/" in existing_spk.upper()
+                if "No." in existing_spk or "/SK-" not in existing_spk:
+                    import re
+                    m_spk = re.search(r"(\d+)", existing_spk)
+                    seq_num = int(m_spk.group(1)) if m_spk else 1
+                    existing_spk = format_official_spk_number(
+                        nomor=seq_num,
+                        brand=brand,
+                        cabang=cabang,
+                        date_val=existing_draft.created_at or timezone.now().date(),
+                        company_profile=comp_prof,
+                        perusahaan=perusahaan,
+                    )
+                # Validasi kecocokan segmen kode brand kanonikal dan cabang pada existing_spk
+                b_str = str(brand or "").strip().upper()
+                if "LADY" in b_str:
+                    req_brand_code = "LADY"
+                elif "ROYAL" in b_str or "FOAM" in b_str:
+                    req_brand_code = "ROYAL"
+                elif "SERENITY" in b_str:
+                    req_brand_code = "SERENITY"
+                elif "ELITE" in b_str:
+                    req_brand_code = "ELITE"
+                elif "CLASSIC" in b_str:
+                    req_brand_code = "CLASSIC"
+                elif "GRAND" in b_str:
+                    req_brand_code = "GRAND"
+                else:
+                    req_brand_code = b_str.split()[0] if b_str else ""
+
+                req_cab = str(cabang or "PUSAT").strip().upper().replace(" ", "")
+                cab_ok = f"/{req_cab}/" in existing_spk.upper()
+                brand_ok = bool(req_brand_code and f"/{req_brand_code}/" in existing_spk.upper())
+
                 if cab_ok and brand_ok:
                     return JsonResponse({
                         "success": True,

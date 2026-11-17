@@ -303,17 +303,15 @@
             if (window.renderDiscountGrid) window.renderDiscountGrid();
             if (window.renderTierGrid) window.renderTierGrid();
 
-            // Trigger updates on Brand & Cabang to recalculate Nomor SPK only if NOT in revision mode
+            // Trigger updates on Brand to recalculate Nomor SPK only if NOT in revision mode
             if (!isRevision && !isRevisionMode && form.dataset.isRevision !== 'true') {
                 const brandSelect = form.querySelector('[name="brand"]');
-                const cabangSelect = form.querySelector('[name="cabang"]');
-                if (brandSelect && brandSelect.value) {
-                    brandSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                    brandSelect.dispatchEvent(new Event('input', { bubbles: true }));
-                }
-                if (cabangSelect && cabangSelect.value) {
-                    cabangSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                    cabangSelect.dispatchEvent(new Event('input', { bubbles: true }));
+                if (brandSelect && brandSelect.value && !brandSelect.value.startsWith('--') && !brandSelect.value.toLowerCase().includes('select')) {
+                    if (typeof form._updateSPK === 'function') {
+                        form._updateSPK();
+                    } else {
+                        brandSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
                 }
             }
 
@@ -467,37 +465,28 @@
     }
 
     function lockNpwpField(form) {
-        const npwpInput = form.querySelector('[name="nomor_npwp"]');
-        if (npwpInput) {
-            npwpInput.setAttribute('readonly', 'readonly');
-            npwpInput.classList.add('jde-readonly-locked', 'jde-autofill-readonly', 'bg-light');
-            npwpInput.style.setProperty('background-color', '#e2e8f0', 'important');
-            npwpInput.style.setProperty('border-color', '#94a3b8', 'important');
-            npwpInput.style.setProperty('color', '#0f172a', 'important');
-            npwpInput.style.setProperty('cursor', 'not-allowed', 'important');
-            npwpInput.style.setProperty('font-weight', '500', 'important');
-            npwpInput.dataset.readonlyBound = 'true';
-            delete npwpInput.dataset.unlockedFallback;
-        }
+        // NPWP kebijakan baru: TETAP EDITABLE (tidak dikunci readonly)
+        unlockNpwpField(form);
     }
 
     function unlockNpwpField(form) {
         const npwpInput = form.querySelector('[name="nomor_npwp"]');
         if (npwpInput) {
             npwpInput.removeAttribute('readonly');
-            npwpInput.classList.remove('jde-readonly-locked', 'jde-autofill-readonly', 'bg-light');
+            npwpInput.classList.remove('jde-readonly-locked', 'jde-autofill-readonly', 'field-readonly', 'bg-light');
             npwpInput.style.removeProperty('background-color');
             npwpInput.style.removeProperty('border-color');
             npwpInput.style.removeProperty('color');
             npwpInput.style.removeProperty('cursor');
             npwpInput.style.removeProperty('font-weight');
+            npwpInput.style.removeProperty('pointer-events');
             npwpInput.dataset.readonlyBound = 'false';
             npwpInput.dataset.unlockedFallback = 'true';
         }
     }
 
     function lockReadonlyFields(form) {
-        const targetReadonlyFields = ['nama_toko', 'alamat_toko', 'no_telepon', 'kota', 'nomor_npwp', 'top', 'nomor_spk'];
+        const targetReadonlyFields = ['nama_toko', 'alamat_toko', 'no_telepon', 'kota', 'top', 'nomor_spk'];
         const cabangSelect = form.querySelector('[name="cabang"]');
         if (cabangSelect) {
             cabangSelect.classList.add('jde-readonly-locked', 'field-readonly');
@@ -507,18 +496,20 @@
             cabangSelect.setAttribute('tabindex', '-1');
         }
 
-        // Pastikan nama_pemilik, nomor_nik, email TETAP DAPAT DIEDIT (tidak terkunci readonly)
-        const namaPemilikEl = form.querySelector('[name="nama_pemilik"]');
-        if (namaPemilikEl) {
-            namaPemilikEl.removeAttribute('readonly');
-            namaPemilikEl.classList.remove('jde-readonly-locked', 'jde-autofill-readonly', 'field-readonly');
-            namaPemilikEl.style.removeProperty('background-color');
-            namaPemilikEl.style.removeProperty('border-color');
-            namaPemilikEl.style.removeProperty('color');
-            namaPemilikEl.style.removeProperty('cursor');
-            namaPemilikEl.style.removeProperty('pointer-events');
-            namaPemilikEl.dataset.readonlyBound = 'false';
-        }
+        // Pastikan nama_pemilik, nomor_nik, email, nomor_npwp TETAP DAPAT DIEDIT (tidak terkunci readonly)
+        ['nama_pemilik', 'nomor_nik', 'email', 'nomor_npwp'].forEach(fieldName => {
+            const el = form.querySelector(`[name="${fieldName}"]`);
+            if (el) {
+                el.removeAttribute('readonly');
+                el.classList.remove('jde-readonly-locked', 'jde-autofill-readonly', 'field-readonly', 'bg-light');
+                el.style.removeProperty('background-color');
+                el.style.removeProperty('border-color');
+                el.style.removeProperty('color');
+                el.style.removeProperty('cursor');
+                el.style.removeProperty('pointer-events');
+                el.dataset.readonlyBound = 'false';
+            }
+        });
 
         targetReadonlyFields.forEach(fieldName => {
             const el = form.querySelector(`[name="${fieldName}"]`);
@@ -907,7 +898,7 @@
                     setFieldValue(form, 'kota', c.kota);
 
                     // Nama pemilik: jika JDE mengirim ada nilai diisi, jika tidak jangan timpa ketikan user
-                    if (c.nama_pemilik) {
+                    if (c.nama_pemilik && c.nama_pemilik !== '-' && c.nama_pemilik !== '—') {
                         setFieldValue(form, 'nama_pemilik', c.nama_pemilik);
                     } else {
                         const pemInput = form.querySelector('[name="nama_pemilik"]');
@@ -918,12 +909,15 @@
                         }
                     }
 
-                    // Nomor NPWP & Badge Status JDE
+                    // Nomor NPWP & Badge Status JDE (TETAP EDITABLE)
                     const npwpVal = c.nomor_npwp || c.npwp || '';
                     const npwpInput = form.querySelector('[name="nomor_npwp"]');
                     if (npwpVal) {
                         if (npwpInput) npwpInput.dataset.jdeOriginalNpwp = npwpVal;
                         setFieldValue(form, 'nomor_npwp', npwpVal);
+                        if (typeof form._validateNomorNpwp === 'function') {
+                            form._validateNomorNpwp(false);
+                        }
                     }
                     if (npwpInput) {
                         const npwpWrap = npwpInput.closest('.field-wrapper') || npwpInput.closest('.mb-3') || npwpInput.parentElement;
@@ -951,12 +945,21 @@
                         }
                     }
 
-                    if (c.nomor_nik || c.nik) {
-                        setFieldValue(form, 'nomor_nik', c.nomor_nik || c.nik);
+                    // Nomor NIK (KTP): Autofill dari JDE dan langsung validasi real-time
+                    const nikVal = c.nomor_nik || c.nik;
+                    if (nikVal && nikVal !== '-' && nikVal !== '—') {
+                        setFieldValue(form, 'nomor_nik', nikVal);
+                        if (typeof form._validateNomorNik === 'function') {
+                            form._validateNomorNik(false);
+                        }
                     }
-                    if (c.email) {
+
+                    // Email Toko / Pemilik: Autofill dari JDE dan langsung validasi real-time
+                    if (c.email && c.email !== '-' && c.email !== '—') {
                         setFieldValue(form, 'email', c.email);
-                        if (typeof form._validateEmail === 'function') form._validateEmail(false);
+                        if (typeof form._validateEmail === 'function') {
+                            form._validateEmail(false);
+                        }
                     }
 
                     // Auto prefill TOP (Term of Payment) di Step 2 jika ada data payment terms dari JDE
@@ -970,23 +973,11 @@
                         unlockTopField(form);
                     }
 
-                    if (typeof form._validateNomorNik === 'function') {
-                        form._validateNomorNik(false);
-                    }
-                    if (typeof form._validateNomorNpwp === 'function') {
-                        form._validateNomorNpwp(false);
-                    }
-
-                    // Kunci kembali field readonly (nama_toko, alamat_toko, no_telepon, kota, nomor_spk)
+                    // Kunci kembali field readonly master toko (nama_toko, alamat_toko, no_telepon, kota, top, nomor_spk)
                     lockReadonlyFields(form);
 
-                    // Evaluasi status kunci nomor_npwp berdasarkan status validitas JDE
-                    const stNpwp = String(c.status_npwp || '').toLowerCase();
-                    if (stNpwp === 'valid' && npwpVal) {
-                        lockNpwpField(form);
-                    } else {
-                        unlockNpwpField(form);
-                    }
+                    // Nomor NPWP selalu EDITABLE (bebas diedit pengguna)
+                    unlockNpwpField(form);
 
                     // Evaluasi status kunci TOP
                     if (c.top_days) {
@@ -1194,12 +1185,12 @@
             nikInput.setAttribute('maxlength', '16');
             const nikFeedback = setupFieldFeedback(nikInput, 'nomor-nik-feedback');
 
-            // Visual Label synchronization for NIK (Opsional, remove red *)
+            // Visual Label synchronization for NIK (Wajib, display red *)
             const nikWrapper = nikInput.closest('.field-wrapper') || nikInput.closest('.mb-3') || nikInput.parentElement;
             if (nikWrapper) {
                 const nikLabel = nikWrapper.querySelector('label');
                 if (nikLabel) {
-                    nikLabel.innerHTML = 'Nomor NIK (KTP) <span class="text-muted small fw-normal">(Opsional)</span>';
+                    nikLabel.innerHTML = 'Nomor NIK (KTP) <span class="text-danger">*</span>';
                 }
             }
 
@@ -1216,8 +1207,15 @@
                 }
 
                 if (!val) {
-                    // NIK is optional, valid when empty
-                    return true;
+                    if (showErrorIfEmpty) {
+                        nikInput.classList.add('is-invalid');
+                        if (nikFeedback) {
+                            nikFeedback.className = 'nomor-nik-feedback mt-1 small text-danger';
+                            nikFeedback.innerHTML = '<i class="bi bi-exclamation-circle me-1"></i> Nomor NIK (KTP) wajib 16 digit angka.';
+                        }
+                        return false;
+                    }
+                    return false;
                 }
 
                 if (val.length === 16) {
@@ -1599,20 +1597,34 @@
         }
 
         let branchSeqCache = {};
-        let latestFetchId = 0;
+        let activeFetchSeqId = 0;
 
-        async function fetchBranchSequence(cabVal, brandVal, compVal) {
-            if (!brandVal || brandVal.startsWith('--')) return null;
+        function getCanonicalBrandCode(brandVal) {
+            const b = (brandVal || '').trim().toUpperCase();
+            if (b.includes('LADY')) return 'LADY';
+            if (b.includes('ROYAL') || b.includes('FOAM')) return 'ROYAL';
+            if (b.includes('SERENITY')) return 'SERENITY';
+            if (b.includes('ELITE')) return 'ELITE';
+            if (b.includes('CLASSIC')) return 'CLASSIC';
+            if (b.includes('GRAND')) return 'GRAND';
+            return b.replace(/[^A-Z0-9]/g, '').slice(0, 8);
+        }
+
+        async function fetchBranchSequence(cabVal, brandVal, compVal, force = false) {
+            if (!brandVal || brandVal.startsWith('--') || brandVal.toLowerCase().includes('select')) return null;
             const cleanCab = (cabVal || 'PUSAT').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
             const cleanBrand = brandVal.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
             const cleanComp = (compVal || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
             const cacheKey = `${cleanCab}_${cleanBrand}_${cleanComp}`;
 
-            if (branchSeqCache[cacheKey]) {
+            if (!force && branchSeqCache[cacheKey]) {
                 return branchSeqCache[cacheKey];
             }
+            if (force) {
+                delete branchSeqCache[cacheKey];
+            }
 
-            const currentFetchId = ++latestFetchId;
+            const currentFetchId = ++activeFetchSeqId;
             try {
                 const draftId = form.querySelector('input[name="draft_id"]')?.value || urlParams.get('draft') || urlParams.get('draft_id') || '';
                 const params = new URLSearchParams({
@@ -1626,6 +1638,9 @@
                 const res = await fetch(`/forms/${formSlug}/next-spk-number/?${params.toString()}`);
                 if (res.ok) {
                     const data = await res.json();
+                    if (currentFetchId !== activeFetchSeqId) {
+                        return null; // Stale request discarded
+                    }
                     if (data.success && data.nomor_spk) {
                         branchSeqCache[cacheKey] = data;
                         return data;
@@ -1641,7 +1656,7 @@
             const brandVal = (brandSelect && brandSelect.value ? brandSelect.value : '').trim();
             const cabangVal = (cabangSelect && cabangSelect.value ? cabangSelect.value : '').trim();
 
-            if (!brandVal || !cabangVal || brandVal.startsWith('--') || cabangVal.startsWith('--')) {
+            if (!brandVal || !cabangVal || brandVal.startsWith('--') || brandVal.toLowerCase().includes('select') || cabangVal.startsWith('--')) {
                 spkInput.value = '';
                 spkInput.placeholder = '— Pilih Brand Produk terlebih dahulu —';
                 return;
@@ -1657,29 +1672,37 @@
             const cleanCab = (cabangVal || 'PUSAT').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
             const cleanBrand = brandVal.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
             const cleanComp = (compVal || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+            const canonicalBrand = getCanonicalBrandCode(brandVal);
             const cacheKey = `${cleanCab}_${cleanBrand}_${cleanComp}`;
 
-            // LOCK GUARD FOR EXISTING DRAFT / REVISION OR UNCHANGED COMPONENTS:
-            // Jika spkInput sudah memiliki nomor SPK valid (dari draft atau input sebelumnya)
-            // dan kombinasi Cabang + Brand + Perusahaan TIDAK berubah, JANGAN pernah timpa/generate ulang!
+            // LOCK GUARD FOR EXISTING DRAFT / UNCHANGED STATE:
+            // Hanya kunci jika:
+            // 1. Bukan pemanggilan force (!force)
+            // 2. spkInput sudah memiliki nomor SPK valid (isValidCurrentSpk)
+            // 3. Kombinasi Cabang + Brand benar-benar sama (cleanCab === lastCab && cleanBrand === lastBrand)
+            // 4. Nomor SPK yang sedang tampil memang memuat segmen brand kanonikal tersebut (/{canonicalBrand}/)
             const currentSpk = (spkInput.value || '').trim();
-            const isValidCurrentSpk = currentSpk && !currentSpk.includes('OTOMATIS') && !currentSpk.includes('AUTO-') && !currentSpk.includes('____') && !currentSpk.includes('{');
+            const isValidCurrentSpk = currentSpk && !currentSpk.includes('OTOMATIS') && !currentSpk.includes('AUTO-') && !currentSpk.includes('____') && !currentSpk.includes('{') && currentSpk.includes('/SK-');
 
             const lastCab = spkInput.dataset.lastCabang;
             const lastBrand = spkInput.dataset.lastBrand;
             const lastComp = spkInput.dataset.lastComp;
 
-            const isUnchanged = (lastCab === cleanCab && lastBrand === cleanBrand && (lastComp === cleanComp || !lastComp));
+            const hasBrandSegment = canonicalBrand ? currentSpk.includes(`/${canonicalBrand}/`) : false;
+            const hasCabangSegment = cleanCab ? currentSpk.includes(`/${cleanCab}/`) : true;
 
-            if (!force && isValidCurrentSpk && (isUnchanged || form.dataset.isRevision === 'true' || urlParams.has('draft') || urlParams.has('draft_id'))) {
-                spkInput.dataset.lastCabang = cleanCab;
-                spkInput.dataset.lastBrand = cleanBrand;
-                spkInput.dataset.lastComp = cleanComp;
-                branchSeqCache[cacheKey] = { nomor_spk: currentSpk, success: true };
+            const isUnchanged = (lastCab === cleanCab && lastBrand === cleanBrand && (lastComp === cleanComp || !lastComp) && hasBrandSegment && hasCabangSegment);
+
+            if (!force && isValidCurrentSpk && isUnchanged) {
                 return;
             }
 
-            // 1. If in cache, use immediately
+            // Jika force atau kombinasi komponen berganti, bersihkan cache usang untuk key ini
+            if (force || !isUnchanged) {
+                delete branchSeqCache[cacheKey];
+            }
+
+            // 1. If in cache, use immediately (hanya saat !force)
             if (!force && branchSeqCache[cacheKey] && branchSeqCache[cacheKey].nomor_spk) {
                 spkInput.value = branchSeqCache[cacheKey].nomor_spk;
                 spkInput.placeholder = branchSeqCache[cacheKey].nomor_spk;
@@ -1696,10 +1719,18 @@
             spkInput.placeholder = `Memuat nomor SPK untuk ${brandVal}...`;
 
             // 3. Fetch authoritative sequence from server
-            fetchBranchSequence(cabangVal, brandVal, compVal).then(data => {
+            fetchBranchSequence(cabangVal, brandVal, compVal, force).then(data => {
+                const currentBrand = (brandSelect && brandSelect.value ? brandSelect.value : '').trim();
+                const currentCabang = (cabangSelect && cabangSelect.value ? cabangSelect.value : '').trim();
+
+                // If user deselected or changed brand while fetch was in flight
+                if (!currentBrand || currentBrand.startsWith('--') || currentBrand.toLowerCase().includes('select')) {
+                    spkInput.value = '';
+                    spkInput.placeholder = '— Pilih Brand Produk terlebih dahulu —';
+                    return;
+                }
+
                 if (data && data.nomor_spk) {
-                    const currentBrand = (brandSelect && brandSelect.value ? brandSelect.value : '').trim();
-                    const currentCabang = (cabangSelect && cabangSelect.value ? cabangSelect.value : '').trim();
                     if (currentBrand === brandVal && currentCabang === cabangVal) {
                         spkInput.value = data.nomor_spk;
                         spkInput.placeholder = data.nomor_spk;
@@ -1710,21 +1741,28 @@
                         spkInput.dispatchEvent(new Event('input', { bubbles: true }));
                         spkInput.dispatchEvent(new Event('change', { bubbles: true }));
                     }
-                    if (data.perusahaan && perusahaanSelect && (!perusahaanSelect.value || perusahaanSelect.value.startsWith('--') || perusahaanSelect.value === '—')) {
-                        setSelectValue(perusahaanSelect, data.perusahaan);
+                    if (data.perusahaan && perusahaanSelect && (!perusahaanSelect.value || perusahaanSelect.value.startsWith('--')) && compVal) {
+                        setSelectValue(perusahaanSelect, compVal);
                     }
-                } else {
+                } else if (currentBrand === brandVal) {
+                    // Only show failure placeholder if brand is still selected and request actually failed
                     spkInput.value = '';
-                    spkInput.placeholder = '— Gagal memuat nomor SPK —';
+                    spkInput.placeholder = '— Gagal memuat nomor SPK (Klik untuk coba lagi) —';
                 }
             });
         }
         form._updateSPK = updateSPK;
 
-        // Auto-initialize on load: Only if Brand is chosen and no valid SPK exists, otherwise keep existing/clean placeholder
+        spkInput.addEventListener('click', () => {
+            if (!spkInput.value && spkInput.placeholder && spkInput.placeholder.includes('Gagal')) {
+                updateSPK(true);
+            }
+        });
+
+        // Auto-initialize on load: Only if Brand is chosen and no valid SPK exists, otherwise keep clean placeholder
         const isFormRevision = form.dataset.isRevision === 'true';
-        const hasExistingValidSpk = Boolean(spkInput.value && !spkInput.value.includes('OTOMATIS') && !spkInput.value.includes('AUTO-') && !spkInput.value.includes('____') && !spkInput.value.includes('{'));
-        if (cabangSelect && brandSelect && cabangSelect.value && brandSelect.value && !brandSelect.value.startsWith('--')) {
+        const hasExistingValidSpk = Boolean(spkInput.value && !spkInput.value.includes('OTOMATIS') && !spkInput.value.includes('AUTO-') && !spkInput.value.includes('____') && !spkInput.value.includes('{') && spkInput.value.includes('/SK-'));
+        if (cabangSelect && brandSelect && cabangSelect.value && brandSelect.value && !brandSelect.value.startsWith('--') && !brandSelect.value.toLowerCase().includes('select')) {
             if (!isFormRevision && !hasExistingValidSpk) {
                 updateSPK();
             }
@@ -1867,21 +1905,21 @@
         if (perusahaanSelect) {
             perusahaanSelect.addEventListener('change', () => {
                 syncRekeningPerusahaan();
-                updateSPK();
+                updateSPK(true);
             });
         }
         if (cabangSelect) {
             cabangSelect.addEventListener('change', () => {
                 autoSelectPerusahaanFromBrand();
                 syncRekeningPerusahaan();
-                updateSPK();
+                updateSPK(true);
             });
         }
         if (brandSelect) {
             const onBrandChanged = () => {
                 autoSelectPerusahaanFromBrand();
                 syncRekeningPerusahaan();
-                updateSPK();
+                updateSPK(true);
                 if (typeof form._syncDiscountSchemeWithBrand === 'function') {
                     form._syncDiscountSchemeWithBrand(brandSelect.value);
                 }
@@ -1926,8 +1964,8 @@
         autoSelectPerusahaanFromBrand();
         syncRekeningPerusahaan();
 
-        // Run immediately to generate official SPK number only if not already present
-        if (!isFormRevision && !hasExistingValidSpk && !spkInput.value) {
+        // Run immediately to generate official SPK number only if brand is chosen and not already present
+        if (!isFormRevision && !hasExistingValidSpk && !spkInput.value && brandSelect && brandSelect.value && !brandSelect.value.startsWith('--') && !brandSelect.value.toLowerCase().includes('select')) {
             updateSPK();
         }
     }
@@ -4781,23 +4819,27 @@
                         console.log(`[Wizard Navigation] Validation: Nomor NPWP OK ('${npwpDigits}')`);
                     }
 
-                    // 6. Nomor NIK validation (Opsional, jika diisi tepat 16 digit)
+                    // 6. Nomor NIK validation (Wajib tepat 16 digit angka)
                     const nikInput = form.querySelector('[name="nomor_nik"]');
                     const nikDigits = (nikInput?.value || '').trim().replace(/\D/g, '');
-                    if (nikDigits) {
-                        if (nikDigits.length !== 16) {
-                            if (nikInput) nikInput.classList.add('is-invalid');
-                            hasError = true;
-                            if (!firstInvalid) firstInvalid = nikInput;
-                            errorDetails.push(`<strong>Nomor NIK</strong> harus tepat 16 digit angka (saat ini: ${nikDigits.length} digit).`);
-                            console.warn(`[Wizard Navigation] Validation: Nomor NIK '${nikDigits}' bukan 16 digit`);
-                        } else {
-                            if (nikInput) {
-                                nikInput.classList.remove('is-invalid');
-                                nikInput.classList.add('is-valid');
-                            }
-                            console.log(`[Wizard Navigation] Validation: Nomor NIK OK ('${nikDigits}')`);
+                    if (!nikDigits) {
+                        if (nikInput) nikInput.classList.add('is-invalid');
+                        hasError = true;
+                        if (!firstInvalid) firstInvalid = nikInput;
+                        errorDetails.push('<strong>Nomor NIK (KTP)</strong> wajib diisi (tepat 16 digit).');
+                        console.warn("[Wizard Navigation] Validation: Nomor NIK KOSONG");
+                    } else if (nikDigits.length !== 16) {
+                        if (nikInput) nikInput.classList.add('is-invalid');
+                        hasError = true;
+                        if (!firstInvalid) firstInvalid = nikInput;
+                        errorDetails.push(`<strong>Nomor NIK</strong> harus tepat 16 digit angka (saat ini: ${nikDigits.length} digit).`);
+                        console.warn(`[Wizard Navigation] Validation: Nomor NIK '${nikDigits}' bukan 16 digit`);
+                    } else {
+                        if (nikInput) {
+                            nikInput.classList.remove('is-invalid');
+                            nikInput.classList.add('is-valid');
                         }
+                        console.log(`[Wizard Navigation] Validation: Nomor NIK OK ('${nikDigits}')`);
                     }
 
                     // CATATAN: Repeatable grid Asset Toko & Market Share sepenuhnya opsional dan diabaikan dari validasi blocking!
@@ -5639,7 +5681,7 @@
                 }
             }
             if (typeof form._validateNomorNpwp === 'function') {
-                const isNpwpValid = form._validateNomorNpwp(false);
+                const isNpwpValid = form._validateNomorNpwp(true);
                 if (!isNpwpValid) {
                     e.preventDefault();
                     const overlay = document.getElementById('loadingOverlay');

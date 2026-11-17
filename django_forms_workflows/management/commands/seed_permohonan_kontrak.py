@@ -1288,8 +1288,8 @@ class Command(BaseCommand):
                 "order": 13,
                 "step_number": 1,
                 "required": True,
-                "readonly": True,
-                "help_text": "Autofill 15 atau 16 digit NPWP dari JDE Customer Lookup (readonly).",
+                "readonly": False,
+                "help_text": "15 atau 16 digit NPWP pemilik/toko (wajib diisi, terisi otomatis dari JDE jika tersedia).",
             },
             {
                 "field_name": "nomor_nik",
@@ -1298,9 +1298,9 @@ class Command(BaseCommand):
                 "width": "half",
                 "order": 14,
                 "step_number": 1,
-                "required": False,
+                "required": True,
                 "readonly": False,
-                "help_text": "16 digit Nomor Induk Kependudukan (KTP) pemilik toko (opsional).",
+                "help_text": "16 digit Nomor Induk Kependudukan (KTP) pemilik toko (wajib diisi, terisi otomatis dari JDE jika tersedia).",
             },
             {
                 "field_name": "asset_toko",
