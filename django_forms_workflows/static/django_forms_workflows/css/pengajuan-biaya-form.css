@@ -353,3 +353,42 @@ main.container:has([data-form-slug="pengajuan-biaya"]),
     margin-left: 6px;
     vertical-align: middle;
 }
+
+/* ── 5-Section Restructured Layout Polish ── */
+.pengajuan-biaya-restructured-flow .card {
+    border-radius: 12px !important;
+    border-color: #e2e8f0 !important;
+    overflow: hidden;
+}
+
+.pengajuan-biaya-restructured-flow .card-header {
+    background-color: #f8fafc !important;
+    border-bottom: 1px solid #edf2f7 !important;
+}
+
+.pengajuan-biaya-restructured-flow .table th {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #475569;
+    font-weight: 700;
+    background-color: #f8fafc;
+}
+
+.pengajuan-biaya-restructured-flow .table td {
+    font-size: 13px;
+    vertical-align: middle;
+}
+
+.lampiran-input-row {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 0.65rem 0.75rem;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.lampiran-input-row:hover {
+    border-color: #cbd5e1;
+    background-color: #ffffff;
+}

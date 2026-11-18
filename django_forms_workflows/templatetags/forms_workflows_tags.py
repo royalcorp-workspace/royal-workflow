@@ -547,3 +547,24 @@ def render_komponen_biaya_badges(value):
     return mark_safe(f'<div class="d-flex flex-wrap gap-2 mt-1">{"".join(badges)}</div>')
 
 
+@register.filter(name="to_json_list")
+def to_json_list(value):
+    """Safely converts a JSON string or list into a Python list of dicts."""
+    import json
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        v = value.strip()
+        if not v or v in ("[]", "[ ]"):
+            return []
+        try:
+            res = json.loads(v)
+            return res if isinstance(res, list) else []
+        except Exception:
+            return []
+    return []
+
+
+

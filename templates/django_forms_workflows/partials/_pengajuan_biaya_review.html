@@ -232,91 +232,121 @@
     }
   </style>
 
-  <!-- ==================== VISUAL WORKFLOW PROGRESS TRACKER ==================== -->
+  <!-- ==================== VISUAL WORKFLOW PROGRESS TRACKER (SWIMLANES: PEMOHON -> ASM -> PIC PUSAT -> GM PUSAT -> FINANCE) ==================== -->
   <div class="biaya-review-card mb-3">
     <div class="biaya-card-header">
       <h6 class="biaya-card-title">
         <i class="bi bi-diagram-3-fill text-primary"></i>
-        <span>Alur Persetujuan &amp; Status Pengajuan Biaya</span>
+        <span>Alur Persetujuan &amp; Status Pengajuan Biaya (5-Tier Flowchart)</span>
       </h6>
-      <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1 fw-semibold font-monospace" style="font-size: 11.5px;">
-        <i class="bi bi-activity me-1"></i>Status: {{ submission.get_status_display }}
-      </span>
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <a href="{% url 'forms_workflows:submission_pdf' submission.id %}Pengajuan_Biaya_{{ submission.id }}.pdf" target="_blank" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1.5 shadow-sm fw-semibold" style="font-size: 11.5px;" title="Cetak Dokumen Pengajuan Biaya resmi untuk arsip atau Tanda Tangan Manual">
+          <i class="bi bi-printer-fill text-danger"></i>
+          <span>Cetak Dokumen (PDF)</span>
+        </a>
+        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1 fw-semibold font-monospace" style="font-size: 11.5px;">
+          <i class="bi bi-activity me-1"></i>Status: {{ submission.get_status_display }}
+        </span>
+      </div>
     </div>
     <div class="card-body p-2 p-md-3">
       <div class="bpmn-stepper-wrapper">
-        {# Step 1: Submit Pengajuan (Kasir Cabang) #}
+        {# Step 1: Submit Pengajuan (Pemohon) #}
         <div class="bpmn-step-card done">
-          <div class="bpmn-step-lane"><i class="bi bi-person-fill me-1"></i>Kasir Cabang</div>
+          <div class="bpmn-step-lane"><i class="bi bi-person-fill me-1"></i>1. Pemohon</div>
           <div class="bpmn-step-title">Submit Pengajuan</div>
-          <div class="bpmn-step-status"><i class="bi bi-check-circle-fill"></i> Selesai Diajukan</div>
+          <div class="bpmn-step-status"><i class="bi bi-check-circle-fill"></i> Limit Valid &bull; Diajukan</div>
         </div>
 
-        {# Step 2: Review Atasan Cabang #}
+        {# Step 2: Review Pengajuan oleh ASM #}
         {% if submission.current_stage_order > 1 or submission.status == 'approved' %}
           <div class="bpmn-step-card done">
-            <div class="bpmn-step-lane"><i class="bi bi-briefcase-fill me-1"></i>Atasan Cabang</div>
-            <div class="bpmn-step-title">Review Atasan</div>
-            <div class="bpmn-step-status"><i class="bi bi-check-circle-fill"></i> Disetujui</div>
+            <div class="bpmn-step-lane"><i class="bi bi-briefcase-fill me-1"></i>2. ASM</div>
+            <div class="bpmn-step-title">Review oleh ASM</div>
+            <div class="bpmn-step-status"><i class="bi bi-check-circle-fill"></i> Disetujui ASM</div>
           </div>
         {% elif submission.current_stage_order == 1 and submission.status != 'rejected' %}
           <div class="bpmn-step-card active">
-            <div class="bpmn-step-lane"><i class="bi bi-briefcase-fill me-1"></i>Atasan Cabang</div>
-            <div class="bpmn-step-title">Review Atasan</div>
-            <div class="bpmn-step-status"><i class="bi bi-play-circle-fill"></i> Sedang Ditinjau</div>
+            <div class="bpmn-step-lane"><i class="bi bi-briefcase-fill me-1"></i>2. ASM</div>
+            <div class="bpmn-step-title">Review oleh ASM</div>
+            <div class="bpmn-step-status"><i class="bi bi-play-circle-fill"></i> Menunggu ASM</div>
           </div>
         {% elif submission.status == 'rejected' and submission.current_stage_order == 1 %}
           <div class="bpmn-step-card rejected">
-            <div class="bpmn-step-lane"><i class="bi bi-briefcase-fill me-1"></i>Atasan Cabang</div>
-            <div class="bpmn-step-title">Review Atasan</div>
-            <div class="bpmn-step-status"><i class="bi bi-x-circle-fill"></i> Ditolak</div>
+            <div class="bpmn-step-lane"><i class="bi bi-briefcase-fill me-1"></i>2. ASM</div>
+            <div class="bpmn-step-title">Review oleh ASM</div>
+            <div class="bpmn-step-status"><i class="bi bi-arrow-return-left"></i> Ditolak / Revisi</div>
           </div>
         {% else %}
           <div class="bpmn-step-card upcoming">
-            <div class="bpmn-step-lane"><i class="bi bi-briefcase me-1"></i>Atasan Cabang</div>
-            <div class="bpmn-step-title">Review Atasan</div>
+            <div class="bpmn-step-lane"><i class="bi bi-briefcase me-1"></i>2. ASM</div>
+            <div class="bpmn-step-title">Review oleh ASM</div>
             <div class="bpmn-step-status"><i class="bi bi-circle"></i> Menunggu</div>
           </div>
         {% endif %}
 
-        {# Step 3: Verifikasi PIC Pusat #}
+        {# Step 3: Review Pengajuan oleh PIC Pusat #}
         {% if submission.current_stage_order > 2 or submission.status == 'approved' %}
           <div class="bpmn-step-card done">
-            <div class="bpmn-step-lane"><i class="bi bi-shield-check me-1"></i>PIC Pusat</div>
-            <div class="bpmn-step-title">Verifikasi Teknis</div>
-            <div class="bpmn-step-status"><i class="bi bi-check-circle-fill"></i> Terverifikasi</div>
+            <div class="bpmn-step-lane"><i class="bi bi-shield-check me-1"></i>3. PIC Pusat</div>
+            <div class="bpmn-step-title">Review PIC Pusat</div>
+            <div class="bpmn-step-status"><i class="bi bi-check-circle-fill"></i> Disetujui PIC</div>
           </div>
         {% elif submission.current_stage_order == 2 and submission.status != 'rejected' %}
           <div class="bpmn-step-card active">
-            <div class="bpmn-step-lane"><i class="bi bi-shield-check me-1"></i>PIC Pusat</div>
-            <div class="bpmn-step-title">Verifikasi Teknis</div>
-            <div class="bpmn-step-status"><i class="bi bi-play-circle-fill"></i> Sedang Diverifikasi</div>
+            <div class="bpmn-step-lane"><i class="bi bi-shield-check me-1"></i>3. PIC Pusat</div>
+            <div class="bpmn-step-title">Review PIC Pusat</div>
+            <div class="bpmn-step-status"><i class="bi bi-play-circle-fill"></i> Verifikasi Administrasi</div>
+          </div>
+        {% elif submission.status == 'rejected' and submission.current_stage_order == 2 %}
+          <div class="bpmn-step-card rejected">
+            <div class="bpmn-step-lane"><i class="bi bi-shield-check me-1"></i>3. PIC Pusat</div>
+            <div class="bpmn-step-title">Review PIC Pusat</div>
+            <div class="bpmn-step-status"><i class="bi bi-arrow-return-left"></i> Ditolak / Revisi</div>
           </div>
         {% else %}
           <div class="bpmn-step-card upcoming">
-            <div class="bpmn-step-lane"><i class="bi bi-shield me-1"></i>PIC Pusat</div>
-            <div class="bpmn-step-title">Verifikasi Teknis</div>
+            <div class="bpmn-step-lane"><i class="bi bi-shield me-1"></i>3. PIC Pusat</div>
+            <div class="bpmn-step-title">Review PIC Pusat</div>
             <div class="bpmn-step-status"><i class="bi bi-circle"></i> Menunggu</div>
           </div>
         {% endif %}
 
-        {# Step 4: Approve Atasan PIC #}
+        {# Step 4: Review Pengajuan oleh GM Pusat #}
         {% if submission.current_stage_order > 3 or submission.status == 'approved' %}
           <div class="bpmn-step-card done">
-            <div class="bpmn-step-lane"><i class="bi bi-award-fill me-1"></i>Atasan PIC</div>
-            <div class="bpmn-step-title">Approve Atasan PIC</div>
-            <div class="bpmn-step-status"><i class="bi bi-check-circle-fill"></i> Disetujui</div>
+            <div class="bpmn-step-lane"><i class="bi bi-award-fill me-1"></i>4. GM Pusat</div>
+            <div class="bpmn-step-title">Review GM Pusat</div>
+            <div class="bpmn-step-status">
+              {% if form_data.perlu_proses_manual == 'Ya' %}
+                <i class="bi bi-pen-fill text-warning"></i> TTD Manual Sah
+              {% else %}
+                <i class="bi bi-check-circle-fill"></i> Disetujui GM
+              {% endif %}
+            </div>
           </div>
         {% elif submission.current_stage_order == 3 and submission.status != 'rejected' %}
           <div class="bpmn-step-card active">
-            <div class="bpmn-step-lane"><i class="bi bi-award-fill me-1"></i>Atasan PIC</div>
-            <div class="bpmn-step-title">Approve Atasan PIC</div>
-            <div class="bpmn-step-status"><i class="bi bi-play-circle-fill"></i> Sedang Ditinjau</div>
+            <div class="bpmn-step-lane"><i class="bi bi-award-fill me-1"></i>4. GM Pusat</div>
+            <div class="bpmn-step-title">Review GM Pusat</div>
+            <div class="bpmn-step-status">
+              {% if form_data.perlu_proses_manual == 'Ya' %}
+                <i class="bi bi-printer"></i> Tunggu TTD Dokumen
+              {% else %}
+                <i class="bi bi-play-circle-fill"></i> Evaluasi Digital
+              {% endif %}
+            </div>
+          </div>
+        {% elif submission.status == 'rejected' and submission.current_stage_order == 3 %}
+          <div class="bpmn-step-card rejected">
+            <div class="bpmn-step-lane"><i class="bi bi-award-fill me-1"></i>4. GM Pusat</div>
+            <div class="bpmn-step-title">Review GM Pusat</div>
+            <div class="bpmn-step-status"><i class="bi bi-arrow-return-left"></i> Ditolak / Revisi</div>
           </div>
         {% else %}
           <div class="bpmn-step-card upcoming">
-            <div class="bpmn-step-lane"><i class="bi bi-award me-1"></i>Atasan PIC</div>
-            <div class="bpmn-step-title">Approve Atasan PIC</div>
+            <div class="bpmn-step-lane"><i class="bi bi-award me-1"></i>4. GM Pusat</div>
+            <div class="bpmn-step-title">Review GM Pusat</div>
             <div class="bpmn-step-status"><i class="bi bi-circle"></i> Menunggu</div>
           </div>
         {% endif %}
@@ -324,65 +354,74 @@
         {# Step 5: Transfer Dana (Finance) #}
         {% if submission.current_stage_order > 4 or submission.status == 'approved' %}
           <div class="bpmn-step-card done">
-            <div class="bpmn-step-lane"><i class="bi bi-cash-stack me-1"></i>Finance</div>
+            <div class="bpmn-step-lane"><i class="bi bi-cash-stack me-1"></i>5. Finance</div>
             <div class="bpmn-step-title">Transfer Dana</div>
             <div class="bpmn-step-status"><i class="bi bi-check-circle-fill"></i> Dana Ditransfer</div>
           </div>
         {% elif submission.current_stage_order == 4 and submission.status != 'rejected' %}
           <div class="bpmn-step-card active">
-            <div class="bpmn-step-lane"><i class="bi bi-cash-stack me-1"></i>Finance</div>
+            <div class="bpmn-step-lane"><i class="bi bi-cash-stack me-1"></i>5. Finance</div>
             <div class="bpmn-step-title">Transfer Dana</div>
-            <div class="bpmn-step-status"><i class="bi bi-play-circle-fill"></i> Antrean Transfer</div>
+            <div class="bpmn-step-status"><i class="bi bi-play-circle-fill"></i> Antrean Pencairan</div>
+          </div>
+        {% elif submission.status == 'rejected' and submission.current_stage_order == 4 %}
+          <div class="bpmn-step-card rejected">
+            <div class="bpmn-step-lane"><i class="bi bi-cash-stack me-1"></i>5. Finance</div>
+            <div class="bpmn-step-title">Transfer Dana</div>
+            <div class="bpmn-step-status"><i class="bi bi-arrow-return-left"></i> Ditolak Finance</div>
           </div>
         {% else %}
           <div class="bpmn-step-card upcoming">
-            <div class="bpmn-step-lane"><i class="bi bi-cash me-1"></i>Finance</div>
+            <div class="bpmn-step-lane"><i class="bi bi-cash me-1"></i>5. Finance</div>
             <div class="bpmn-step-title">Transfer Dana</div>
             <div class="bpmn-step-status"><i class="bi bi-circle"></i> Menunggu</div>
           </div>
         {% endif %}
 
-        {# Step 6: Realisasi & Closing (Kasir Cabang) #}
+        {# Step 6: Realisasi & Input No. PPVM (Pemohon) #}
         {% if submission.current_stage_order > 5 or submission.status == 'approved' %}
           <div class="bpmn-step-card done">
-            <div class="bpmn-step-lane"><i class="bi bi-receipt me-1"></i>Kasir Cabang</div>
-            <div class="bpmn-step-title">Realisasi &amp; Closing</div>
-            <div class="bpmn-step-status"><i class="bi bi-check-circle-fill"></i> Bukti Diunggah</div>
+            <div class="bpmn-step-lane"><i class="bi bi-receipt me-1"></i>6. Pemohon</div>
+            <div class="bpmn-step-title">Input Realisasi &amp; PPVM</div>
+            <div class="bpmn-step-status"><i class="bi bi-check-circle-fill"></i> PPVM Diinput</div>
           </div>
         {% elif submission.current_stage_order == 5 and submission.status != 'rejected' %}
           <div class="bpmn-step-card active">
-            <div class="bpmn-step-lane"><i class="bi bi-receipt me-1"></i>Kasir Cabang</div>
-            <div class="bpmn-step-title">Realisasi &amp; Closing</div>
-            <div class="bpmn-step-status"><i class="bi bi-play-circle-fill"></i> Tunggu Nota Riil</div>
+            <div class="bpmn-step-lane"><i class="bi bi-receipt me-1"></i>6. Pemohon</div>
+            <div class="bpmn-step-title">Input Realisasi &amp; PPVM</div>
+            <div class="bpmn-step-status"><i class="bi bi-play-circle-fill"></i> Input JDE &amp; PPVM</div>
           </div>
         {% else %}
           <div class="bpmn-step-card upcoming">
-            <div class="bpmn-step-lane"><i class="bi bi-receipt me-1"></i>Kasir Cabang</div>
-            <div class="bpmn-step-title">Realisasi &amp; Closing</div>
+            <div class="bpmn-step-lane"><i class="bi bi-receipt me-1"></i>6. Pemohon</div>
+            <div class="bpmn-step-title">Input Realisasi &amp; PPVM</div>
             <div class="bpmn-step-status"><i class="bi bi-circle"></i> Menunggu</div>
           </div>
         {% endif %}
 
-        {# Step 7: Verifikasi Closing (Finance) -> Selesai #}
+        {# Step 7: Pencocokan PPVM & Approval Realisasi (Finance) -> Selesai #}
         {% if submission.status == 'approved' %}
           <div class="bpmn-step-card done">
-            <div class="bpmn-step-lane"><i class="bi bi-patch-check-fill me-1"></i>Finance &bull; Selesai</div>
-            <div class="bpmn-step-title">Closing Verified</div>
-            <div class="bpmn-step-status"><i class="bi bi-check-all"></i> Selesai / Closed</div>
+            <div class="bpmn-step-lane"><i class="bi bi-patch-check-fill me-1"></i>7. Finance &bull; Selesai</div>
+            <div class="bpmn-step-title">Pencocokan PPVM</div>
+            <div class="bpmn-step-status"><i class="bi bi-check-all"></i> PPVM Cocok &bull; Closed</div>
           </div>
         {% elif submission.current_stage_order == 6 and submission.status != 'rejected' %}
           <div class="bpmn-step-card active">
-            <div class="bpmn-step-lane"><i class="bi bi-patch-check me-1"></i>Finance Closing</div>
-            <div class="bpmn-step-title">Verifikasi Closing</div>
-            <div class="bpmn-step-status"><i class="bi bi-play-circle-fill"></i> Sedang Diverifikasi</div>
+            <div class="bpmn-step-lane"><i class="bi bi-patch-check me-1"></i>7. Finance</div>
+            <div class="bpmn-step-title">Pencocokan PPVM</div>
+            <div class="bpmn-step-status"><i class="bi bi-play-circle-fill"></i> Verifikasi JDE PPVM</div>
           </div>
         {% else %}
           <div class="bpmn-step-card upcoming">
-            <div class="bpmn-step-lane"><i class="bi bi-patch-check me-1"></i>Finance Closing</div>
-            <div class="bpmn-step-title">Verifikasi Closing</div>
+            <div class="bpmn-step-lane"><i class="bi bi-patch-check me-1"></i>7. Finance</div>
+            <div class="bpmn-step-title">Pencocokan PPVM</div>
             <div class="bpmn-step-status"><i class="bi bi-circle"></i> Menunggu</div>
           </div>
         {% endif %}
+      </div>
+    </div>
+  </div>
       </div>
     </div>
   </div>
@@ -396,7 +435,7 @@
             <i class="bi bi-wallet2 text-primary me-1"></i>Total Anggaran / Biaya yang Diajukan
           </span>
           <div class="biaya-nominal-text mt-1">
-            Rp {{ form_data.total_nominal|default:"0" }}
+            {{ form_data.total_nominal|default:0|rupiah_format }}
           </div>
           <div class="text-secondary small mt-1">
             Kegiatan: <strong class="text-dark">{{ form_data.nama_kegiatan|default:"Pengajuan Biaya Operasional" }}</strong>
@@ -430,44 +469,60 @@
     </div>
   </div>
 
-  <!-- ==================== BAGIAN 1: INFORMASI PEMOHON & UNIT KERJA ==================== -->
-  <div class="biaya-review-card">
+  <!-- ==================== BAGIAN 1: INFORMASI PENGAJUAN ==================== -->
+  <div class="biaya-review-card mb-3">
     <div class="biaya-card-header">
       <h6 class="biaya-card-title">
-        <i class="bi bi-building text-primary"></i>
-        <span>1. Informasi Pemohon &amp; Unit Kerja Cabang</span>
+        <i class="bi bi-file-earmark-text text-primary"></i>
+        <span>1. Informasi Pengajuan</span>
       </h6>
       <span class="badge bg-light text-secondary border px-2 py-1 font-monospace" style="font-size: 11px;">
-        <i class="bi bi-tag-fill me-1 text-primary"></i>{{ form_data.kategori_biaya|default:"Operasional Cabang" }}
+        <i class="bi bi-tag-fill me-1 text-primary"></i>{{ form_data.kategori_barang|default:form_data.kategori_biaya|default:"ATK" }}
       </span>
     </div>
     <div class="biaya-card-body">
       <div class="row g-3">
-        <div class="col-sm-6 col-lg-3">
+        <div class="col-sm-6 col-lg-4">
           <div class="biaya-kv-item">
-            <span class="biaya-kv-label">Cabang / Unit Kerja</span>
+            <span class="biaya-kv-label">Nomor Pengajuan</span>
+            <div class="biaya-kv-value font-monospace fw-bold text-dark">
+              {{ form_data.nomor_pengajuan|default:submission.id }}
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+          <div class="biaya-kv-item">
+            <span class="biaya-kv-label">Tanggal Pengajuan</span>
+            <div class="biaya-kv-value font-monospace fw-semibold text-dark">
+              <i class="bi bi-calendar-event text-primary me-1"></i>{{ form_data.tanggal_pengajuan|default:submission.created_at|date:"Y-m-d" }}
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+          <div class="biaya-kv-item">
+            <span class="biaya-kv-label">Cabang</span>
             <div class="biaya-kv-value fw-semibold text-dark">
               <i class="bi bi-geo-alt-fill text-danger me-1"></i>{{ form_data.cabang|default:"Kantor Pusat / Holding" }}
             </div>
           </div>
         </div>
-        <div class="col-sm-6 col-lg-3">
+        <div class="col-sm-6 col-lg-4">
           <div class="biaya-kv-item">
-            <span class="biaya-kv-label">Divisi Pemohon</span>
+            <span class="biaya-kv-label">Kategori Barang</span>
             <div class="biaya-kv-value fw-semibold text-dark">
-              <i class="bi bi-diagram-3 text-secondary me-1"></i>{{ form_data.divisi_pemohon|default:"Divisi Umum" }}
+              <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">{{ form_data.kategori_barang|default:form_data.kategori_biaya|default:"ATK" }}</span>
             </div>
           </div>
         </div>
-        <div class="col-sm-6 col-lg-3">
+        <div class="col-sm-6 col-lg-4">
           <div class="biaya-kv-item">
-            <span class="biaya-kv-label">Tanggal Kebutuhan Dana</span>
-            <div class="biaya-kv-value font-monospace fw-semibold text-dark">
-              <i class="bi bi-calendar-event text-primary me-1"></i>{{ form_data.tanggal_kebutuhan|default:"-" }}
+            <span class="biaya-kv-label">PIC (Mapping Sistem)</span>
+            <div class="biaya-kv-value fw-semibold text-dark">
+              <i class="bi bi-person-badge-fill text-success me-1"></i>{{ form_data.pic|default:form_data.nama_pic|default:"General Affair (GA)" }}
             </div>
           </div>
         </div>
-        <div class="col-sm-6 col-lg-3">
+        <div class="col-sm-6 col-lg-4">
           <div class="biaya-kv-item">
             <span class="biaya-kv-label">Pemohon (Kasir Cabang)</span>
             <div class="biaya-kv-value fw-semibold text-dark">
@@ -475,54 +530,11 @@
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ==================== BAGIAN 2: RINCIAN ITEM & METODE PENCAIRAN ==================== -->
-  <div class="biaya-review-card">
-    <div class="biaya-card-header">
-      <h6 class="biaya-card-title">
-        <i class="bi bi-list-check text-primary"></i>
-        <span>2. Rincian Item Kebutuhan &amp; Rekening Tujuan</span>
-      </h6>
-      <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 fw-semibold font-monospace" style="font-size: 11px;">
-        <i class="bi bi-check2-circle me-1"></i>Siap Verifikasi
-      </span>
-    </div>
-    <div class="biaya-card-body">
-      <div class="mb-3">
-        <span class="biaya-kv-label mb-1 d-block">Daftar Rincian Kebutuhan Barang / Jasa</span>
-        <div class="biaya-item-list">{{ form_data.rincian_item|default:"(Belum ada rincian item kebutuhan)" }}</div>
-      </div>
-
-      <div class="p-3 bg-light rounded border mt-3">
-        <div class="row g-3 align-items-center">
-          <div class="col-12 col-md-4">
-            <div class="biaya-kv-item">
-              <span class="biaya-kv-label">Metode Pencairan</span>
-              <div class="fw-bold text-dark mt-0.5">
-                <i class="bi bi-cash-stack text-success me-1"></i>{{ form_data.metode_pencairan|default:"Transfer Rekening Bank" }}
-              </div>
-            </div>
-          </div>
-          <div class="col-12 col-md-4">
-            <div class="biaya-kv-item">
-              <span class="biaya-kv-label">Nama Bank &amp; No. Rekening</span>
-              <div class="biaya-code-badge mt-0.5">
-                <i class="bi bi-bank text-secondary"></i>
-                <span class="fw-bold">{{ form_data.nama_bank|default:"-" }}</span>
-                <span>:</span>
-                <span>{{ form_data.nomor_rekening|default:"-" }}</span>
-              </div>
-            </div>
-          </div>
-          <div class="col-12 col-md-4">
-            <div class="biaya-kv-item">
-              <span class="biaya-kv-label">Atas Nama Rekening</span>
-              <div class="fw-semibold text-dark mt-0.5" style="font-size: 13px;">
-                {{ form_data.atas_nama_rekening|default:"-" }}
-              </div>
+        <div class="col-12">
+          <div class="biaya-kv-item">
+            <span class="biaya-kv-label">Catatan Pengajuan</span>
+            <div class="p-2.5 bg-light border rounded text-secondary small" style="white-space: pre-wrap; font-size: 13px;">
+              {{ form_data.catatan_pengajuan|default:form_data.catatan_justifikasi|default:"(Tidak ada catatan pengajuan tambahan)" }}
             </div>
           </div>
         </div>
@@ -530,47 +542,276 @@
     </div>
   </div>
 
-  <!-- ==================== BAGIAN 3: LAMPIRAN & JUSTIFIKASI ==================== -->
-  <div class="biaya-review-card mb-0">
+  <!-- ==================== BAGIAN 2: INFORMASI LIMIT (4 CARD DALAM 1 ROW) ==================== -->
+  <div class="biaya-review-card mb-3">
     <div class="biaya-card-header">
       <h6 class="biaya-card-title">
-        <i class="bi bi-paperclip text-primary"></i>
-        <span>3. Dokumen Lampiran &amp; Justifikasi Operasional</span>
+        <i class="bi bi-speedometer2 text-primary"></i>
+        <span>2. Informasi Limit</span>
+      </h6>
+      <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle px-2 py-1" style="font-size: 11px;">
+        <i class="bi bi-info-circle me-1"></i>Informatif
+      </span>
+    </div>
+    <div class="biaya-card-body">
+      <div class="row g-3 row-cols-2 row-cols-md-4">
+        <div class="col">
+          <div class="p-3 rounded border bg-light h-100">
+            <div class="text-uppercase text-muted fw-bold" style="font-size: 11px;">Limit</div>
+            <div class="fs-5 fw-bolder text-dark mt-1 font-monospace">{{ form_data.limit_anggaran|default:10000000|rupiah_format }}</div>
+            <div class="text-muted small" style="font-size: 11px;">Plafon Operasional</div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="p-3 rounded border bg-light h-100">
+            <div class="text-uppercase text-muted fw-bold" style="font-size: 11px;">Terpakai</div>
+            <div class="fs-5 fw-bolder text-secondary mt-1 font-monospace">{{ form_data.limit_terpakai|default:4500000|rupiah_format }}</div>
+            <div class="text-muted small" style="font-size: 11px;">Realisasi Berjalan</div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="p-3 rounded border bg-light h-100">
+            <div class="text-uppercase text-muted fw-bold" style="font-size: 11px;">Sisa Limit</div>
+            <div class="fs-5 fw-bolder text-success mt-1 font-monospace">{{ form_data.sisa_limit|default:5500000|rupiah_format }}</div>
+            <div class="text-muted small" style="font-size: 11px;">Sisa Plafon Anggaran</div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="p-3 rounded border bg-primary-subtle border-primary-subtle h-100">
+            <div class="text-uppercase text-primary fw-bold" style="font-size: 11px;">Nominal Pengajuan (Estimasi)</div>
+            <div class="fs-5 fw-bolder text-primary mt-1 font-monospace">{{ form_data.total_nominal|default:0|rupiah_format }}</div>
+            <div class="text-primary-emphasis small" style="font-size: 11px;">Total Akumulasi Item</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== BAGIAN 3: DETAIL ITEM PENGAJUAN (STRUKTUR TABEL) ==================== -->
+  <div class="biaya-review-card mb-3">
+    <div class="biaya-card-header">
+      <h6 class="biaya-card-title">
+        <i class="bi bi-table text-primary"></i>
+        <span>3. Detail Item Pengajuan</span>
+      </h6>
+    </div>
+    <div class="biaya-card-body">
+      {% if form_data.items_data and form_data.items_data != '[]' %}
+        <div class="table-responsive">
+          <table class="table table-bordered table-sm align-middle mb-2 font-monospace" style="font-size: 12.5px;">
+            <thead class="table-light font-sans-serif" style="font-family: inherit;">
+              <tr>
+                <th style="width: 40px;" class="text-center">No</th>
+                <th>Deskripsi</th>
+                <th style="width: 80px;" class="text-center">Qty</th>
+                <th style="width: 90px;" class="text-center">Satuan</th>
+                <th style="width: 140px;" class="text-end">Harga Satuan</th>
+                <th style="width: 150px;" class="text-end">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for it in form_data.items_list %}
+                <tr>
+                  <td class="text-center">{{ forloop.counter }}</td>
+                  <td class="font-sans-serif fw-semibold text-dark" style="font-family: inherit;">{{ it.deskripsi|default:it.nama|default:"Item" }}</td>
+                  <td class="text-center">{{ it.qty|default:"1" }}</td>
+                  <td class="text-center">{{ it.satuan|default:"Pcs" }}</td>
+                  <td class="text-end">{{ it.harga_satuan|default:it.harga|default:0|rupiah_format }}</td>
+                  <td class="text-end fw-bold text-dark">{{ it.subtotal|default:0|rupiah_format }}</td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="6" class="text-center py-2 text-muted font-sans-serif">Tidak ada rincian item.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot class="table-light fw-bold font-sans-serif" style="font-family: inherit;">
+              <tr>
+                <td colspan="5" class="text-end">Total Pengajuan:</td>
+                <td class="text-end text-primary font-monospace fs-6">{{ form_data.total_nominal|default:0|rupiah_format }}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      {% else %}
+        <div class="biaya-item-list">{{ form_data.rincian_item|default:"(Belum ada rincian item kebutuhan)" }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ==================== BAGIAN 4: INFORMASI PENCAIRAN DANA ==================== -->
+  <div class="biaya-review-card mb-3">
+    <div class="biaya-card-header">
+      <h6 class="biaya-card-title">
+        <i class="bi bi-bank text-primary"></i>
+        <span>4. Informasi Pencairan Dana</span>
       </h6>
     </div>
     <div class="biaya-card-body">
       <div class="row g-3">
-        <div class="col-12 col-md-6">
-          <div class="biaya-kv-item h-100">
-            <span class="biaya-kv-label">Dokumen Lampiran Pendukung / Invoice</span>
-            <div class="p-3 bg-light rounded border mt-1 h-100 d-flex flex-column justify-content-center">
-              {% if form_data.dokumen_pendukung %}
-                <div class="d-flex align-items-center justify-content-between gap-2">
-                  <div class="d-flex align-items-center gap-2 text-truncate">
-                    <i class="bi bi-file-earmark-pdf-fill fs-3 text-danger"></i>
-                    <div class="text-truncate">
-                      <div class="fw-semibold text-dark text-truncate" style="font-size: 12.5px;">{{ form_data.dokumen_pendukung }}</div>
-                      <span class="text-muted" style="font-size: 11px;">Berkas Terlampir</span>
-                    </div>
+        <div class="col-md-4">
+          <div class="biaya-kv-item">
+            <span class="biaya-kv-label">Metode Pembayaran</span>
+            <div class="fw-bold text-dark mt-0.5">
+              <i class="bi bi-cash-stack text-success me-1"></i>{{ form_data.metode_pembayaran|default:form_data.metode_pencairan|default:"Transfer Rekening Bank" }}
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="biaya-kv-item">
+            <span class="biaya-kv-label">Nama Bank</span>
+            <div class="fw-semibold text-dark mt-0.5">
+              <i class="bi bi-building text-secondary me-1"></i>{{ form_data.nama_bank|default:"-" }}
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="biaya-kv-item">
+            <span class="biaya-kv-label">Nomor Rekening Tujuan</span>
+            <div class="biaya-code-badge mt-0.5">
+              <i class="bi bi-credit-card text-secondary"></i>
+              <span>{{ form_data.nomor_rekening|default:"(Opsional / Tidak diisi)" }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== BAGIAN 5: LAMPIRAN ==================== -->
+  <div class="biaya-review-card mb-3">
+    <div class="biaya-card-header">
+      <h6 class="biaya-card-title">
+        <i class="bi bi-paperclip text-primary"></i>
+        <span>5. Lampiran Dokumen</span>
+      </h6>
+      <span class="badge bg-light text-secondary border px-2 py-1 font-monospace" style="font-size: 11px;">
+        <i class="bi bi-files me-1"></i>Berkas Pendukung
+      </span>
+    </div>
+    <div class="biaya-card-body">
+      {% if form_data.lampiran_list %}
+        <div class="row g-2">
+          {% for lamp in form_data.lampiran_list %}
+            <div class="col-12 col-md-6">
+              <div class="p-2.5 rounded border bg-light d-flex align-items-center justify-content-between gap-2">
+                <div class="d-flex align-items-center gap-2 text-truncate">
+                  <i class="bi bi-file-earmark-pdf-fill text-danger fs-4"></i>
+                  <div class="text-truncate">
+                    <div class="fw-bold text-dark text-truncate" style="font-size: 12.5px;">{{ lamp.nama|default:"Dokumen Lampiran" }}</div>
+                    <div class="text-muted text-truncate" style="font-size: 11px;">{{ lamp.filename|default:lamp.path|default:"File Berkas" }}</div>
                   </div>
-                  <a href="/media/{{ form_data.dokumen_pendukung }}" target="_blank" class="btn btn-sm btn-outline-primary px-2.5 py-1 text-nowrap" style="font-size: 11.5px;">
+                </div>
+                {% if lamp.url %}
+                  <a href="{{ lamp.url }}" target="_blank" class="btn btn-sm btn-outline-primary text-nowrap px-2.5 py-1" style="font-size: 11.5px;">
                     <i class="bi bi-box-arrow-up-right me-1"></i>Buka
                   </a>
-                </div>
+                {% elif lamp.path %}
+                  <a href="/media/{{ lamp.path }}" target="_blank" class="btn btn-sm btn-outline-primary text-nowrap px-2.5 py-1" style="font-size: 11.5px;">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>Buka
+                  </a>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% elif form_data.dokumen_pendukung %}
+        <div class="p-3 bg-light rounded border d-flex align-items-center justify-content-between gap-2">
+          <div class="d-flex align-items-center gap-2 text-truncate">
+            <i class="bi bi-file-earmark-pdf-fill fs-3 text-danger"></i>
+            <div class="text-truncate">
+              <div class="fw-semibold text-dark text-truncate" style="font-size: 12.5px;">{{ form_data.dokumen_pendukung }}</div>
+              <span class="text-muted" style="font-size: 11px;">Berkas Terlampir</span>
+            </div>
+          </div>
+          <a href="/media/{{ form_data.dokumen_pendukung }}" target="_blank" class="btn btn-sm btn-outline-primary px-2.5 py-1 text-nowrap" style="font-size: 11.5px;">
+            <i class="bi bi-box-arrow-up-right me-1"></i>Buka
+          </a>
+        </div>
+      {% else %}
+        <div class="text-secondary small d-flex align-items-center gap-2 p-2 bg-light rounded">
+          <i class="bi bi-info-circle text-muted fs-5"></i>
+          <span>Tidak ada dokumen lampiran file yang diunggah.</span>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ==================== BAGIAN 3.5: EKSEKUSI TRANSFER DANA & PENCOCOKAN PPVM JDE ==================== -->
+  <div class="biaya-review-card mt-3 mb-0">
+    <div class="biaya-card-header">
+      <h6 class="biaya-card-title">
+        <i class="bi bi-journal-check text-primary"></i>
+        <span>3b. Informasi Transfer Dana &amp; Pencocokan Dokumen PPVM (JDE)</span>
+      </h6>
+      <div class="d-flex align-items-center gap-1.5">
+        {% if form_data.perlu_proses_manual == 'Ya' %}
+          <span class="badge bg-warning text-dark border border-warning px-2 py-1 font-monospace" style="font-size: 11px;">
+            <i class="bi bi-printer me-1"></i>Proses Manual GM
+          </span>
+        {% else %}
+          <span class="badge bg-light text-secondary border px-2 py-1 font-monospace" style="font-size: 11px;">
+            <i class="bi bi-cpu me-1"></i>Approval Full Digital
+          </span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="biaya-card-body">
+      <div class="row g-3">
+        {# Detail Eksekusi Transfer Finance #}
+        <div class="col-12 col-md-6">
+          <div class="p-3 rounded border bg-light h-100">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <span class="biaya-kv-label"><i class="bi bi-send-check text-success me-1"></i>Status Transfer Dana (Finance)</span>
+              {% if form_data.status_transfer_dana == 'Berhasil' or submission.current_stage_order > 4 or submission.status == 'approved' %}
+                <span class="badge bg-success text-white font-monospace" style="font-size: 10px;">BERHASIL / CAIR</span>
+              {% elif form_data.status_transfer_dana == 'Gagal' %}
+                <span class="badge bg-danger text-white font-monospace" style="font-size: 10px;">TRANSFER GAGAL / ULANG</span>
               {% else %}
-                <div class="text-secondary small d-flex align-items-center gap-2">
-                  <i class="bi bi-info-circle text-muted fs-5"></i>
-                  <span>Tidak ada dokumen lampiran file yang diunggah.</span>
-                </div>
+                <span class="badge bg-secondary font-monospace" style="font-size: 10px;">PENDING TRANSFER</span>
               {% endif %}
+            </div>
+            <div class="small text-dark mt-1">
+              Tanggal Pencairan: <strong>{{ form_data.tanggal_transfer_dana|default:"-" }}</strong>
+            </div>
+            <div class="small text-dark mt-0.5">
+              No. Referensi Bank: <span class="biaya-code-badge font-monospace">{{ form_data.nomor_referensi_transfer|default:"-" }}</span>
             </div>
           </div>
         </div>
 
+        {# Detail Realisasi & No. PPVM JDE #}
         <div class="col-12 col-md-6">
-          <div class="biaya-kv-item h-100">
-            <span class="biaya-kv-label">Catatan Justifikasi &amp; Rencana Penggunaan</span>
-            <div class="p-3 bg-white border rounded text-secondary small mt-1 h-100" style="white-space: pre-wrap; font-size: 12.5px; line-height: 1.6;">{{ form_data.catatan_justifikasi|default:"(Tidak ada catatan justifikasi tambahan dari pemohon)" }}</div>
+          <div class="p-3 rounded border bg-white h-100">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <span class="biaya-kv-label"><i class="bi bi-receipt text-primary me-1"></i>Dokumen PPVM (JDE) &amp; Realisasi</span>
+              {% if submission.status == 'approved' %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle font-monospace" style="font-size: 10px;">PPVM TERCOCOKKAN SAH</span>
+              {% elif submission.current_stage_order >= 5 %}
+                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle font-monospace" style="font-size: 10px;">TAHAP CLOSING</span>
+              {% else %}
+                <span class="badge bg-light text-muted border font-monospace" style="font-size: 10px;">MENUNGGU PENCAIRAN</span>
+              {% endif %}
+            </div>
+            <div class="small text-dark mt-1">
+              No. Dokumen PPVM (JDE): 
+              {% if form_data.nomor_ppvm %}
+                <span class="biaya-code-badge fw-bold text-primary font-monospace">{{ form_data.nomor_ppvm }}</span>
+              {% else %}
+                <span class="text-muted fst-italic">(Menunggu input kasir setelah transaksi JDE)</span>
+              {% endif %}
+            </div>
+            <div class="small text-dark mt-0.5">
+              Total Realisasi Biaya: <strong>Rp {{ form_data.realisasi_nominal|default:form_data.total_nominal|default:"0" }}</strong>
+            </div>
+            {% if form_data.lampiran_realisasi %}
+              <div class="mt-2 pt-2 border-top d-flex align-items-center justify-content-between">
+                <span class="text-muted small"><i class="bi bi-paperclip me-1"></i>Bukti Nota Closing:</span>
+                <a href="/media/{{ form_data.lampiran_realisasi }}" target="_blank" class="btn btn-xs btn-outline-primary py-0.5 px-2" style="font-size: 11px;">
+                  Lihat Nota
+                </a>
+              </div>
+            {% endif %}
           </div>
         </div>
       </div>
@@ -585,16 +826,16 @@
         <span>4. Lembar Pengesahan &amp; E-Signature / Cap Digital Resmi</span>
       </h6>
       <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 fw-semibold font-monospace" style="font-size: 11px;">
-        <i class="bi bi-shield-check me-1"></i>Multi-Tier Stamped
+        <i class="bi bi-shield-check me-1"></i>5-Tier Stamped Flow
       </span>
     </div>
     <div class="biaya-card-body">
       <div class="row g-2 g-md-3">
-        {# ── 1. Kasir Cabang (Pemohon) ── #}
+        {# ── 1. Pemohon (Kasir Cabang) ── #}
         <div class="col-12 col-sm-6 col-lg">
           <div class="biaya-stamp-card signed h-100">
             <div>
-              <div class="biaya-stamp-header"><i class="bi bi-person-fill text-primary me-1"></i>1. Kasir Cabang</div>
+              <div class="biaya-stamp-header"><i class="bi bi-person-fill text-primary me-1"></i>1. Pemohon</div>
               <div class="biaya-watermark-seal">
                 <div class="biaya-seal-top">
                   <span>&bull; ROYAL WORKFLOW &bull;</span>
@@ -603,7 +844,7 @@
                 <div class="biaya-cursive-sign">
                   {{ form_data.inisiator_nama|default:submission.submitter.get_full_name|default:submission.submitter.username }}
                 </div>
-                <div class="biaya-seal-footer">[ DIAJUKAN OLEH PEMOHON ]</div>
+                <div class="biaya-seal-footer">[ DIAJUKAN PEMOHON ]</div>
               </div>
             </div>
             <div class="biaya-stamp-meta">
@@ -613,40 +854,40 @@
           </div>
         </div>
 
-        {# ── 2. Atasan Cabang ── #}
+        {# ── 2. ASM (Area Sales Manager) ── #}
         <div class="col-12 col-sm-6 col-lg">
           {% if submission.sig_stage_1 or submission.current_stage_order > 1 or submission.status == 'approved' %}
             <div class="biaya-stamp-card signed h-100">
               <div>
-                <div class="biaya-stamp-header"><i class="bi bi-briefcase-fill text-success me-1"></i>2. Atasan Cabang</div>
+                <div class="biaya-stamp-header"><i class="bi bi-briefcase-fill text-success me-1"></i>2. ASM</div>
                 <div class="biaya-watermark-seal">
                   <div class="biaya-seal-top">
                     <span>&bull; PT ROYAL CORP &bull;</span>
                     <span class="badge bg-success text-white py-0.5 px-1" style="font-size: 7.5px;">DISETUJUI</span>
                   </div>
                   {% if submission.sig_stage_1.signature_image %}
-                    <img src="{{ submission.sig_stage_1.signature_image }}" alt="TTD Atasan Cabang" style="max-height: 38px; max-width: 110px; object-fit: contain;">
+                    <img src="{{ submission.sig_stage_1.signature_image }}" alt="TTD ASM" style="max-height: 38px; max-width: 110px; object-fit: contain;">
                   {% else %}
                     <div class="biaya-cursive-sign">
-                      {{ submission.sig_stage_1.approver_name|default:"Manager Cabang" }}
+                      {{ submission.sig_stage_1.approver_name|default:form_data.nama_atasan|default:"Sales Area Manager" }}
                     </div>
                   {% endif %}
-                  <div class="biaya-seal-footer">[ CAP &amp; TTD DIGITAL SAH ]</div>
+                  <div class="biaya-seal-footer">[ PERSETUJUAN ASM SAH ]</div>
                 </div>
               </div>
               <div class="biaya-stamp-meta">
-                <div class="fw-bold text-dark text-truncate">{{ submission.sig_stage_1.approver_name|default:"Manager Cabang" }}</div>
+                <div class="fw-bold text-dark text-truncate">{{ submission.sig_stage_1.approver_name|default:form_data.nama_atasan|default:"Sales Area Manager" }}</div>
                 <div class="text-muted" style="font-size: 9.5px;">{{ submission.sig_stage_1.stamped_at|default:"Terverifikasi Sistem" }}</div>
               </div>
             </div>
           {% else %}
             <div class="biaya-stamp-card waiting h-100">
               <div>
-                <div class="biaya-stamp-header text-muted"><i class="bi bi-briefcase me-1"></i>2. Atasan Cabang</div>
+                <div class="biaya-stamp-header text-muted"><i class="bi bi-briefcase me-1"></i>2. ASM</div>
                 <div class="py-3 text-center">
                   <i class="bi bi-pen text-muted fs-3 d-block mb-1"></i>
                   <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle font-monospace" style="font-size: 10px;">
-                    <i class="bi bi-clock me-1"></i>Menunggu Review
+                    <i class="bi bi-clock me-1"></i>Menunggu ASM
                   </span>
                   {% if task and task.workflow_stage and task.workflow_stage.order == 1 %}
                     <div class="mt-2">
@@ -679,14 +920,14 @@
                     <img src="{{ submission.sig_stage_2.signature_image }}" alt="TTD PIC" style="max-height: 38px; max-width: 110px; object-fit: contain;">
                   {% else %}
                     <div class="biaya-cursive-sign">
-                      {{ submission.sig_stage_2.approver_name|default:"PIC Operasional Pusat" }}
+                      {{ submission.sig_stage_2.approver_name|default:form_data.nama_pic|default:"PIC Divisi Pusat" }}
                     </div>
                   {% endif %}
-                  <div class="biaya-seal-footer">[ CAP &amp; TTD DIGITAL SAH ]</div>
+                  <div class="biaya-seal-footer">[ VERIFIKASI PIC SAH ]</div>
                 </div>
               </div>
               <div class="biaya-stamp-meta">
-                <div class="fw-bold text-dark text-truncate">{{ submission.sig_stage_2.approver_name|default:"PIC Operasional" }}</div>
+                <div class="fw-bold text-dark text-truncate">{{ submission.sig_stage_2.approver_name|default:form_data.nama_pic|default:"PIC Divisi Pusat" }}</div>
                 <div class="text-muted" style="font-size: 9.5px;">{{ submission.sig_stage_2.stamped_at|default:"Terverifikasi Sistem" }}</div>
               </div>
             </div>
@@ -715,41 +956,58 @@
           {% endif %}
         </div>
 
-        {# ── 4. Atasan PIC Pusat ── #}
+        {# ── 4. GM Pusat (Digital / TTD Manual) ── #}
         <div class="col-12 col-sm-6 col-lg">
           {% if submission.sig_stage_3 or submission.current_stage_order > 3 or submission.status == 'approved' %}
             <div class="biaya-stamp-card signed h-100">
               <div>
-                <div class="biaya-stamp-header"><i class="bi bi-award-fill text-success me-1"></i>4. Atasan PIC</div>
+                <div class="biaya-stamp-header"><i class="bi bi-award-fill text-success me-1"></i>4. GM Pusat</div>
                 <div class="biaya-watermark-seal">
                   <div class="biaya-seal-top">
                     <span>&bull; PT ROYAL CORP &bull;</span>
-                    <span class="badge bg-success text-white py-0.5 px-1" style="font-size: 7.5px;">DISETUJUI</span>
+                    {% if form_data.perlu_proses_manual == 'Ya' %}
+                      <span class="badge bg-warning text-dark py-0.5 px-1 font-monospace" style="font-size: 7.5px;">TTD MANUAL</span>
+                    {% else %}
+                      <span class="badge bg-success text-white py-0.5 px-1 font-monospace" style="font-size: 7.5px;">DISETUJUI</span>
+                    {% endif %}
                   </div>
                   {% if submission.sig_stage_3.signature_image %}
-                    <img src="{{ submission.sig_stage_3.signature_image }}" alt="TTD Atasan PIC" style="max-height: 38px; max-width: 110px; object-fit: contain;">
+                    <img src="{{ submission.sig_stage_3.signature_image }}" alt="TTD GM" style="max-height: 38px; max-width: 110px; object-fit: contain;">
                   {% else %}
                     <div class="biaya-cursive-sign">
-                      {{ submission.sig_stage_3.approver_name|default:"Head of Division" }}
+                      {{ submission.sig_stage_3.approver_name|default:"General Manager Pusat" }}
                     </div>
                   {% endif %}
-                  <div class="biaya-seal-footer">[ CAP &amp; TTD DIGITAL SAH ]</div>
+                  <div class="biaya-seal-footer">
+                    {% if form_data.perlu_proses_manual == 'Ya' %}
+                      [ TTD FISIK GM SAH ]
+                    {% else %}
+                      [ PERSETUJUAN GM SAH ]
+                    {% endif %}
+                  </div>
                 </div>
               </div>
               <div class="biaya-stamp-meta">
-                <div class="fw-bold text-dark text-truncate">{{ submission.sig_stage_3.approver_name|default:"Head of Division" }}</div>
+                <div class="fw-bold text-dark text-truncate">{{ submission.sig_stage_3.approver_name|default:"General Manager Pusat" }}</div>
                 <div class="text-muted" style="font-size: 9.5px;">{{ submission.sig_stage_3.stamped_at|default:"Terverifikasi Sistem" }}</div>
               </div>
             </div>
           {% else %}
             <div class="biaya-stamp-card waiting h-100">
               <div>
-                <div class="biaya-stamp-header text-muted"><i class="bi bi-award me-1"></i>4. Atasan PIC</div>
+                <div class="biaya-stamp-header text-muted"><i class="bi bi-award me-1"></i>4. GM Pusat</div>
                 <div class="py-3 text-center">
-                  <i class="bi bi-pen text-muted fs-3 d-block mb-1"></i>
-                  <span class="badge bg-light text-secondary border font-monospace" style="font-size: 10px;">
-                    <i class="bi bi-clock me-1"></i>Menunggu Approval
-                  </span>
+                  {% if form_data.perlu_proses_manual == 'Ya' %}
+                    <i class="bi bi-printer text-warning fs-3 d-block mb-1"></i>
+                    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle font-monospace" style="font-size: 10px;">
+                      <i class="bi bi-pen me-1"></i>Cetak &amp; TTD Fisik
+                    </span>
+                  {% else %}
+                    <i class="bi bi-pen text-muted fs-3 d-block mb-1"></i>
+                    <span class="badge bg-light text-secondary border font-monospace" style="font-size: 10px;">
+                      <i class="bi bi-clock me-1"></i>Menunggu GM
+                    </span>
+                  {% endif %}
                   {% if task and task.workflow_stage and task.workflow_stage.order == 3 %}
                     <div class="mt-2">
                       <button type="button" class="btn btn-sm btn-success fw-bold px-2.5 py-1 shadow-sm w-100" style="font-size: 11px;" data-bs-toggle="modal" data-bs-target="#eSignatureBiayaModal">
@@ -760,13 +1018,13 @@
                 </div>
               </div>
               <div class="biaya-stamp-meta text-muted" style="font-size: 10px;">
-                Belum disahkan
+                Belum disahkan GM
               </div>
             </div>
           {% endif %}
         </div>
 
-        {# ── 5. Finance (Transfer & Closing) ── #}
+        {# ── 5. Finance (Pencairan & Closing PPVM) ── #}
         <div class="col-12 col-sm-6 col-lg">
           {% if submission.status == 'approved' or submission.current_stage_order > 4 or submission.sig_stage_4 or submission.sig_stage_6 %}
             <div class="biaya-stamp-card signed h-100">
@@ -786,7 +1044,7 @@
                       {{ submission.sig_stage_6.approver_name|default:submission.sig_stage_4.approver_name|default:"Finance Dept" }}
                     </div>
                   {% endif %}
-                  <div class="biaya-seal-footer">[ VERIFIKASI CLOSING SAH ]</div>
+                  <div class="biaya-seal-footer">[ PPVM CLOSING SAH ]</div>
                 </div>
               </div>
               <div class="biaya-stamp-meta">

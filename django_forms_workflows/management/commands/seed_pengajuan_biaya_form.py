@@ -169,6 +169,7 @@ class Command(BaseCommand):
                 "is_listed": True,
                 "allow_save_draft": True,
                 "allow_resubmit": True,
+                "pdf_generation": "anytime",
             },
         )
 
@@ -182,6 +183,7 @@ class Command(BaseCommand):
             form.category = category
             form.is_active = True
             form.is_listed = True
+            form.pdf_generation = "anytime"
             form.save()
             form.fields.all().delete()
             self.stdout.write("Updated existing FormDefinition and refreshed fields.")
@@ -266,39 +268,39 @@ class Command(BaseCommand):
             },
         )
 
-        # 4. Form Fields Specification (Harmonized with Wireframe refferense-wf.jpeg & PRD v1.2)
+        # 4. Form Fields Specification (Restructured into 5 Explicit Sections per Requirements)
         field_specs = [
-            # ── KOLOM A: IDENTITAS PENGAJUAN & INFORMASI PEMBUAT (100% Prefilled & Locked) ──
-            {
-                "field_name": "tanggal_pengajuan",
-                "field_label": "Tanggal Pengajuan",
-                "field_type": "date",
-                "required": False,
-                "readonly": True,
-                "order": 1,
-                "width": "half",
-                "prefill_source_config": prefill_date,
-                "help_text": "Otomatis terisi tanggal hari ini.",
-            },
+            # ── 1. INFORMASI PENGAJUAN ──
             {
                 "field_name": "nomor_pengajuan",
                 "field_label": "Nomor Pengajuan",
                 "field_type": "text",
                 "required": False,
                 "readonly": True,
-                "order": 2,
+                "order": 1,
                 "width": "half",
                 "default_value": "Auto Number",
                 "help_text": "Nomor registrasi pengajuan otomatis dari sistem workflow.",
             },
             {
-                "field_name": "cabang",
-                "field_label": "Cabang / Unit Kerja",
-                "field_type": "select",
+                "field_name": "tanggal_pengajuan",
+                "field_label": "Tanggal Pengajuan",
+                "field_type": "date",
                 "required": False,
                 "readonly": True,
+                "order": 2,
+                "width": "half",
+                "prefill_source_config": prefill_date,
+                "help_text": "Otomatis terisi tanggal hari ini.",
+            },
+            {
+                "field_name": "cabang",
+                "field_label": "Cabang",
+                "field_type": "select",
+                "required": True,
+                "readonly": False,
                 "order": 3,
-                "width": "full",
+                "width": "half",
                 "shared_option_list": shared_branch_list,
                 "prefill_source_config": prefill_branch,
                 "choices": [
@@ -309,232 +311,101 @@ class Command(BaseCommand):
                     {"value": "Cabang Medan", "label": "Cabang Medan"},
                     {"value": "Kantor Pusat / Holding", "label": "Kantor Pusat / Holding"},
                 ],
-                "help_text": "Terkunci otomatis sesuai cabang profil karyawan.",
+                "help_text": "Cabang unit kerja pemohon.",
             },
             {
-                "field_name": "department_pembuat",
-                "field_label": "Department Pembuat",
-                "field_type": "text",
-                "required": False,
-                "readonly": True,
+                "field_name": "kategori_barang",
+                "field_label": "Kategori Barang",
+                "field_type": "select",
+                "required": True,
                 "order": 4,
                 "width": "half",
-                "prefill_source_config": prefill_dept_pembuat,
-                "default_value": "Operasional Cabang",
-                "help_text": "Otomatis terisi dari profil user pembuat.",
+                "choices": [
+                    {"value": "ATK", "label": "ATK"},
+                    {"value": "Perlengkapan Kantor & RT", "label": "Perlengkapan Kantor & RT"},
+                    {"value": "IT & Komunikasi", "label": "IT & Komunikasi"},
+                    {"value": "Pemeliharaan & Gedung (Maintenance)", "label": "Pemeliharaan & Gedung (Maintenance)"},
+                    {"value": "Operasional Kendaraan & Transportasi", "label": "Operasional Kendaraan & Transportasi"},
+                    {"value": "Sales, Marketing & Promosi", "label": "Sales, Marketing & Promosi"},
+                ],
+                "default_value": "ATK",
+                "help_text": "Kategori Barang menjadi acuan untuk menentukan PIC dan item yang dapat diajukan.",
             },
             {
-                "field_name": "bagian_pembuat",
-                "field_label": "Bagian Pembuat",
+                "field_name": "pic",
+                "field_label": "PIC",
                 "field_type": "text",
                 "required": False,
                 "readonly": True,
                 "order": 5,
                 "width": "half",
-                "prefill_source_config": prefill_bagian_pembuat,
-                "default_value": "Kasir Cabang",
-                "help_text": "Otomatis terisi dari profil user pembuat.",
+                "default_value": "General Affair (GA)",
+                "help_text": "PIC mengikuti mapping Kategori Barang pada sistem.",
             },
             {
-                "field_name": "nama_atasan",
-                "field_label": "Nama Atasan Langsung",
-                "field_type": "text",
+                "field_name": "catatan_pengajuan",
+                "field_label": "Catatan Pengajuan",
+                "field_type": "textarea",
                 "required": False,
-                "readonly": True,
                 "order": 6,
-                "width": "half",
-                "prefill_source_config": prefill_nama_atasan,
-                "default_value": "Atasan Cabang",
-                "help_text": "Atasan penanggung jawab pemohon (Reviewer Tahap 1).",
+                "width": "full",
+                "placeholder": "",
+                "help_text": "Catatan perihal kebutuhan pengajuan biaya.",
             },
+
+            # ── 2. INFORMASI LIMIT (Ditampilkan dalam 4 Card pada 1 Row) ──
             {
-                "field_name": "inisiator_nama",
-                "field_label": "Nama Kasir / Pemohon",
-                "field_type": "text",
+                "field_name": "limit_anggaran",
+                "field_label": "Limit",
+                "field_type": "number",
                 "required": False,
                 "readonly": True,
                 "order": 7,
-                "width": "half",
-                "prefill_source_config": prefill_nama_kasir,
-                "default_value": "Kasir Cabang",
-                "help_text": "User aktif yang membuat pengajuan biaya operasional.",
-            },
-
-            # ── KOLOM A: TUJUAN PENGAJUAN (Divisi Penerima & Klasifikasi Biaya PRD v1.2) ──
-            {
-                "field_name": "nama_kegiatan",
-                "field_label": "Nama / Judul Pengajuan Biaya",
-                "field_type": "text",
-                "required": True,
-                "order": 8,
-                "width": "full",
-                "placeholder": "",
-                "help_text": "Ringkasan judul kebutuhan pengajuan biaya operasional cabang.",
+                "width": "fourth",
+                "default_value": "10000000",
+                "help_text": "Informasi Limit Anggaran Cabang (Informatif).",
             },
             {
-                "field_name": "department_penerima",
-                "field_label": "Department Penerima",
-                "field_type": "select",
-                "required": True,
-                "order": 9,
-                "width": "half",
-                "choices": [
-                    {"value": "Divisi Umum & PGA", "label": "Divisi Umum & PGA"},
-                    {"value": "Divisi IT & Komunikasi", "label": "Divisi IT & Komunikasi"},
-                    {"value": "Divisi Operasional & Logistik", "label": "Divisi Operasional & Logistik"},
-                    {"value": "Divisi Sales & Marketing", "label": "Divisi Sales & Marketing"},
-                    {"value": "Divisi Finance & Accounting", "label": "Divisi Finance & Accounting"},
-                    {"value": "Divisi Human Capital (HRD)", "label": "Divisi Human Capital (HRD)"},
-                ],
-                "default_value": "Divisi Umum & PGA",
-            },
-            {
-                "field_name": "bagian_penerima",
-                "field_label": "Bagian Penerima",
-                "field_type": "text",
-                "required": False,
-                "order": 10,
-                "width": "half",
-                "default_value": "PGA / Operasional Pusat",
-                "placeholder": "",
-            },
-            {
-                "field_name": "nama_pic",
-                "field_label": "Nama PIC Penerima",
-                "field_type": "text",
-                "required": False,
-                "order": 11,
-                "width": "half",
-                "default_value": "PIC Pusat",
-                "placeholder": "",
-            },
-            {
-                "field_name": "tembusan",
-                "field_label": "Tembusan",
-                "field_type": "text",
-                "required": False,
-                "order": 12,
-                "width": "half",
-                "default_value": "Atasan PIC Pusat",
-                "placeholder": "",
-                "help_text": "Minimal nama atasan PIC kantor pusat.",
-            },
-            {
-                "field_name": "nomor_petty_cash",
-                "field_label": "No. Dokumen Petty Cash / Kasbon Cabang",
-                "field_type": "text",
-                "required": True,
-                "order": 13,
-                "width": "full",
-                "placeholder": "",
-                "help_text": "Nomor voucher petty cash fisik cabang (Wajib diisi sesuai PRD FR-04).",
-            },
-            {
-                "field_name": "kategori_biaya",
-                "field_label": "Kategori Pengeluaran Biaya",
-                "field_type": "select",
-                "required": True,
-                "order": 14,
-                "width": "half",
-                "choices": [
-                    {"value": "ATK & Perlengkapan Kantor", "label": "ATK & Perlengkapan Kantor"},
-                    {"value": "Service Umum & Pemeliharaan Gedung/Aset", "label": "Service Umum & Pemeliharaan Gedung/Aset"},
-                    {"value": "Operasional Kendaraan & Transportasi", "label": "Operasional Kendaraan & Transportasi"},
-                    {"value": "IT, Komunikasi & Peralatan Kantor", "label": "IT, Komunikasi & Peralatan Kantor"},
-                    {"value": "Sales, Pemasaran & Operasional Cabang", "label": "Sales, Pemasaran & Operasional Cabang"},
-                ],
-                "default_value": "ATK & Perlengkapan Kantor",
-                "help_text": "5 Kategori Pengeluaran Biaya MVP sesuai PRD v1.2 FR-01.",
-            },
-            {
-                "field_name": "tipe_transaksi",
-                "field_label": "Tipe Transaksi",
-                "field_type": "select",
-                "required": True,
-                "order": 15,
-                "width": "half",
-                "choices": [
-                    {"value": "Pengajuan", "label": "Pengajuan (Kasbon di muka sebelum belanja)"},
-                    {"value": "Reimburse", "label": "Reimburse (Klaim penggantian dana yang sudah keluar)"},
-                ],
-                "default_value": "Pengajuan",
-                "help_text": "Reimburse mewajibkan unggah bukti nota belanja riil saat submit (FR-05).",
-            },
-            {
-                "field_name": "urgensi_pengajuan",
-                "field_label": "Tingkat Urgensi",
-                "field_type": "select",
-                "required": True,
-                "order": 16,
-                "width": "full",
-                "choices": [
-                    {"value": "Normal (Sesuai SLA Standar)", "label": "Normal (Sesuai SLA Standar)"},
-                    {"value": "Prioritas Tinggi", "label": "Prioritas Tinggi"},
-                    {"value": "Mendesak / Urgent", "label": "Mendesak / Urgent"},
-                ],
-                "default_value": "Normal (Sesuai SLA Standar)",
-            },
-
-            # ── KOLOM A: LAMPIRAN BERKAS ──
-            {
-                "field_name": "dokumen_pendukung",
-                "field_label": "Lampiran Pengajuan / Bukti Nota / Penawaran",
-                "field_type": "file",
-                "required": False,
-                "order": 17,
-                "width": "full",
-                "help_text": "Unggah nota, kuitansi, proforma invoice, atau foto kebutuhan (Wajib untuk Reimburse).",
-            },
-            {
-                "field_name": "lampiran_realisasi",
-                "field_label": "Lampiran Realisasi / Bukti Beresan (Closing)",
-                "field_type": "file",
-                "required": False,
-                "readonly": True,
-                "order": 18,
-                "width": "full",
-                "help_text": "Diupload saat tahap Pelaporan Realisasi Biaya oleh Kasir (Tahap 6 Closing).",
-            },
-
-            # ── KOLOM B: DETAIL ITEM DAN LIMIT BUDGET GUARDRAIL ──
-            {
-                "field_name": "sisa_limit_pengajuan_lalu",
-                "field_label": "Sisa Limit Pengajuan Lalu (Rp)",
+                "field_name": "limit_terpakai",
+                "field_label": "Terpakai",
                 "field_type": "number",
                 "required": False,
                 "readonly": True,
-                "order": 19,
-                "width": "third",
-                "default_value": "1000000",
-                "help_text": "Sisa saldo limit operasional periode sebelumnya.",
+                "order": 8,
+                "width": "fourth",
+                "default_value": "4500000",
+                "help_text": "Informasi Limit Terpakai Berjalan.",
+            },
+            {
+                "field_name": "sisa_limit",
+                "field_label": "Sisa Limit",
+                "field_type": "number",
+                "required": False,
+                "readonly": True,
+                "order": 9,
+                "width": "fourth",
+                "default_value": "5500000",
+                "help_text": "Informasi Sisa Limit Anggaran.",
             },
             {
                 "field_name": "total_nominal",
-                "field_label": "Total Nominal Biaya (Rp)",
-                "field_type": "number",
-                "required": True,
-                "order": 20,
-                "width": "third",
-                "placeholder": "",
-                "help_text": "Total akumulasi nominal pengajuan dihitung otomatis dari rincian item.",
-            },
-            {
-                "field_name": "sisa_limit_saat_ini",
-                "field_label": "Sisa Limit Saat Ini (Rp)",
+                "field_label": "Nominal Pengajuan (Estimasi)",
                 "field_type": "number",
                 "required": False,
                 "readonly": True,
-                "order": 21,
-                "width": "third",
-                "default_value": "1000000",
-                "help_text": "Sisa limit setelah dikurangi total pengajuan ini.",
+                "order": 10,
+                "width": "fourth",
+                "default_value": "0",
+                "help_text": "Nominal Pengajuan mengikuti total akumulasi item yang diajukan.",
             },
+
+            # ── 3. DETAIL ITEM PENGAJUAN (Struktur Tabel) ──
             {
                 "field_name": "items_data",
                 "field_label": "Data Rincian Multi-Item (JSON)",
                 "field_type": "textarea",
                 "required": False,
-                "order": 22,
+                "order": 11,
                 "width": "full",
                 "default_value": "[]",
                 "help_text": "Data terstruktur multi-item barang/jasa disinkronkan otomatis.",
@@ -543,65 +414,158 @@ class Command(BaseCommand):
                 "field_name": "rincian_item",
                 "field_label": "Daftar Rincian Item Barang / Jasa",
                 "field_type": "textarea",
-                "required": True,
-                "order": 23,
+                "required": False,
+                "order": 12,
                 "width": "full",
                 "placeholder": "",
                 "help_text": "Ringkasan teks rincian item kebutuhan operasional.",
             },
 
-            # ── KOLOM B: PENCAIRAN DANA & JUSTIFIKASI ──
+            # ── 4. INFORMASI PENCAIRAN DANA ──
             {
-                "field_name": "metode_pencairan",
-                "field_label": "Metode Pencairan Dana",
+                "field_name": "metode_pembayaran",
+                "field_label": "Metode Pembayaran",
                 "field_type": "select",
                 "required": True,
-                "order": 24,
-                "width": "half",
+                "order": 13,
+                "width": "third",
                 "choices": [
-                    {"value": "Kas Kecil / Kasbon (Petty Cash)", "label": "Kas Kecil / Kasbon Tunai (Petty Cash)"},
-                    {"value": "Transfer Rekening Bank", "label": "Transfer Rekening Bank (Cabang / Vendor)"},
-                    {"value": "Klaim Reimbursement Karyawan", "label": "Klaim Reimbursement Karyawan"},
+                    {"value": "Transfer Rekening Bank", "label": "Transfer Rekening Bank"},
+                    {"value": "Kas Kecil / Petty Cash (Tunai)", "label": "Kas Kecil / Petty Cash (Tunai)"},
+                    {"value": "Virtual Account / Lainnya", "label": "Virtual Account / Lainnya"},
                 ],
-                "default_value": "Kas Kecil / Kasbon (Petty Cash)",
+                "default_value": "Transfer Rekening Bank",
+                "help_text": "Metode pembayaran untuk pencairan dana pengajuan biaya.",
             },
             {
                 "field_name": "nama_bank",
-                "field_label": "Nama Bank Tujuan",
+                "field_label": "Nama Bank",
                 "field_type": "text",
                 "required": False,
-                "order": 25,
-                "width": "half",
+                "order": 14,
+                "width": "third",
                 "placeholder": "",
-                "help_text": "Isi jika memilih metode transfer rekening bank.",
+                "help_text": "Nama Bank tujuan transfer.",
             },
             {
                 "field_name": "nomor_rekening",
-                "field_label": "Nomor Rekening Tujuan",
+                "field_label": "Nomor Rekening",
                 "field_type": "text",
                 "required": False,
-                "order": 26,
-                "width": "half",
+                "order": 15,
+                "width": "third",
                 "placeholder": "",
+                "help_text": "Nomor Rekening bersifat opsional.",
             },
+
+            # ── 5. LAMPIRAN ──
             {
-                "field_name": "atas_nama_rekening",
-                "field_label": "Atas Nama Rekening",
-                "field_type": "text",
+                "field_name": "dokumen_pendukung",
+                "field_label": "Lampiran Pengajuan / Bukti Nota",
+                "field_type": "file",
                 "required": False,
-                "order": 27,
-                "width": "half",
-                "placeholder": "",
+                "order": 16,
+                "width": "full",
+                "help_text": "File dokumen lampiran pengajuan biaya.",
             },
             {
-                "field_name": "catatan_justifikasi",
-                "field_label": "Catatan Justifikasi & Rencana Penggunaan",
+                "field_name": "lampiran_data",
+                "field_label": "Data Berkas Lampiran (JSON)",
                 "field_type": "textarea",
                 "required": False,
-                "order": 28,
+                "order": 17,
+                "width": "full",
+                "default_value": "[]",
+                "help_text": "Daftar multi-lampiran [Nama Dokumen] dan file unggahan.",
+            },
+
+            # ── PROSES MANUAL & WORKFLOW DOWNSTREAM (Stages 3 - 6) ──
+            {
+                "field_name": "perlu_proses_manual",
+                "field_label": "Perlu Proses Cetak & Persetujuan Manual GM Pusat?",
+                "field_type": "select",
+                "required": False,
+                "order": 18,
+                "width": "half",
+                "choices": [
+                    {"value": "Tidak", "label": "Tidak (Persetujuan Digital Sistem)"},
+                    {"value": "Ya", "label": "Ya (Perlu Cetak PDF & Tanda Tangan Fisik GM Pusat)"},
+                ],
+                "default_value": "Tidak",
+            },
+            {
+                "field_name": "status_transfer_dana",
+                "field_label": "Status Transfer Dana (Finance)",
+                "field_type": "select",
+                "required": False,
+                "order": 19,
+                "width": "third",
+                "choices": [
+                    {"value": "Pending", "label": "Pending Transfer"},
+                    {"value": "Berhasil", "label": "Transfer Dana Berhasil"},
+                    {"value": "Gagal", "label": "Transfer Gagal / Perlu Ulang"},
+                ],
+                "default_value": "Pending",
+                "help_text": "Status eksekusi transfer dana dari Finance ke cabang/pemohon.",
+            },
+            {
+                "field_name": "tanggal_transfer_dana",
+                "field_label": "Tanggal Transfer Dana",
+                "field_type": "date",
+                "required": False,
+                "order": 20,
+                "width": "third",
+                "help_text": "Tanggal pencairan dana dilakukan oleh Finance.",
+            },
+            {
+                "field_name": "nomor_referensi_transfer",
+                "field_label": "No. Referensi Bank / Transfer",
+                "field_type": "text",
+                "required": False,
+                "order": 21,
+                "width": "third",
+                "placeholder": "",
+                "help_text": "Nomor referensi bukti transaksi transfer bank.",
+            },
+            {
+                "field_name": "nomor_ppvm",
+                "field_label": "No. Dokumen PPVM (JDE)",
+                "field_type": "text",
+                "required": False,
+                "order": 22,
+                "width": "half",
+                "placeholder": "",
+                "help_text": "Nomor dokumen Payment Without Voucher Match yang diperoleh dari JDE saat realisasi.",
+            },
+            {
+                "field_name": "realisasi_nominal",
+                "field_label": "Total Nominal Realisasi Biaya (Rp)",
+                "field_type": "number",
+                "required": False,
+                "order": 23,
+                "width": "half",
+                "placeholder": "",
+                "help_text": "Total biaya riil yang dikeluarkan sesuai bukti/nota fisik.",
+            },
+            {
+                "field_name": "catatan_realisasi",
+                "field_label": "Catatan / Keterangan Realisasi Pengeluaran",
+                "field_type": "textarea",
+                "required": False,
+                "order": 24,
                 "width": "full",
                 "placeholder": "",
-                "help_text": "Uraian justifikasi kebutuhan operasional dan urgensi pemakaian dana.",
+                "help_text": "Penjelasan rincian penggunaan riil dan deviasi/selisih budget jika ada.",
+            },
+            {
+                "field_name": "lampiran_realisasi",
+                "field_label": "Lampiran Realisasi / Bukti Beresan (Closing)",
+                "field_type": "file",
+                "required": False,
+                "readonly": True,
+                "order": 25,
+                "width": "full",
+                "help_text": "Diupload saat tahap Pelaporan Realisasi Biaya oleh Kasir (Tahap 5 Closing).",
             },
         ]
 
@@ -640,18 +604,49 @@ class Command(BaseCommand):
         workflow.send_reminder_after_days = 1
         workflow.save()
 
-        # Definisikan 6 Tahap Alur Persetujuan Operasional
+        # Definisikan 6 Tahap Alur Persetujuan Operasional sesuai feedback-wf.jpeg:
+        # 1. Review Pengajuan oleh ASM (Role: ASM)
+        # 2. Review Pengajuan oleh PIC Pusat (Role: PIC Pusat)
+        # 3. Review Pengajuan oleh GM Pusat (Role: GM Pusat)
+        # 4. Review Pengajuan & Transfer Dana (Role: Finance)
+        # 5. Input No. PPVM & Laporan Realisasi (Role: Pemohon)
+        # 6. Pencocokan PPVM & Approval Realisasi (Role: Finance)
+        group_asm_list = [
+            Group.objects.get_or_create(name="Sales Area Manager")[0],
+            Group.objects.get_or_create(name="Manager Cabang & Atasan Langsung")[0],
+            Group.objects.get_or_create(name="Atasan Cabang (Manager Cabang)")[0],
+        ]
+        group_pic_pusat_list = [
+            Group.objects.get_or_create(name="PIC Pusat (Operasional & Umum)")[0],
+            Group.objects.get_or_create(name="PIC Operasional & Umum Pusat")[0],
+        ]
+        group_gm_pusat_list = [
+            Group.objects.get_or_create(name="General Manager Sales")[0],
+            Group.objects.get_or_create(name="Atasan PIC Pusat (Head of Division)")[0],
+        ]
+        group_finance_transfer_list = [
+            Group.objects.get_or_create(name="Finance (Transfer & Pencairan)")[0],
+            Group.objects.get_or_create(name="Finance Team")[0],
+        ]
+        group_maker_list = [
+            Group.objects.get_or_create(name="Kasir Cabang (Pemohon)")[0],
+        ]
+        group_finance_closing_list = [
+            Group.objects.get_or_create(name="Finance (Verifikasi Realisasi Closing)")[0],
+            Group.objects.get_or_create(name="Finance Team")[0],
+        ]
+
         stages_config = [
-            (1, "Review Atasan Cabang", group_atasan_cabang),
-            (2, "Verifikasi PIC Pusat", group_pic_pusat),
-            (3, "Persetujuan Head of Division (Atasan PIC)", group_atasan_pic),
-            (4, "Pencairan Dana (Finance)", group_finance_transfer),
-            (5, "Pelaporan Realisasi Biaya (Kasir Cabang)", group_maker),
-            (6, "Verifikasi Closing (Finance)", group_finance_closing),
+            (1, "Review Pengajuan oleh ASM", group_asm_list),
+            (2, "Review Pengajuan oleh PIC Pusat", group_pic_pusat_list),
+            (3, "Review Pengajuan oleh GM Pusat", group_gm_pusat_list),
+            (4, "Review Pengajuan & Transfer Dana (Finance)", group_finance_transfer_list),
+            (5, "Input No. PPVM & Laporan Realisasi (Pemohon)", group_maker_list),
+            (6, "Pencocokan PPVM & Approval Realisasi (Finance)", group_finance_closing_list),
         ]
 
         created_stages = []
-        for order, stage_name, group_obj in stages_config:
+        for order, stage_name, groups in stages_config:
             stage, _ = WorkflowStage.objects.get_or_create(
                 workflow=workflow,
                 order=order,
@@ -665,15 +660,18 @@ class Command(BaseCommand):
             stage.allow_send_back = True
             stage.allow_reassign = True
             stage.save()
-            StageApprovalGroup.objects.update_or_create(
-                stage=stage,
-                group=group_obj,
-                role="approval",
-                defaults={"position": 1},
-            )
+            # Clear old stage approval groups to ensure sync
+            stage.stageapprovalgroup_set.all().delete()
+            for pos, g in enumerate(groups, start=1):
+                StageApprovalGroup.objects.create(
+                    stage=stage,
+                    group=g,
+                    role="approval",
+                    position=pos,
+                )
             created_stages.append(stage)
 
-        self.stdout.write("Configured 6-Stage Approval Workflow (Atasan Cabang -> PIC Pusat -> Atasan PIC -> Finance Transfer -> Realisasi Kasir -> Finance Closing).")
+        self.stdout.write("Configured 6-Stage Approval Workflow (ASM -> PIC Pusat -> GM Pusat -> Finance Transfer -> Realisasi & PPVM Kasir -> Pencocokan PPVM Finance).")
 
         # 6. Notification Rules
         html_email_style = """
@@ -723,28 +721,28 @@ class Command(BaseCommand):
 
       <table class="info-table">
         <tr>
-          <td class="info-label">Nama Kegiatan</td>
-          <td class="info-value"><strong>{{{{ form_data.nama_kegiatan|default:"Pengajuan Biaya Operasional" }}}}</strong></td>
+          <td class="info-label">Nomor Pengajuan</td>
+          <td class="info-value"><strong>{{{{ form_data.nomor_pengajuan|default:submission.id }}}}</strong></td>
         </tr>
         <tr>
           <td class="info-label">Total Nominal</td>
           <td class="info-value" style="color: #1e3a8a; font-size: 15px; font-weight: 700;">Rp {{{{ form_data.total_nominal|default:"0" }}}}</td>
         </tr>
         <tr>
-          <td class="info-label">Kategori Biaya</td>
-          <td class="info-value">{{{{ form_data.kategori_biaya|default:"Operasional Cabang" }}}}</td>
+          <td class="info-label">Kategori Barang</td>
+          <td class="info-value">{{{{ form_data.kategori_barang|default:form_data.kategori_biaya|default:"ATK" }}}} (PIC: {{{{ form_data.pic|default:form_data.nama_pic|default:"General Affair" }}}})</td>
         </tr>
         <tr>
-          <td class="info-label">Cabang / Tipe</td>
-          <td class="info-value">{{{{ form_data.cabang|default:"Cabang Bandung" }}}} ({{{{ form_data.tipe_transaksi|default:"Pengajuan" }}}})</td>
+          <td class="info-label">Cabang</td>
+          <td class="info-value">{{{{ form_data.cabang|default:"Cabang Bandung" }}}}</td>
         </tr>
         <tr>
-          <td class="info-label">Metode Pencairan</td>
-          <td class="info-value">{{{{ form_data.metode_pencairan|default:"Transfer Rekening Bank" }}}}</td>
+          <td class="info-label">Metode Pembayaran</td>
+          <td class="info-value">{{{{ form_data.metode_pembayaran|default:form_data.metode_pencairan|default:"Transfer Rekening Bank" }}}} ({{{{ form_data.nama_bank|default:"-" }}}}: {{{{ form_data.nomor_rekening|default:"-" }}}})</td>
         </tr>
         <tr>
-          <td class="info-label">Tanggal Kebutuhan</td>
-          <td class="info-value">{{{{ form_data.tanggal_kebutuhan|default:"-" }}}}</td>
+          <td class="info-label">Catatan Pengajuan</td>
+          <td class="info-value">{{{{ form_data.catatan_pengajuan|default:form_data.catatan_justifikasi|default:"-" }}}}</td>
         </tr>
       </table>
 

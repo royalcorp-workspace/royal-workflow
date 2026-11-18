@@ -126,10 +126,17 @@
 
           {% with pdf=submission.form_definition.pdf_generation %}
             {% if pdf == 'anytime' and submission.status != 'draft' or pdf == 'post_approval' and submission.status == 'approved' or can_approve_pdf and submission.status != 'draft' %}
-              <a href="{% url 'forms_workflows:submission_pdf' submission.id %}SPK_Submission_{{ submission.id }}.pdf" target="_blank" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;" title="Buka dokumen PDF di tab baru">
-                <i class="bi bi-file-earmark-pdf-fill text-danger"></i>
-                <span>PDF</span>
-              </a>
+              {% if submission.form_definition.slug == 'pengajuan-biaya' %}
+                <a href="{% url 'forms_workflows:submission_pdf' submission.id %}Pengajuan_Biaya_{{ submission.id }}.pdf" target="_blank" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;" title="Cetak Dokumen Pengajuan Biaya (PDF)">
+                  <i class="bi bi-printer-fill text-danger"></i>
+                  <span>Cetak Dokumen (PDF)</span>
+                </a>
+              {% else %}
+                <a href="{% url 'forms_workflows:submission_pdf' submission.id %}SPK_Submission_{{ submission.id }}.pdf" target="_blank" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;" title="Buka dokumen PDF di tab baru">
+                  <i class="bi bi-file-earmark-pdf-fill text-danger"></i>
+                  <span>PDF</span>
+                </a>
+              {% endif %}
             {% endif %}
           {% endwith %}
           {% if is_approver_user %}
