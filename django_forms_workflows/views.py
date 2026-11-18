@@ -356,6 +356,147 @@ def form_qr_code(request, slug):
     return response
 
 
+def _process_pengajuan_biaya_data(form_data, submission_pk, request):
+    """
+    Normalizes and synchronizes form_data for 'pengajuan-biaya'
+    matching the 5 standardized sections:
+    1. Informasi Pengajuan (nomor, tanggal, cabang, kategori_barang, pic, catatan)
+    2. Informasi Limit (limit_anggaran, limit_terpakai, sisa_limit, total_nominal)
+    3. Detail Item Pengajuan (items_data JSON, rincian_item summary)
+    4. Informasi Pencairan Dana (metode_pembayaran, nama_bank, nomor_rekening)
+    5. Lampiran (lampiran_list, lampiran_data, dokumen_pendukung)
+    """
+    now = timezone.now()
+    curr_no = form_data.get("nomor_pengajuan")
+    if not curr_no or "AUTO" in str(curr_no).upper() or curr_no == "Auto Number":
+        sub_id = submission_pk or 1
+        form_data["nomor_pengajuan"] = f"PB/{now.year}/{now.strftime('%m')}/{int(sub_id):04d}"
+
+    if not form_data.get("tanggal_pengajuan"):
+        form_data["tanggal_pengajuan"] = now.strftime("%Y-%m-%d")
+
+    # Mapping Kategori Barang -> PIC
+    pic_map = {
+        "ATK": "General Affair (GA)",
+        "Perlengkapan Kantor & RT": "General Affair (GA)",
+        "IT & Komunikasi": "IT Support / Infrastructure",
+        "Pemeliharaan & Gedung (Maintenance)": "Building & Facility Management",
+        "Operasional Kendaraan & Transportasi": "Logistik & Operasional",
+        "Sales, Marketing & Promosi": "Marketing & Promo Support",
+    }
+    kategori = form_data.get("kategori_barang") or form_data.get("kategori_biaya") or "ATK"
+    pic = form_data.get("pic") or pic_map.get(kategori, "General Affair (GA)")
+    form_data["kategori_barang"] = kategori
+    form_data["kategori_biaya"] = kategori
+    form_data["pic"] = pic
+    form_data["nama_pic"] = pic
+
+    cabang = form_data.get("cabang") or "Cabang"
+    if not form_data.get("nama_kegiatan"):
+        form_data["nama_kegiatan"] = f"Pengajuan Biaya {kategori} - {cabang}"
+
+    # Sync metode pembayaran & catatan
+    metode = form_data.get("metode_pembayaran") or form_data.get("metode_pencairan") or "Transfer Rekening Bank"
+    form_data["metode_pembayaran"] = metode
+    form_data["metode_pencairan"] = metode
+
+    catatan = form_data.get("catatan_pengajuan") or form_data.get("catatan_justifikasi") or ""
+    form_data["catatan_pengajuan"] = catatan
+    form_data["catatan_justifikasi"] = catatan
+
+    # Items calculation
+    raw_items = form_data.get("items_data", "[]")
+    items_list = []
+    if isinstance(raw_items, str):
+        try:
+            items_list = json.loads(raw_items)
+        except Exception:
+            items_list = []
+    elif isinstance(raw_items, list):
+        items_list = raw_items
+
+    calc_total = 0
+    rincian_lines = []
+    norm_items = []
+    for idx, it in enumerate(items_list, 1):
+        if isinstance(it, dict):
+            desc = it.get("deskripsi") or it.get("nama") or it.get("Nama Item") or f"Item {idx}"
+            try:
+                qty = int(it.get("qty") or it.get("Qty") or 1)
+            except (ValueError, TypeError):
+                qty = 1
+            satuan = it.get("satuan") or it.get("Satuan") or "Pcs"
+            try:
+                harga = int(it.get("harga_satuan") or it.get("harga") or it.get("Harga Satuan") or 0)
+            except (ValueError, TypeError):
+                harga = 0
+            subtotal = qty * harga
+            norm_items.append({
+                "no": idx,
+                "deskripsi": desc,
+                "nama": desc,
+                "qty": qty,
+                "satuan": satuan,
+                "harga_satuan": harga,
+                "harga": harga,
+                "subtotal": subtotal,
+            })
+            calc_total += subtotal
+            rincian_lines.append(f"{idx}. {desc} ({qty} {satuan} @ Rp {harga:,}) = Rp {subtotal:,}".replace(",", "."))
+
+    if calc_total > 0 or not form_data.get("total_nominal"):
+        form_data["total_nominal"] = calc_total
+    form_data["items_data"] = json.dumps(norm_items)
+    if rincian_lines:
+        form_data["rincian_item"] = "\n".join(rincian_lines)
+
+    # Multi-attachment files: collect all uploaded files (single dokumen_pendukung and lampiran_files)
+    lampiran_names = request.POST.getlist("lampiran_nama") or request.POST.getlist("lampiran_nama[]")
+    lampiran_files = request.FILES.getlist("lampiran_file") or request.FILES.getlist("lampiran_file[]")
+    single_dok = request.FILES.get("dokumen_pendukung")
+
+    existing_lampiran = []
+    raw_lamp_data = form_data.get("lampiran_data")
+    if isinstance(raw_lamp_data, str) and raw_lamp_data:
+        try:
+            parsed = json.loads(raw_lamp_data)
+            if isinstance(parsed, list):
+                existing_lampiran = parsed
+        except Exception:
+            pass
+    elif isinstance(raw_lamp_data, list):
+        existing_lampiran = raw_lamp_data
+
+    all_uploaded_files = []
+    if single_dok:
+        all_uploaded_files.append((single_dok, "dokumen_pendukung"))
+    for idx_f, f_obj in enumerate(lampiran_files):
+        all_uploaded_files.append((f_obj, f"lampiran_{idx_f}"))
+
+    lampiran_list = []
+    for idx, (f_obj, f_prefix) in enumerate(all_uploaded_files):
+        doc_label = lampiran_names[idx] if idx < len(lampiran_names) and lampiran_names[idx] else f_obj.name
+        ser = _serialize_single_file(f_obj, f_prefix, submission_pk)
+        lampiran_list.append({
+            "nama": doc_label,
+            "filename": ser.get("filename"),
+            "path": ser.get("path"),
+            "size": ser.get("size"),
+            "content_type": ser.get("content_type"),
+        })
+
+    if not lampiran_list and existing_lampiran:
+        lampiran_list = existing_lampiran
+
+    if lampiran_list:
+        form_data["lampiran_list"] = lampiran_list
+        form_data["lampiran_data"] = json.dumps(lampiran_list)
+        if not form_data.get("dokumen_pendukung") and lampiran_list[0].get("path"):
+            form_data["dokumen_pendukung"] = lampiran_list[0]["path"]
+
+    return form_data
+
+
 def form_submit(request, slug):
     """Submit a form — supports both authenticated and anonymous (public) access."""
     form_def = get_object_or_404(FormDefinition, slug=slug, is_active=True)
@@ -617,6 +758,9 @@ def form_submit(request, slug):
                         comp_prof = resolve_company_profile(form_data=updated_data, user=request.user)
                         updated_data["perusahaan"] = comp_prof.get("display_name", "PT Anugrah Cemerlang Abadi")
 
+                if form_def.slug == "pengajuan-biaya":
+                    updated_data = _process_pengajuan_biaya_data(updated_data, revision_submission.pk, request)
+
                 from .workflow_engine import handle_resubmit_revision
 
                 handle_resubmit_revision(revision_submission, updated_data, user=request.user)
@@ -748,6 +892,10 @@ def form_submit(request, slug):
                     submission.form_data["syarat_pencairan"] = ""
                     submission.form_data["komponen_biaya"] = ""
                     submission.form_data["pengecualian_ketentuan_support"] = ""
+            if form_def.slug == "pengajuan-biaya":
+                submission.form_data = _process_pengajuan_biaya_data(submission.form_data, submission.pk, request)
+                submission.save(update_fields=["form_data"])
+
             submission.form_data = _re_evaluate_calculated_fields(
                 submission.form_data, form_def
             )
@@ -1018,6 +1166,10 @@ def form_embed(request, slug):
                 submission_id=submission.pk,
                 existing_file_data=stashed_files or None,
             )
+            if form_def.slug == "pengajuan-biaya":
+                submission.form_data = _process_pengajuan_biaya_data(submission.form_data, submission.pk, request)
+                submission.save(update_fields=["form_data"])
+
             submission.form_data = _re_evaluate_calculated_fields(
                 submission.form_data, form_def
             )
@@ -5227,6 +5379,19 @@ def _resolve_form_data_urls(form_data):
             resolved[key] = [{**f, "url": get_file_url(f)} for f in value]
         else:
             resolved[key] = value
+
+    if "items_data" in form_data and "items_list" not in resolved:
+        raw_it = form_data.get("items_data")
+        if isinstance(raw_it, str):
+            try:
+                resolved["items_list"] = json.loads(raw_it) if raw_it.strip() not in ("", "[]") else []
+            except Exception:
+                resolved["items_list"] = []
+        elif isinstance(raw_it, list):
+            resolved["items_list"] = raw_it
+        else:
+            resolved["items_list"] = []
+
     resolved.setdefault("e_signatures", resolved.get("e_signatures") or {})
     return resolved
 
@@ -6585,6 +6750,10 @@ def batch_import_upload(request, slug):
             submission.form_data = serialize_form_data(
                 form.cleaned_data, submission_id=submission.pk
             )
+            if form_def.slug == "pengajuan-biaya":
+                submission.form_data = _process_pengajuan_biaya_data(submission.form_data, submission.pk, request)
+                submission.save(update_fields=["form_data"])
+
             submission.form_data = _re_evaluate_calculated_fields(
                 submission.form_data, form_def
             )

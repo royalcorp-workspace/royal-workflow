@@ -435,7 +435,7 @@
             <i class="bi bi-wallet2 text-primary me-1"></i>Total Anggaran / Biaya yang Diajukan
           </span>
           <div class="biaya-nominal-text mt-1">
-            Rp {{ form_data.total_nominal|default:"0" }}
+            {{ form_data.total_nominal|default:0|rupiah_format }}
           </div>
           <div class="text-secondary small mt-1">
             Kegiatan: <strong class="text-dark">{{ form_data.nama_kegiatan|default:"Pengajuan Biaya Operasional" }}</strong>
@@ -469,44 +469,60 @@
     </div>
   </div>
 
-  <!-- ==================== BAGIAN 1: INFORMASI PEMOHON & UNIT KERJA ==================== -->
-  <div class="biaya-review-card">
+  <!-- ==================== BAGIAN 1: INFORMASI PENGAJUAN ==================== -->
+  <div class="biaya-review-card mb-3">
     <div class="biaya-card-header">
       <h6 class="biaya-card-title">
-        <i class="bi bi-building text-primary"></i>
-        <span>1. Informasi Pemohon &amp; Unit Kerja Cabang</span>
+        <i class="bi bi-file-earmark-text text-primary"></i>
+        <span>1. Informasi Pengajuan</span>
       </h6>
       <span class="badge bg-light text-secondary border px-2 py-1 font-monospace" style="font-size: 11px;">
-        <i class="bi bi-tag-fill me-1 text-primary"></i>{{ form_data.kategori_biaya|default:"Operasional Cabang" }}
+        <i class="bi bi-tag-fill me-1 text-primary"></i>{{ form_data.kategori_barang|default:form_data.kategori_biaya|default:"ATK" }}
       </span>
     </div>
     <div class="biaya-card-body">
       <div class="row g-3">
-        <div class="col-sm-6 col-lg-3">
+        <div class="col-sm-6 col-lg-4">
           <div class="biaya-kv-item">
-            <span class="biaya-kv-label">Cabang / Unit Kerja</span>
+            <span class="biaya-kv-label">Nomor Pengajuan</span>
+            <div class="biaya-kv-value font-monospace fw-bold text-dark">
+              {{ form_data.nomor_pengajuan|default:submission.id }}
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+          <div class="biaya-kv-item">
+            <span class="biaya-kv-label">Tanggal Pengajuan</span>
+            <div class="biaya-kv-value font-monospace fw-semibold text-dark">
+              <i class="bi bi-calendar-event text-primary me-1"></i>{{ form_data.tanggal_pengajuan|default:submission.created_at|date:"Y-m-d" }}
+            </div>
+          </div>
+        </div>
+        <div class="col-sm-6 col-lg-4">
+          <div class="biaya-kv-item">
+            <span class="biaya-kv-label">Cabang</span>
             <div class="biaya-kv-value fw-semibold text-dark">
               <i class="bi bi-geo-alt-fill text-danger me-1"></i>{{ form_data.cabang|default:"Kantor Pusat / Holding" }}
             </div>
           </div>
         </div>
-        <div class="col-sm-6 col-lg-3">
+        <div class="col-sm-6 col-lg-4">
           <div class="biaya-kv-item">
-            <span class="biaya-kv-label">Divisi Pemohon</span>
+            <span class="biaya-kv-label">Kategori Barang</span>
             <div class="biaya-kv-value fw-semibold text-dark">
-              <i class="bi bi-diagram-3 text-secondary me-1"></i>{{ form_data.divisi_pemohon|default:"Divisi Umum" }}
+              <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">{{ form_data.kategori_barang|default:form_data.kategori_biaya|default:"ATK" }}</span>
             </div>
           </div>
         </div>
-        <div class="col-sm-6 col-lg-3">
+        <div class="col-sm-6 col-lg-4">
           <div class="biaya-kv-item">
-            <span class="biaya-kv-label">Tanggal Kebutuhan Dana</span>
-            <div class="biaya-kv-value font-monospace fw-semibold text-dark">
-              <i class="bi bi-calendar-event text-primary me-1"></i>{{ form_data.tanggal_kebutuhan|default:"-" }}
+            <span class="biaya-kv-label">PIC (Mapping Sistem)</span>
+            <div class="biaya-kv-value fw-semibold text-dark">
+              <i class="bi bi-person-badge-fill text-success me-1"></i>{{ form_data.pic|default:form_data.nama_pic|default:"General Affair (GA)" }}
             </div>
           </div>
         </div>
-        <div class="col-sm-6 col-lg-3">
+        <div class="col-sm-6 col-lg-4">
           <div class="biaya-kv-item">
             <span class="biaya-kv-label">Pemohon (Kasir Cabang)</span>
             <div class="biaya-kv-value fw-semibold text-dark">
@@ -514,54 +530,11 @@
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ==================== BAGIAN 2: RINCIAN ITEM & METODE PENCAIRAN ==================== -->
-  <div class="biaya-review-card">
-    <div class="biaya-card-header">
-      <h6 class="biaya-card-title">
-        <i class="bi bi-list-check text-primary"></i>
-        <span>2. Rincian Item Kebutuhan &amp; Rekening Tujuan</span>
-      </h6>
-      <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 fw-semibold font-monospace" style="font-size: 11px;">
-        <i class="bi bi-check2-circle me-1"></i>Siap Verifikasi
-      </span>
-    </div>
-    <div class="biaya-card-body">
-      <div class="mb-3">
-        <span class="biaya-kv-label mb-1 d-block">Daftar Rincian Kebutuhan Barang / Jasa</span>
-        <div class="biaya-item-list">{{ form_data.rincian_item|default:"(Belum ada rincian item kebutuhan)" }}</div>
-      </div>
-
-      <div class="p-3 bg-light rounded border mt-3">
-        <div class="row g-3 align-items-center">
-          <div class="col-12 col-md-4">
-            <div class="biaya-kv-item">
-              <span class="biaya-kv-label">Metode Pencairan</span>
-              <div class="fw-bold text-dark mt-0.5">
-                <i class="bi bi-cash-stack text-success me-1"></i>{{ form_data.metode_pencairan|default:"Transfer Rekening Bank" }}
-              </div>
-            </div>
-          </div>
-          <div class="col-12 col-md-4">
-            <div class="biaya-kv-item">
-              <span class="biaya-kv-label">Nama Bank &amp; No. Rekening</span>
-              <div class="biaya-code-badge mt-0.5">
-                <i class="bi bi-bank text-secondary"></i>
-                <span class="fw-bold">{{ form_data.nama_bank|default:"-" }}</span>
-                <span>:</span>
-                <span>{{ form_data.nomor_rekening|default:"-" }}</span>
-              </div>
-            </div>
-          </div>
-          <div class="col-12 col-md-4">
-            <div class="biaya-kv-item">
-              <span class="biaya-kv-label">Atas Nama Rekening</span>
-              <div class="fw-semibold text-dark mt-0.5" style="font-size: 13px;">
-                {{ form_data.atas_nama_rekening|default:"-" }}
-              </div>
+        <div class="col-12">
+          <div class="biaya-kv-item">
+            <span class="biaya-kv-label">Catatan Pengajuan</span>
+            <div class="p-2.5 bg-light border rounded text-secondary small" style="white-space: pre-wrap; font-size: 13px;">
+              {{ form_data.catatan_pengajuan|default:form_data.catatan_justifikasi|default:"(Tidak ada catatan pengajuan tambahan)" }}
             </div>
           </div>
         </div>
@@ -569,50 +542,198 @@
     </div>
   </div>
 
-  <!-- ==================== BAGIAN 3: LAMPIRAN & JUSTIFIKASI ==================== -->
-  <div class="biaya-review-card mb-0">
+  <!-- ==================== BAGIAN 2: INFORMASI LIMIT (4 CARD DALAM 1 ROW) ==================== -->
+  <div class="biaya-review-card mb-3">
     <div class="biaya-card-header">
       <h6 class="biaya-card-title">
-        <i class="bi bi-paperclip text-primary"></i>
-        <span>3. Dokumen Lampiran &amp; Justifikasi Operasional</span>
+        <i class="bi bi-speedometer2 text-primary"></i>
+        <span>2. Informasi Limit</span>
+      </h6>
+      <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle px-2 py-1" style="font-size: 11px;">
+        <i class="bi bi-info-circle me-1"></i>Informatif
+      </span>
+    </div>
+    <div class="biaya-card-body">
+      <div class="row g-3 row-cols-2 row-cols-md-4">
+        <div class="col">
+          <div class="p-3 rounded border bg-light h-100">
+            <div class="text-uppercase text-muted fw-bold" style="font-size: 11px;">Limit</div>
+            <div class="fs-5 fw-bolder text-dark mt-1 font-monospace">{{ form_data.limit_anggaran|default:10000000|rupiah_format }}</div>
+            <div class="text-muted small" style="font-size: 11px;">Plafon Operasional</div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="p-3 rounded border bg-light h-100">
+            <div class="text-uppercase text-muted fw-bold" style="font-size: 11px;">Terpakai</div>
+            <div class="fs-5 fw-bolder text-secondary mt-1 font-monospace">{{ form_data.limit_terpakai|default:4500000|rupiah_format }}</div>
+            <div class="text-muted small" style="font-size: 11px;">Realisasi Berjalan</div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="p-3 rounded border bg-light h-100">
+            <div class="text-uppercase text-muted fw-bold" style="font-size: 11px;">Sisa Limit</div>
+            <div class="fs-5 fw-bolder text-success mt-1 font-monospace">{{ form_data.sisa_limit|default:5500000|rupiah_format }}</div>
+            <div class="text-muted small" style="font-size: 11px;">Sisa Plafon Anggaran</div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="p-3 rounded border bg-primary-subtle border-primary-subtle h-100">
+            <div class="text-uppercase text-primary fw-bold" style="font-size: 11px;">Nominal Pengajuan (Estimasi)</div>
+            <div class="fs-5 fw-bolder text-primary mt-1 font-monospace">{{ form_data.total_nominal|default:0|rupiah_format }}</div>
+            <div class="text-primary-emphasis small" style="font-size: 11px;">Total Akumulasi Item</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== BAGIAN 3: DETAIL ITEM PENGAJUAN (STRUKTUR TABEL) ==================== -->
+  <div class="biaya-review-card mb-3">
+    <div class="biaya-card-header">
+      <h6 class="biaya-card-title">
+        <i class="bi bi-table text-primary"></i>
+        <span>3. Detail Item Pengajuan</span>
+      </h6>
+    </div>
+    <div class="biaya-card-body">
+      {% if form_data.items_data and form_data.items_data != '[]' %}
+        <div class="table-responsive">
+          <table class="table table-bordered table-sm align-middle mb-2 font-monospace" style="font-size: 12.5px;">
+            <thead class="table-light font-sans-serif" style="font-family: inherit;">
+              <tr>
+                <th style="width: 40px;" class="text-center">No</th>
+                <th>Deskripsi</th>
+                <th style="width: 80px;" class="text-center">Qty</th>
+                <th style="width: 90px;" class="text-center">Satuan</th>
+                <th style="width: 140px;" class="text-end">Harga Satuan</th>
+                <th style="width: 150px;" class="text-end">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for it in form_data.items_list %}
+                <tr>
+                  <td class="text-center">{{ forloop.counter }}</td>
+                  <td class="font-sans-serif fw-semibold text-dark" style="font-family: inherit;">{{ it.deskripsi|default:it.nama|default:"Item" }}</td>
+                  <td class="text-center">{{ it.qty|default:"1" }}</td>
+                  <td class="text-center">{{ it.satuan|default:"Pcs" }}</td>
+                  <td class="text-end">{{ it.harga_satuan|default:it.harga|default:0|rupiah_format }}</td>
+                  <td class="text-end fw-bold text-dark">{{ it.subtotal|default:0|rupiah_format }}</td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="6" class="text-center py-2 text-muted font-sans-serif">Tidak ada rincian item.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot class="table-light fw-bold font-sans-serif" style="font-family: inherit;">
+              <tr>
+                <td colspan="5" class="text-end">Total Pengajuan:</td>
+                <td class="text-end text-primary font-monospace fs-6">{{ form_data.total_nominal|default:0|rupiah_format }}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      {% else %}
+        <div class="biaya-item-list">{{ form_data.rincian_item|default:"(Belum ada rincian item kebutuhan)" }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ==================== BAGIAN 4: INFORMASI PENCAIRAN DANA ==================== -->
+  <div class="biaya-review-card mb-3">
+    <div class="biaya-card-header">
+      <h6 class="biaya-card-title">
+        <i class="bi bi-bank text-primary"></i>
+        <span>4. Informasi Pencairan Dana</span>
       </h6>
     </div>
     <div class="biaya-card-body">
       <div class="row g-3">
-        <div class="col-12 col-md-6">
-          <div class="biaya-kv-item h-100">
-            <span class="biaya-kv-label">Dokumen Lampiran Pendukung / Invoice</span>
-            <div class="p-3 bg-light rounded border mt-1 h-100 d-flex flex-column justify-content-center">
-              {% if form_data.dokumen_pendukung %}
-                <div class="d-flex align-items-center justify-content-between gap-2">
-                  <div class="d-flex align-items-center gap-2 text-truncate">
-                    <i class="bi bi-file-earmark-pdf-fill fs-3 text-danger"></i>
-                    <div class="text-truncate">
-                      <div class="fw-semibold text-dark text-truncate" style="font-size: 12.5px;">{{ form_data.dokumen_pendukung }}</div>
-                      <span class="text-muted" style="font-size: 11px;">Berkas Terlampir</span>
-                    </div>
-                  </div>
-                  <a href="/media/{{ form_data.dokumen_pendukung }}" target="_blank" class="btn btn-sm btn-outline-primary px-2.5 py-1 text-nowrap" style="font-size: 11.5px;">
-                    <i class="bi bi-box-arrow-up-right me-1"></i>Buka
-                  </a>
-                </div>
-              {% else %}
-                <div class="text-secondary small d-flex align-items-center gap-2">
-                  <i class="bi bi-info-circle text-muted fs-5"></i>
-                  <span>Tidak ada dokumen lampiran file yang diunggah.</span>
-                </div>
-              {% endif %}
+        <div class="col-md-4">
+          <div class="biaya-kv-item">
+            <span class="biaya-kv-label">Metode Pembayaran</span>
+            <div class="fw-bold text-dark mt-0.5">
+              <i class="bi bi-cash-stack text-success me-1"></i>{{ form_data.metode_pembayaran|default:form_data.metode_pencairan|default:"Transfer Rekening Bank" }}
             </div>
           </div>
         </div>
-
-        <div class="col-12 col-md-6">
-          <div class="biaya-kv-item h-100">
-            <span class="biaya-kv-label">Catatan Justifikasi &amp; Rencana Penggunaan</span>
-            <div class="p-3 bg-white border rounded text-secondary small mt-1 h-100" style="white-space: pre-wrap; font-size: 12.5px; line-height: 1.6;">{{ form_data.catatan_justifikasi|default:"(Tidak ada catatan justifikasi tambahan dari pemohon)" }}</div>
+        <div class="col-md-4">
+          <div class="biaya-kv-item">
+            <span class="biaya-kv-label">Nama Bank</span>
+            <div class="fw-semibold text-dark mt-0.5">
+              <i class="bi bi-building text-secondary me-1"></i>{{ form_data.nama_bank|default:"-" }}
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="biaya-kv-item">
+            <span class="biaya-kv-label">Nomor Rekening Tujuan</span>
+            <div class="biaya-code-badge mt-0.5">
+              <i class="bi bi-credit-card text-secondary"></i>
+              <span>{{ form_data.nomor_rekening|default:"(Opsional / Tidak diisi)" }}</span>
+            </div>
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ==================== BAGIAN 5: LAMPIRAN ==================== -->
+  <div class="biaya-review-card mb-3">
+    <div class="biaya-card-header">
+      <h6 class="biaya-card-title">
+        <i class="bi bi-paperclip text-primary"></i>
+        <span>5. Lampiran Dokumen</span>
+      </h6>
+      <span class="badge bg-light text-secondary border px-2 py-1 font-monospace" style="font-size: 11px;">
+        <i class="bi bi-files me-1"></i>Berkas Pendukung
+      </span>
+    </div>
+    <div class="biaya-card-body">
+      {% if form_data.lampiran_list %}
+        <div class="row g-2">
+          {% for lamp in form_data.lampiran_list %}
+            <div class="col-12 col-md-6">
+              <div class="p-2.5 rounded border bg-light d-flex align-items-center justify-content-between gap-2">
+                <div class="d-flex align-items-center gap-2 text-truncate">
+                  <i class="bi bi-file-earmark-pdf-fill text-danger fs-4"></i>
+                  <div class="text-truncate">
+                    <div class="fw-bold text-dark text-truncate" style="font-size: 12.5px;">{{ lamp.nama|default:"Dokumen Lampiran" }}</div>
+                    <div class="text-muted text-truncate" style="font-size: 11px;">{{ lamp.filename|default:lamp.path|default:"File Berkas" }}</div>
+                  </div>
+                </div>
+                {% if lamp.url %}
+                  <a href="{{ lamp.url }}" target="_blank" class="btn btn-sm btn-outline-primary text-nowrap px-2.5 py-1" style="font-size: 11.5px;">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>Buka
+                  </a>
+                {% elif lamp.path %}
+                  <a href="/media/{{ lamp.path }}" target="_blank" class="btn btn-sm btn-outline-primary text-nowrap px-2.5 py-1" style="font-size: 11.5px;">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>Buka
+                  </a>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% elif form_data.dokumen_pendukung %}
+        <div class="p-3 bg-light rounded border d-flex align-items-center justify-content-between gap-2">
+          <div class="d-flex align-items-center gap-2 text-truncate">
+            <i class="bi bi-file-earmark-pdf-fill fs-3 text-danger"></i>
+            <div class="text-truncate">
+              <div class="fw-semibold text-dark text-truncate" style="font-size: 12.5px;">{{ form_data.dokumen_pendukung }}</div>
+              <span class="text-muted" style="font-size: 11px;">Berkas Terlampir</span>
+            </div>
+          </div>
+          <a href="/media/{{ form_data.dokumen_pendukung }}" target="_blank" class="btn btn-sm btn-outline-primary px-2.5 py-1 text-nowrap" style="font-size: 11.5px;">
+            <i class="bi bi-box-arrow-up-right me-1"></i>Buka
+          </a>
+        </div>
+      {% else %}
+        <div class="text-secondary small d-flex align-items-center gap-2 p-2 bg-light rounded">
+          <i class="bi bi-info-circle text-muted fs-5"></i>
+          <span>Tidak ada dokumen lampiran file yang diunggah.</span>
+        </div>
+      {% endif %}
     </div>
   </div>
 

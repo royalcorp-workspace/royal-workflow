@@ -309,20 +309,16 @@
             <td class="meta-val">{{ form_data.nama_kegiatan|default:"Pengajuan Biaya Operasional" }}</td>
           </tr>
           <tr>
-            <td class="meta-label">Department Penerima</td>
-            <td class="meta-val">{{ form_data.department_penerima|default:"Divisi Umum & PGA" }}</td>
+            <td class="meta-label">Kategori Barang</td>
+            <td class="meta-val">{{ form_data.kategori_barang|default:form_data.kategori_biaya|default:"ATK" }}</td>
           </tr>
           <tr>
-            <td class="meta-label">PIC Penerima / Tembusan</td>
-            <td class="meta-val">{{ form_data.nama_pic|default:"PIC Pusat" }} / {{ form_data.tembusan|default:"-" }}</td>
+            <td class="meta-label">PIC Penerima</td>
+            <td class="meta-val">{{ form_data.pic|default:form_data.nama_pic|default:"General Affair (GA)" }}</td>
           </tr>
           <tr>
-            <td class="meta-label">Kategori Biaya</td>
-            <td class="meta-val">{{ form_data.kategori_biaya|default:"ATK & Perlengkapan Kantor" }}</td>
-          </tr>
-          <tr>
-            <td class="meta-label">Tipe Transaksi / Urgensi</td>
-            <td class="meta-val">{{ form_data.tipe_transaksi|default:"Pengajuan" }} • {{ form_data.urgensi_pengajuan|default:"Normal" }}</td>
+            <td class="meta-label">Catatan Pengajuan</td>
+            <td class="meta-val">{{ form_data.catatan_pengajuan|default:form_data.catatan_justifikasi|default:"-" }}</td>
           </tr>
         </table>
       </td>
@@ -387,7 +383,7 @@
             Informasi Pencairan Dana
           </div>
           <div style="font-size: 8pt; margin-top: 2pt;">
-            Metode: <strong>{{ form_data.metode_pencairan|default:"Transfer Rekening Bank" }}</strong>
+            Metode: <strong>{{ form_data.metode_pembayaran|default:form_data.metode_pencairan|default:"Transfer Rekening Bank" }}</strong>
           </div>
           {% if form_data.nama_bank or form_data.nomor_rekening %}
           <div style="font-size: 8pt; color: #334155;">
