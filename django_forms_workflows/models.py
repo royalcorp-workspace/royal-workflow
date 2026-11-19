@@ -921,13 +921,8 @@ class DocumentTemplate(models.Model):
         # Guarantee email context for legal notifications and e-Sign integration
         context["email"] = form_data.get("email") or context.get("email", "")
 
-        # Resolve dynamic kota_penandatanganan fallback if not set or stale 'Tangerang'
-        cabang_val = context.get("cabang", "")
-        kota_val = context.get("kota_penandatanganan", "")
-        if (not kota_val or kota_val.strip().lower() == "tangerang") and cabang_val and cabang_val.strip().lower() != "tangerang":
-            context["kota_penandatanganan"] = cabang_val
-        elif not kota_val:
-            context["kota_penandatanganan"] = cabang_val or "Bandung"
+        # Standardize kota_penandatanganan to 'Bandung' for all branches and companies
+        context["kota_penandatanganan"] = "Bandung"
 
         # Resolve tanggal_penandatanganan fallback if empty
         if not context.get("tanggal_penandatanganan"):
@@ -1150,6 +1145,8 @@ class DocumentTemplate(models.Model):
             nik_npwp_display = "—"
         context["nomor_nik"] = nik or "—"
         context["nomor_npwp"] = npwp or "—"
+        context["nik"] = nik or "—"
+        context["npwp"] = npwp or "—"
         context["nik_npwp_display"] = nik_npwp_display
         context["nomor_identitas"] = nik_npwp_display
         context["email"] = form_data.get("email") or "—"
@@ -2091,6 +2088,7 @@ class NotificationRule(models.Model):
         ("stage_decision", "Stage Decision (individual stage completed)"),
         ("workflow_approved", "Workflow Approved (final decision)"),
         ("workflow_denied", "Workflow Denied (final decision)"),
+        ("submission_returned", "Submission Returned (needs revision)"),
         ("form_withdrawn", "Form Withdrawn"),
         ("approval_reminder", "Approval Reminder"),
         ("escalation", "Escalation"),

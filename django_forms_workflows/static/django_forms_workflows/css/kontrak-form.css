@@ -419,18 +419,29 @@ table.clause-table td.cell-currency {
 }
 
 .btn-discard-draft {
-    font-size: 13px !important;
-    padding: 6px 12px !important;
-    border-color: #fca5a5 !important;
-    color: #ef4444 !important;
-    background-color: transparent !important;
-    transition: all 0.15s ease;
+    font-size: 13.5px !important;
+    font-weight: 500 !important;
+    height: 38px !important;
+    min-height: 38px !important;
+    max-height: 38px !important;
+    padding: 0 14px !important;
+    border: 1px solid #fca5a5 !important;
+    color: #dc2626 !important;
+    background-color: #ffffff !important;
+    border-radius: 6px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    line-height: 1.4 !important;
+    white-space: nowrap !important;
+    box-sizing: border-box !important;
+    transition: all 0.15s ease-in-out !important;
 }
 
 .btn-discard-draft:hover {
     background-color: #fef2f2 !important;
-    border-color: #ef4444 !important;
-    color: #dc2626 !important;
+    border-color: #f87171 !important;
+    color: #b91c1c !important;
 }
 
 .btn-save-draft {
@@ -784,7 +795,7 @@ table.clause-table td.cell-currency {
     flex-direction: row !important;
     justify-content: space-between !important;
     align-items: center !important;
-    flex-wrap: wrap !important;
+    flex-wrap: nowrap !important;
     gap: 12px !important;
     width: 100% !important;
     margin-top: 2rem !important;
@@ -802,10 +813,11 @@ table.clause-table td.cell-currency {
     display: inline-flex !important;
     flex-direction: row !important;
     align-items: center !important;
-    flex-wrap: wrap !important;
+    flex-wrap: nowrap !important;
     gap: 8px !important;
     margin: 0 !important;
     padding: 0 !important;
+    flex-shrink: 0 !important;
 }
 
 .unified-wizard-footer .footer-group-right,
@@ -814,7 +826,7 @@ table.clause-table td.cell-currency {
     justify-content: flex-end !important;
 }
 
-/* Reset semua tombol di dalam footer agar tidak float / block */
+/* Standarisasi Seragam Seluruh Tombol di Footer Wizard (Clean Enterprise) */
 .unified-wizard-footer button,
 .unified-wizard-footer a,
 .unified-wizard-footer .btn,
@@ -828,6 +840,58 @@ table.clause-table td.cell-currency {
     margin: 0 !important;
     white-space: nowrap !important;
     height: 38px !important;
+    min-height: 38px !important;
+    max-height: 38px !important;
+    font-size: 13.5px !important;
+    font-weight: 500 !important;
+    line-height: 1.4 !important;
+    padding: 0 14px !important;
+    border-radius: 6px !important;
+    box-sizing: border-box !important;
+    transition: all 0.15s ease-in-out !important;
+}
+
+/* Tombol Kembali / Navigasi Kiri */
+.btn-back-to-forms,
+.btn-wizard-prev {
+    background-color: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #475569 !important;
+}
+
+.btn-back-to-forms:hover,
+.btn-wizard-prev:hover {
+    background-color: #f8fafc !important;
+    border-color: #94a3b8 !important;
+    color: #1e293b !important;
+}
+
+/* Tombol Simpan Draft */
+.btn-save-draft {
+    background-color: #475569 !important;
+    border: 1px solid #475569 !important;
+    color: #ffffff !important;
+}
+
+.btn-save-draft:hover {
+    background-color: #334155 !important;
+    border-color: #334155 !important;
+    color: #ffffff !important;
+}
+
+/* Tombol Lanjut & Submit */
+.btn-wizard-next,
+.btn-wizard-submit {
+    background-color: #0284c7 !important;
+    border: 1px solid #0284c7 !important;
+    color: #ffffff !important;
+}
+
+.btn-wizard-next:hover,
+.btn-wizard-submit:hover {
+    background-color: #0369a1 !important;
+    border-color: #0369a1 !important;
+    color: #ffffff !important;
 }
 
 .unified-wizard-footer .btn.d-none,
@@ -837,13 +901,14 @@ table.clause-table td.cell-currency {
     display: none !important;
 }
 
-/* Responsif Tablet & Mobile: Layar <= 850px */
-@media screen and (max-width: 850px) {
+/* Responsif Mobile: Layar <= 767.98px */
+@media screen and (max-width: 767.98px) {
     .unified-wizard-footer,
     .form-wizard-footer {
         flex-direction: column-reverse !important;
         align-items: stretch !important;
         gap: 10px !important;
+        flex-wrap: wrap !important;
     }
 
     .unified-wizard-footer .footer-group-right,
@@ -854,7 +919,14 @@ table.clause-table td.cell-currency {
         display: flex !important;
         flex-direction: row !important;
         justify-content: stretch !important;
+        gap: 8px !important;
         margin-left: 0 !important;
+        flex-wrap: wrap !important;
+    }
+
+    .unified-wizard-footer .footer-group-right,
+    .form-wizard-footer .footer-right-actions {
+        flex-direction: column !important;
     }
 
     /* Tombol Lanjut / Submit dibuat dominan full width pada mobile */
@@ -872,7 +944,7 @@ table.clause-table td.cell-currency {
     .form-wizard-footer button,
     .form-wizard-footer a,
     .form-wizard-footer .btn {
-        flex: 1 1 auto !important;
+        width: 100% !important;
         text-align: center !important;
     }
 }
@@ -1375,28 +1447,94 @@ table.clause-table td.cell-currency {
 }
 
 /* ==========================================================================
-   Nomor NPWP & Nomor NIK (KTP) Side-by-Side Horizontal Alignment & Ordering
+   Main Form Container & Layout Guardrails (Protect Full-Width Canvas)
    ========================================================================== */
-.row.fields-aligned-row:has(.field-nomor_npwp),
-.row:has(.field-nomor_npwp):has(.field-nomor_nik) {
+.row.justify-content-center {
     display: flex !important;
     flex-wrap: wrap !important;
-    align-items: flex-start !important;
+    width: 100% !important;
+    grid-template-columns: none !important;
 }
 
-.row.fields-aligned-row > .field-wrapper.field-nomor_npwp,
-.row.fields-aligned-row > .field-wrapper.field-nomor_nik,
-.field-wrapper.field-nomor_npwp,
-.field-wrapper.field-nomor_nik {
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: flex-start !important;
-    justify-content: flex-start !important;
-    grid-template-rows: none !important;
+.form-document-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
 }
 
-.row.fields-aligned-row > .field-wrapper.field-nomor_npwp > .mb-3,
-.row.fields-aligned-row > .field-wrapper.field-nomor_nik > .mb-3,
+.wizard-step-pane,
+.form-fields-wrapper {
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+/* ==========================================================================
+   Nomor NPWP & Nomor NIK (KTP) Side-by-Side Horizontal Alignment (CSS Grid 2-Kolom)
+   Strictly scoped to the inner field row inside .wizard-step-pane / form
+   ========================================================================== */
+.wizard-step-pane .row.npwp-nik-row,
+.form-fields-wrapper .row.npwp-nik-row,
+.row.fields-aligned-row.npwp-nik-row,
+.wizard-step-pane .row.fields-aligned-row:has(> .field-nomor_npwp),
+.form-fields-wrapper .row.fields-aligned-row:has(> .field-nomor_npwp),
+.wizard-step-pane .row.fields-aligned-row:has(> .field-wrapper.field-nomor_npwp),
+.form-fields-wrapper .row.fields-aligned-row:has(> .field-wrapper.field-nomor_npwp) {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 1.5rem !important;
+    align-items: start !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    width: 100% !important;
+}
+
+@media (max-width: 767.98px) {
+    .wizard-step-pane .row.npwp-nik-row,
+    .form-fields-wrapper .row.npwp-nik-row,
+    .row.fields-aligned-row.npwp-nik-row,
+    .wizard-step-pane .row.fields-aligned-row:has(> .field-nomor_npwp),
+    .form-fields-wrapper .row.fields-aligned-row:has(> .field-nomor_npwp),
+    .wizard-step-pane .row.fields-aligned-row:has(> .field-wrapper.field-nomor_npwp),
+    .form-fields-wrapper .row.fields-aligned-row:has(> .field-wrapper.field-nomor_npwp) {
+        grid-template-columns: 1fr !important;
+        gap: 1rem !important;
+    }
+}
+
+.row.npwp-nik-row > .field-wrapper,
+.row.npwp-nik-row > [class*="col-"],
+.wizard-step-pane .row.fields-aligned-row:has(> .field-nomor_npwp) > .field-wrapper,
+.form-fields-wrapper .row.fields-aligned-row:has(> .field-nomor_npwp) > .field-wrapper,
+.wizard-step-pane .row.fields-aligned-row:has(> .field-wrapper.field-nomor_npwp) > .field-wrapper,
+.form-fields-wrapper .row.fields-aligned-row:has(> .field-wrapper.field-nomor_npwp) > .field-wrapper {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: none !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    box-sizing: border-box !important;
+}
+
+.row.npwp-nik-row > .field-wrapper.field-nomor_npwp,
+.wizard-step-pane .row.fields-aligned-row:has(> .field-nomor_npwp) > .field-wrapper.field-nomor_npwp,
+.form-fields-wrapper .row.fields-aligned-row:has(> .field-nomor_npwp) > .field-wrapper.field-nomor_npwp,
+.wizard-step-pane .row.fields-aligned-row:has(> .field-wrapper.field-nomor_npwp) > .field-wrapper.field-nomor_npwp,
+.form-fields-wrapper .row.fields-aligned-row:has(> .field-wrapper.field-nomor_npwp) > .field-wrapper.field-nomor_npwp {
+    order: 1 !important;
+}
+
+.row.npwp-nik-row > .field-wrapper.field-nomor_nik,
+.wizard-step-pane .row.fields-aligned-row:has(> .field-nomor_npwp) > .field-wrapper.field-nomor_nik,
+.form-fields-wrapper .row.fields-aligned-row:has(> .field-nomor_npwp) > .field-wrapper.field-nomor_nik,
+.wizard-step-pane .row.fields-aligned-row:has(> .field-wrapper.field-nomor_npwp) > .field-wrapper.field-nomor_nik,
+.form-fields-wrapper .row.fields-aligned-row:has(> .field-wrapper.field-nomor_npwp) > .field-wrapper.field-nomor_nik {
+    order: 2 !important;
+}
+
+.row.npwp-nik-row > .field-wrapper.field-nomor_npwp > .mb-3,
+.row.npwp-nik-row > .field-wrapper.field-nomor_nik > .mb-3,
+.wizard-step-pane .row.fields-aligned-row:has(> .field-nomor_npwp) > .field-wrapper > .mb-3,
+.form-fields-wrapper .row.fields-aligned-row:has(> .field-nomor_npwp) > .field-wrapper > .mb-3,
 .field-nomor_npwp #div_id_nomor_npwp,
 .field-nomor_nik #div_id_nomor_nik,
 #div_id_nomor_npwp,
@@ -1425,7 +1563,7 @@ table.clause-table td.cell-currency {
     margin-bottom: 0.35rem !important;
 }
 
-/* Order 2: Input Field (tinggi seragam 38px) */
+/* Order 2: Input Field (tinggi seragam 38px, lebar penuh 100%) */
 #div_id_nomor_npwp > :is(input, select, textarea, .input-group),
 #div_id_nomor_nik > :is(input, select, textarea, .input-group),
 .field-nomor_npwp :is(input, select, textarea, .input-group),
@@ -1478,6 +1616,15 @@ table.clause-table td.cell-currency {
 
 /* Sembunyikan badge status terpisah jika masih ada di DOM */
 .jde-npwp-status-badge {
+    display: none !important;
+}
+
+/* ==========================================================================
+   Data Asset Toko Header & Helper Text Isolation
+   ========================================================================== */
+.field-asset_toko #div_id_asset_toko > .form-text,
+.field-asset_toko #div_id_asset_toko > label,
+.field-asset_toko #id_asset_toko_helptext {
     display: none !important;
 }
 

@@ -608,7 +608,8 @@ class Command(BaseCommand):
                 <tr><td style="width: 130px; vertical-align: top;">Nama</td><td style="width: 15px; vertical-align: top;">:</td><td style="font-weight: bold;">{nama_pemilik}</td></tr>
                 <tr><td style="vertical-align: top;">Pemilik Tk.</td><td style="vertical-align: top;">:</td><td style="font-weight: bold;">{nama_toko}</td></tr>
                 <tr><td style="vertical-align: top;">Alamat</td><td style="vertical-align: top;">:</td><td>{alamat_toko}</td></tr>
-                <tr><td style="vertical-align: top; width: 130px;">NIK / NPWP</td><td style="vertical-align: top; width: 15px;">:</td><td>{nik_npwp_display}</td></tr>
+                <tr><td style="vertical-align: top; width: 130px;">NIK</td><td style="vertical-align: top; width: 15px;">:</td><td>{nomor_nik}</td></tr>
+                <tr><td style="vertical-align: top; width: 130px;">NPWP</td><td style="vertical-align: top; width: 15px;">:</td><td>{nomor_npwp}</td></tr>
                 <tr><td style="vertical-align: top;">Email</td><td style="vertical-align: top;">:</td><td>{email}</td></tr>
             </table>
 
@@ -841,7 +842,8 @@ class Command(BaseCommand):
                 <tr><td style="width: 130px; vertical-align: top;">Nama</td><td style="width: 15px; vertical-align: top;">:</td><td style="font-weight: bold;">{nama_pemilik}</td></tr>
                 <tr><td style="vertical-align: top;">Pemilik Tk.</td><td style="vertical-align: top;">:</td><td style="font-weight: bold;">{nama_toko}</td></tr>
                 <tr><td style="vertical-align: top;">Alamat</td><td style="vertical-align: top;">:</td><td>{alamat_toko}</td></tr>
-                <tr><td style="vertical-align: top; width: 130px;">NIK / NPWP</td><td style="vertical-align: top; width: 15px;">:</td><td>{nik_npwp_display}</td></tr>
+                <tr><td style="vertical-align: top; width: 130px;">NIK</td><td style="vertical-align: top; width: 15px;">:</td><td>{nomor_nik}</td></tr>
+                <tr><td style="vertical-align: top; width: 130px;">NPWP</td><td style="vertical-align: top; width: 15px;">:</td><td>{nomor_npwp}</td></tr>
                 <tr><td style="vertical-align: top;">Email</td><td style="vertical-align: top;">:</td><td>{email}</td></tr>
             </table>
 
@@ -1095,29 +1097,59 @@ class Command(BaseCommand):
         )
 
     def _ensure_notification_rules(self, workflow, st1, st4):
+        # Bersihkan rule lama yang terkunci kaku pada stage tertentu untuk workflow ini
+        workflow.notification_rules.filter(
+            event="approval_request",
+            stage__isnull=False,
+        ).delete()
+
         rules = [
             {
                 "event": "submission_received",
                 "stage": None,
+                "use_triggering_stage": False,
                 "defaults": {
                     "notify_submitter": True,
                     "subject_template": "Permohonan Kontrak {nomor_spk} Berhasil Diajukan",
-                    "body_template": "Pengajuan kontrak kerjasama untuk toko {nama_toko} telah diterima dan sedang diproses pada tahap Review ASM.",
+                    "body_template": "Pengajuan kontrak kerjasama untuk toko {nama_toko} telah diterima dan sedang diproses dalam antrean persetujuan.",
                 },
             },
             {
                 "event": "approval_request",
-                "stage": st1,
+                "stage": None,
+                "use_triggering_stage": True,
                 "defaults": {
+                    "use_triggering_stage": True,
                     "notify_stage_groups": True,
                     "notify_stage_assignees": True,
                     "subject_template": "Persetujuan Diperlukan: Permohonan Kontrak {nomor_spk} - {nama_toko}",
-                    "body_template": "Permohonan kontrak baru untuk toko {nama_toko} menunggu review dan persetujuan Anda.",
+                    "body_template": "Permohonan kontrak untuk toko {nama_toko} menunggu review dan persetujuan Anda.",
+                },
+            },
+            {
+                "event": "submission_returned",
+                "stage": None,
+                "use_triggering_stage": False,
+                "defaults": {
+                    "notify_submitter": True,
+                    "subject_template": "Permintaan Revisi: Permohonan Kontrak {nomor_spk} - {nama_toko}",
+                    "body_template": "Permohonan kontrak untuk toko {nama_toko} dikembalikan oleh peninjau untuk dilakukan perbaikan/revisi data.",
+                },
+            },
+            {
+                "event": "workflow_denied",
+                "stage": None,
+                "use_triggering_stage": False,
+                "defaults": {
+                    "notify_submitter": True,
+                    "subject_template": "Pemberitahuan: Permohonan Kontrak {nomor_spk} - {nama_toko} Ditolak",
+                    "body_template": "Permohonan kontrak untuk toko {nama_toko} telah ditolak oleh peninjau.",
                 },
             },
             {
                 "event": "workflow_approved",
                 "stage": None,
+                "use_triggering_stage": False,
                 "defaults": {
                     "notify_submitter": True,
                     "subject_template": "Selamat! Permohonan Kontrak {nomor_spk} Telah Disetujui Penuh",
@@ -1131,7 +1163,10 @@ class Command(BaseCommand):
                 workflow=workflow,
                 event=r["event"],
                 stage=r["stage"],
-                defaults=r["defaults"],
+                defaults={
+                    "use_triggering_stage": r["use_triggering_stage"],
+                    **r["defaults"],
+                },
             )
 
     def _get_field_definitions(self, sol_cabang, sol_channel, sol_brand, sol_perusahaan, sol_identitas, sol_pencairan, sol_komponen_support):
@@ -1538,8 +1573,8 @@ class Command(BaseCommand):
                 "required": True,
                 "readonly": True,
                 "css_class": "field-readonly",
-                "default_value": "",
-                "help_text": "Terisi otomatis mengikuti cabang pengaju (readonly).",
+                "default_value": "Bandung",
+                "help_text": "Terisi otomatis: Bandung (readonly).",
             },
             {
                 "field_name": "tanggal_penandatanganan",

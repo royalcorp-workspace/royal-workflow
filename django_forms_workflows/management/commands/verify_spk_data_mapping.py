@@ -166,9 +166,11 @@ class Command(BaseCommand):
         else:
             self.stderr.write(self.style.ERROR("❌ Field 'discount_scheme' belum memiliki default_value 3 baris fixed baku!"))
 
-        # Verify kota_penandatanganan readonly status
+        # Verify kota_penandatanganan readonly & default_value Bandung status
         kota_f = form_def.fields.filter(field_name="kota_penandatanganan").first()
-        if kota_f and kota_f.readonly:
+        if kota_f and kota_f.readonly and kota_f.default_value == "Bandung":
+            self.stdout.write(self.style.SUCCESS("✅ Field 'kota_penandatanganan' BERHASIL DIKUNCI (readonly=True, default_value='Bandung') di FormDefinition."))
+        elif kota_f and kota_f.readonly:
             self.stdout.write(self.style.SUCCESS("✅ Field 'kota_penandatanganan' BERHASIL DIKUNCI (readonly=True) di FormDefinition."))
         elif kota_f:
             self.stderr.write(self.style.ERROR("❌ Field 'kota_penandatanganan' belum berstatus readonly di FormDefinition!"))
@@ -533,7 +535,7 @@ class Command(BaseCommand):
             ("nama_pemilik", "Pihak Kedua (Pemilik)", "Nama Pemilik", True),
             ("alamat_toko", "Pihak Kedua (Alamat)", "Alamat Toko", True),
             ("nomor_npwp", "Pihak Kedua (NPWP)", "Nomor NPWP Toko/Pemilik", True),
-            ("nomor_nik", "Pihak Kedua (NIK)", "Nomor NIK (16 digit)", False),
+            ("nomor_nik", "Pihak Kedua (NIK)", "Nomor NIK (16 digit)", True),
             ("email", "Pihak Kedua (Email)", "Alamat Email Toko", True),
             ("brand", "Pihak Pertama & Objek", "Brand Produk Springbed", True),
             ("perusahaan", "Pihak Pertama (Produsen)", "Entitas Perusahaan", True),
