@@ -44,7 +44,7 @@
                 {% else %}
                     <a href="{% url 'forms_workflows:form_submission_hub' submission.form_definition.slug %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1.5">
                         <i class="bi bi-arrow-left"></i>
-                        <span>Kembali</span>
+                        <span>{% if submission.form_definition.slug == 'permohonan-kontrak' %}Back{% else %}Kembali{% endif %}</span>
                     </a>
                 {% endif %}
             </div>
@@ -74,7 +74,7 @@
                     {% if submission.submitter == user %}
                     <div class="mt-3">
                         <a href="{% url 'forms_workflows:form_submit' submission.form_definition.slug %}?revision_id={{ submission.id }}" class="btn btn-warning fw-bold">
-                            <i class="bi bi-pencil-square me-1"></i> Perbaiki & Kirim Ulang SPK
+                            <i class="bi bi-pencil-square me-1"></i> {% if submission.form_definition.slug == 'permohonan-kontrak' %}Edit &amp; Resubmit{% else %}Perbaiki &amp; Kirim Ulang SPK{% endif %}
                         </a>
                     </div>
                     {% else %}
@@ -399,7 +399,7 @@
                 </a>
             {% else %}
                 <a href="{% url 'forms_workflows:form_submission_hub' submission.form_definition.slug %}" class="btn btn-outline-secondary">
-                    <i class="bi bi-arrow-left"></i> Kembali
+                    <i class="bi bi-arrow-left"></i> {% if submission.form_definition.slug == 'permohonan-kontrak' %}Back{% else %}Kembali{% endif %}
                 </a>
             {% endif %}
             {% if submission.status == 'draft' %}
@@ -417,14 +417,14 @@
             {% if submission.status == 'submitted' or submission.status == 'pending_approval' %}
                 {% if submission.form_definition.allow_withdrawal and submission.submitter == user %}
                     <a href="{% url 'forms_workflows:withdraw_submission' submission.id %}" class="btn btn-outline-danger">
-                        <i class="bi bi-x-circle"></i> Withdraw Submission
+                        <i class="bi bi-x-circle"></i> {% if submission.form_definition.slug == 'permohonan-kontrak' %}Withdraw{% else %}Withdraw Submission{% endif %}
                     </a>
                 {% endif %}
             {% endif %}
             {% if submission.status == 'needs_revision' and submission.submitter == user %}
                 <a href="{% url 'forms_workflows:form_submit' submission.form_definition.slug %}?revision_id={{ submission.id }}"
                    class="btn btn-warning fw-bold">
-                    <i class="bi bi-pencil-square me-1"></i> Perbaiki & Kirim Ulang SPK
+                    <i class="bi bi-pencil-square me-1"></i> {% if submission.form_definition.slug == 'permohonan-kontrak' %}Edit &amp; Resubmit{% else %}Perbaiki &amp; Kirim Ulang SPK{% endif %}
                 </a>
             {% endif %}
             {% if submission.status == 'rejected' or submission.status == 'withdrawn' %}

@@ -193,28 +193,10 @@ def _build_grouped_forms(forms):
 
 def resolve_default_signing_city(user=None, branch=None, company=None):
     """
-    Resolve default signing city dynamically:
-    1. If branch provided or user has employee_profile.branch:
-       Use branch name (if not empty and not 'Pusat' / 'Head Office').
-    2. If branch is empty or 'Pusat':
-       Fallback to legal entity city based on company:
-       - PT Royal Abadi Sejahtera / PT Bestari Mulia -> Bandung
-       - PT Cemerlang Abadi Mulia / PT Bangun Cipta Primantara / PT Anugerah Cemerlang Abadi -> Tangerang
-       - Default fallback: Bandung
+    Resolve default signing city.
+    Berdasarkan standardisasi baku operasional Royal Group, seluruh SPK (tanpa kecuali)
+    menggunakan Kota Penandatanganan baku: "Bandung" (readonly).
     """
-    ep = getattr(user, "employee_profile", None) if user else None
-    effective_branch = (branch or (ep.branch if ep else None) or "").strip()
-    effective_company = (company or (ep.company if ep else None) or "").strip()
-
-    if effective_branch and effective_branch.lower() not in ("pusat", "head office", "-"):
-        return effective_branch
-
-    comp_lower = effective_company.lower()
-    if any(k in comp_lower for k in ("royal abadi sejahtera", "bestari mulia")):
-        return "Bandung"
-    elif any(k in comp_lower for k in ("cemerlang", "bangun cipta", "anugerah")):
-        return "Tangerang"
-
     return "Bandung"
 
 
@@ -875,12 +857,8 @@ def form_submit(request, slug):
 
                     submission.form_data["nomor_spk"] = candidate_spk
 
-                if not submission.form_data.get("kota_penandatanganan"):
-                    submission.form_data["kota_penandatanganan"] = resolve_default_signing_city(
-                        user=user_or_none,
-                        branch=submission.form_data.get("cabang"),
-                        company=submission.form_data.get("perusahaan"),
-                    )
+                if not submission.form_data.get("kota_penandatanganan") or form_def.slug == "permohonan-kontrak":
+                    submission.form_data["kota_penandatanganan"] = "Bandung"
                 is_supp = bool(submission.form_data.get("is_support_provided"))
                 submission.form_data["is_support_provided"] = is_supp
                 submission.form_data["has_support"] = is_supp
@@ -994,6 +972,7 @@ def form_submit(request, slug):
                 if signing_city:
                     initial_data.setdefault("kota_penandatanganan", signing_city)
                 if form_def.slug == "permohonan-kontrak":
+                    initial_data["kota_penandatanganan"] = "Bandung"
                     from .company_profiles import (
                         get_next_spk_sequence,
                         format_official_spk_number,

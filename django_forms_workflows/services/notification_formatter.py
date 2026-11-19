@@ -161,6 +161,17 @@ def get_event_wording(event: str, submission=None, task=None) -> dict[str, str]:
             "action_instruction": catatan,
         }
 
+    elif event in ("submission_returned", "needs_revision"):
+        comments = getattr(task, "comments", "") if task else ""
+        catatan = f"Catatan Revisi: {comments}" if comments else "Mohon periksa catatan peninjau dan ajukan kembali perbaikan formulir."
+        return {
+            "judul_notifikasi": "PERMINTAAN REVISI DOKUMEN",
+            "emoji": "📝",
+            "event_message": "Dokumen pengajuan berikut dikembalikan oleh peninjau untuk dilakukan revisi/perbaikan data.",
+            "status_label": "Membutuhkan Revisi",
+            "action_instruction": catatan,
+        }
+
     elif event == "escalation":
         return {
             "judul_notifikasi": "ESKALASI PERSETUJUAN",
@@ -193,6 +204,10 @@ def get_event_wording(event: str, submission=None, task=None) -> dict[str, str]:
 def get_notification_action_url(submission, task=None) -> str:
     """Build full absolute URL for the notification action/detail link."""
     base = _resolve_base_url()
+    if submission and getattr(submission, "status", "") == "needs_revision":
+        fdef = getattr(submission, "form_definition", None)
+        if fdef and getattr(fdef, "slug", ""):
+            return f"{base}/forms/{fdef.slug}/submit/?revision={submission.id}&step=1"
     if task and getattr(task, "id", None):
         try:
             rel = reverse("forms_workflows:approve_submission", args=[task.id])

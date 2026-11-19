@@ -42,6 +42,10 @@
         const isRevision = urlParams.has('revision') || urlParams.has('revision_id') || (form.dataset.isRevision === 'true') || (form.getAttribute('data-is-revision') === 'true') || Boolean(form.querySelector('input[name="revision_id"]')) || Boolean(document.getElementById('active_server_revision_data'));
         form.dataset.isRevision = isRevision ? 'true' : 'false';
 
+        const isPageReload = Boolean(window.performance && window.performance.getEntriesByType && window.performance.getEntriesByType('navigation')[0]?.type === 'reload');
+        const hasExistingLocalDraft = Boolean(localStorage.getItem(STORAGE_KEY));
+        const hasExistingServerDraft = Boolean(document.getElementById('activeServerDraftMeta') || document.getElementById('active_server_draft_data'));
+
         // Immediately hide draft action buttons if in revision mode
         if (isRevision) {
             const btnSaveDraft = form.querySelector('#btnSaveDraft');
@@ -50,8 +54,8 @@
             if (btnDiscardDraft) btnDiscardDraft.style.display = 'none';
         }
 
-        // Clean initial state ONLY for fresh new submissions (skip if loading draft or revising existing submission)
-        if (!isExplicitDraftUrl && !isRevision) {
+        // Clean initial state ONLY for fresh new submissions (skip if loading draft, revising, reloading page, or if draft exists)
+        if (!isExplicitDraftUrl && !isRevision && !isPageReload && !hasExistingLocalDraft && !hasExistingServerDraft) {
             const storeFields = ['kode_customer_jde', 'nama_toko', 'nama_pemilik', 'alamat_toko', 'no_telepon', 'email', 'kota', 'nomor_nik', 'nomor_npwp', 'nomor_identitas', 'komponen_biaya'];
             storeFields.forEach(name => {
                 const el = form.querySelector(`[name="${name}"]`);
@@ -147,6 +151,9 @@
                             sInput.dataset.lastCabang = (draftData.cabang || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
                             sInput.dataset.lastBrand = (draftData.brand || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
                             sInput.dataset.lastComp = (draftData.perusahaan || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+                            if (typeof window.updateSummarySPKDisplay === 'function') {
+                                window.updateSummarySPKDisplay(val);
+                            }
                         }
                     }
                     return;
@@ -262,6 +269,9 @@
         // 1. Setup Wizard Step Panes (Client-side view isolation)
         try { setupWizardPanes(form); } catch (e) { console.error('[KontrakGridWidget] setupWizardPanes failed:', e); }
 
+        // 1b. Setup Step 1 Layout (NPWP & NIK 2-Kolom Sejajar)
+        try { setupStep1Layout(form); } catch (e) { console.error('[KontrakGridWidget] setupStep1Layout failed:', e); }
+
         // 2. Setup JDE Lookup
         try { setupJDELookup(form); } catch (e) { console.error('[KontrakGridWidget] setupJDELookup failed:', e); }
 
@@ -297,6 +307,7 @@
         try { setupWizardFooter(form); } catch (e) { console.error('[KontrakGridWidget] setupWizardFooter failed:', e); }
 
         function refreshAllGridsAndHeaders(isRevisionMode = false) {
+            try { setupStep1Layout(form); } catch (e) {}
             if (window.renderAssetGrid) window.renderAssetGrid();
             if (window.renderMarketGrid) window.renderMarketGrid();
             if (window.renderTargetGrid) window.renderTargetGrid();
@@ -330,8 +341,6 @@
         }
 
         // 8. Auto-restore or Prompt for Existing Draft / Revision
-        const isPageReload = (window.performance && window.performance.getEntriesByType && window.performance.getEntriesByType('navigation')[0]?.type === 'reload');
-
         // Check for server revision data embedded in template
         let serverRevisionData = null;
         const revScriptEl = document.getElementById('active_server_revision_data');
@@ -371,9 +380,6 @@
                 const rawDraft = localStorage.getItem(STORAGE_KEY);
                 if (rawDraft) {
                     localDraftData = JSON.parse(rawDraft);
-                    if (localDraftData && localDraftData.nomor_spk) {
-                        delete localDraftData.nomor_spk;
-                    }
                 }
             } catch (e) {}
 
@@ -688,6 +694,8 @@
         wrapper.appendChild(pane1);
         wrapper.appendChild(pane2);
         wrapper.appendChild(pane3);
+
+        try { setupStep1Layout(form); } catch (e) {}
 
         // Enforce hidden state for internal system fields (perusahaan, rekening) after DOM distribution
         const enforceHiddenFields = (root) => {
@@ -1043,9 +1051,78 @@
     }
 
     /* --------------------------------------------------------------------------
-     * 1b. Setup NIK (16 digit) & NPWP Validation (Dedicated Step 1 Fields)
+     * 1b. Setup Step 1 Layout: Nomor NPWP & NIK 2-Kolom Horizontal (50% Kiri - 50% Kanan)
+     * -------------------------------------------------------------------------- */
+    function setupStep1Layout(form) {
+        if (!form) return;
+        const npwpInput = form.querySelector('[name="nomor_npwp"]');
+        const nikInput = form.querySelector('[name="nomor_nik"]');
+        if (!npwpInput || !nikInput) return;
+
+        const npwpWrap = npwpInput.closest('.field-wrapper') || form.querySelector('.field-wrapper.field-nomor_npwp') || npwpInput.closest('#div_id_nomor_npwp') || npwpInput.closest('.col-md-6') || npwpInput.closest('.mb-3');
+        const nikWrap = nikInput.closest('.field-wrapper') || form.querySelector('.field-wrapper.field-nomor_nik') || nikInput.closest('#div_id_nomor_nik') || nikInput.closest('.col-md-6') || nikInput.closest('.mb-3');
+
+        if (!npwpWrap || !nikWrap) return;
+
+        // Terapkan pembagian 2 kolom sejajar secara eksplisit pada masing-masing pembungkus:
+        // Kolom Kiri (50%): .field-wrapper.field-nomor_npwp (col-12 col-md-6)
+        // Kolom Kanan (50%): .field-wrapper.field-nomor_nik (col-12 col-md-6)
+        npwpWrap.classList.remove('col-12', 'col-md-12');
+        npwpWrap.classList.add('col-12', 'col-md-6', 'field-wrapper', 'field-nomor_npwp');
+
+        nikWrap.classList.remove('col-12', 'col-md-12');
+        nikWrap.classList.add('col-12', 'col-md-6', 'field-wrapper', 'field-nomor_nik');
+
+        // Boundary guard: hanya cari parent .row yang berada DI DALAM form/step pane,
+        // DILARANG merayap keluar ke baris layout utama halaman seperti .row.justify-content-center
+        function getFieldRow(wrap) {
+            if (!wrap) return null;
+            let curr = wrap.parentElement;
+            while (curr && curr !== form && !curr.classList.contains('form-document-card')) {
+                if (curr.classList.contains('row') && !curr.classList.contains('justify-content-center')) {
+                    return curr;
+                }
+                curr = curr.parentElement;
+            }
+            return null;
+        }
+
+        const npwpRow = getFieldRow(npwpWrap);
+        const nikRow = getFieldRow(nikWrap);
+
+        if (npwpRow && nikRow && npwpRow === nikRow) {
+            // Sudah berada dalam satu baris yang sama di dalam form
+            npwpRow.classList.add('fields-aligned-row', 'npwp-nik-row');
+            // Pastikan urutan: NPWP di sebelah kiri (pertama) dan NIK di sebelah kanan (kedua)
+            if (nikWrap.nextElementSibling === npwpWrap) {
+                npwpRow.insertBefore(npwpWrap, nikWrap);
+            }
+        } else {
+            // Berada di baris terpisah atau belum terbungkus row di dalam form
+            let sharedRow = npwpRow;
+            if (!sharedRow) {
+                sharedRow = document.createElement('div');
+                if (npwpWrap.parentElement) {
+                    npwpWrap.parentElement.insertBefore(sharedRow, npwpWrap);
+                }
+            }
+            sharedRow.className = 'row fields-aligned-row npwp-nik-row';
+            sharedRow.appendChild(npwpWrap);
+            sharedRow.appendChild(nikWrap);
+
+            // Bersihkan baris nikRow lama jika kosong
+            if (nikRow && nikRow !== sharedRow && nikRow.children.length === 0) {
+                nikRow.remove();
+            }
+        }
+    }
+
+    /* --------------------------------------------------------------------------
+     * 1c. Setup NIK (16 digit) & NPWP Validation (Dedicated Step 1 Fields)
      * -------------------------------------------------------------------------- */
     function setupIdentitasValidation(form) {
+        setupStep1Layout(form);
+
         const nikInput = form.querySelector('[name="nomor_nik"]');
         const npwpInput = form.querySelector('[name="nomor_npwp"]');
         const legacyNomorInput = form.querySelector('[name="nomor_identitas"]');
@@ -1678,6 +1755,25 @@
             }
 
             // Jika force atau kombinasi komponen berganti, bersihkan cache usang untuk key ini
+            function updateSummarySPKDisplay(spkValue) {
+                const el = document.getElementById('summaryNomorSPK');
+                if (!el) return;
+                if (spkValue && spkValue.includes('/SK-')) {
+                    el.className = 'fw-bold text-dark';
+                    el.textContent = spkValue;
+                } else if (!spkValue) {
+                    const bVal = (brandSelect && brandSelect.value ? brandSelect.value : '').trim();
+                    if (bVal && !bVal.startsWith('--') && !bVal.toLowerCase().includes('select')) {
+                        el.className = 'text-muted small';
+                        el.innerHTML = '<i class="bi bi-arrow-repeat spin me-1"></i>Memuat nomor SPK...';
+                    } else {
+                        el.className = 'fw-bold text-dark';
+                        el.textContent = '—';
+                    }
+                }
+            }
+            window.updateSummarySPKDisplay = updateSummarySPKDisplay;
+
             if (force || !isUnchanged) {
                 delete branchSeqCache[cacheKey];
             }
@@ -1691,12 +1787,14 @@
                 spkInput.dataset.lastComp = cleanComp;
                 spkInput.dispatchEvent(new Event('input', { bubbles: true }));
                 spkInput.dispatchEvent(new Event('change', { bubbles: true }));
+                updateSummarySPKDisplay(branchSeqCache[cacheKey].nomor_spk);
                 return;
             }
 
             // 2. Clear previous value and show dynamic loading placeholder
             spkInput.value = '';
             spkInput.placeholder = `Memuat nomor SPK untuk ${brandVal}...`;
+            updateSummarySPKDisplay('');
 
             // 3. Fetch authoritative sequence from server
             fetchBranchSequence(cabangVal, brandVal, compVal, force).then(data => {
@@ -1707,6 +1805,7 @@
                 if (!currentBrand || currentBrand.startsWith('--') || currentBrand.toLowerCase().includes('select')) {
                     spkInput.value = '';
                     spkInput.placeholder = '— Pilih Brand Produk terlebih dahulu —';
+                    updateSummarySPKDisplay('—');
                     return;
                 }
 
@@ -1720,6 +1819,7 @@
                         branchSeqCache[cacheKey] = data;
                         spkInput.dispatchEvent(new Event('input', { bubbles: true }));
                         spkInput.dispatchEvent(new Event('change', { bubbles: true }));
+                        updateSummarySPKDisplay(data.nomor_spk);
                     }
                     if (data.perusahaan && perusahaanSelect && (!perusahaanSelect.value || perusahaanSelect.value.startsWith('--')) && compVal) {
                         setSelectValue(perusahaanSelect, compVal);
@@ -1728,10 +1828,22 @@
                     // Only show failure placeholder if brand is still selected and request actually failed
                     spkInput.value = '';
                     spkInput.placeholder = '— Gagal memuat nomor SPK (Klik untuk coba lagi) —';
+                    updateSummarySPKDisplay('—');
                 }
             });
         }
         form._updateSPK = updateSPK;
+
+        spkInput.addEventListener('input', () => {
+            if (spkInput.value && typeof window.updateSummarySPKDisplay === 'function') {
+                window.updateSummarySPKDisplay(spkInput.value);
+            }
+        });
+        spkInput.addEventListener('change', () => {
+            if (spkInput.value && typeof window.updateSummarySPKDisplay === 'function') {
+                window.updateSummarySPKDisplay(spkInput.value);
+            }
+        });
 
         spkInput.addEventListener('click', () => {
             if (!spkInput.value && spkInput.placeholder && spkInput.placeholder.includes('Gagal')) {
@@ -1758,7 +1870,7 @@
             kotaTtdInput.readOnly = true;
             kotaTtdInput.classList.add('field-readonly', 'bg-light');
             kotaTtdInput.style.cursor = 'not-allowed';
-            kotaTtdInput.setAttribute('title', 'Kota penandatanganan terisi otomatis sesuai cabang pengaju (readonly)');
+            kotaTtdInput.setAttribute('title', 'Kota penandatanganan terisi otomatis: Bandung (readonly)');
             const wrapper = kotaTtdInput.closest('.field-wrapper') || kotaTtdInput.closest('.mb-3') || kotaTtdInput.parentElement;
             if (wrapper) {
                 let helpText = wrapper.querySelector('.form-text');
@@ -1767,29 +1879,23 @@
                     helpText.className = 'form-text text-muted small mt-1';
                     kotaTtdInput.parentNode.appendChild(helpText);
                 }
-                helpText.textContent = 'Terisi otomatis mengikuti cabang pengaju (readonly).';
+                helpText.textContent = 'Terisi otomatis: Bandung (readonly).';
             }
         }
 
         function syncKotaPenandatanganan() {
-            if (!cabangSelect || !kotaTtdInput) return;
-            const currentCab = (cabangSelect.value || '').trim();
-            if (currentCab) {
-                let targetCity = currentCab;
-                if (currentCab.toLowerCase() === 'pusat') {
-                    targetCity = 'Tangerang';
-                }
-                kotaTtdInput.value = targetCity;
-                kotaTtdInput.dataset.autoFilled = 'true';
-                kotaTtdInput.dispatchEvent(new Event('input', { bubbles: true }));
-                kotaTtdInput.dispatchEvent(new Event('change', { bubbles: true }));
-            }
+            if (!kotaTtdInput) return;
+            kotaTtdInput.value = 'Bandung';
+            kotaTtdInput.readOnly = true;
+            kotaTtdInput.dataset.autoFilled = 'true';
+            kotaTtdInput.dispatchEvent(new Event('input', { bubbles: true }));
+            kotaTtdInput.dispatchEvent(new Event('change', { bubbles: true }));
         }
-        if (cabangSelect && kotaTtdInput) {
-            cabangSelect.addEventListener('change', syncKotaPenandatanganan);
-            cabangSelect.addEventListener('input', syncKotaPenandatanganan);
-            if (cabangSelect.value) {
-                syncKotaPenandatanganan();
+        if (kotaTtdInput) {
+            syncKotaPenandatanganan();
+            if (cabangSelect) {
+                cabangSelect.addEventListener('change', syncKotaPenandatanganan);
+                cabangSelect.addEventListener('input', syncKotaPenandatanganan);
             }
         }
 
@@ -3188,12 +3294,18 @@
     function createGridContainer(field, title, hint, gridKey) {
         const wrapper = field.closest('.field-wrapper') || field.closest('.mb-3') || field.parentElement;
 
-        // Hide redundant default Django label and help text
+        // Hide / remove redundant default Django label and help text
         if (wrapper) {
             const origLabel = wrapper.querySelector('label.form-label, label');
-            if (origLabel) origLabel.style.display = 'none';
-            const origHelp = wrapper.querySelector('.form-text, .help-block');
-            if (origHelp) origHelp.style.display = 'none';
+            if (origLabel) {
+                origLabel.style.setProperty('display', 'none', 'important');
+                origLabel.classList.add('d-none');
+            }
+            const origHelps = wrapper.querySelectorAll('.form-text, .help-block');
+            origHelps.forEach(origHelp => {
+                origHelp.style.setProperty('display', 'none', 'important');
+                origHelp.classList.add('d-none');
+            });
         }
 
         const container = document.createElement('div');
@@ -4141,6 +4253,36 @@
         return s;
     }
 
+    function resolveCurrentSpk(form) {
+        const spkInput = form.querySelector('[name="nomor_spk"]');
+        let spk = (spkInput?.value || '').trim();
+        if (spk && !spk.includes('OTOMATIS') && !spk.includes('AUTO-') && !spk.includes('____') && !spk.includes('{') && spk.includes('/SK-')) {
+            return spk;
+        }
+        if (spkInput?.dataset?.originalSpk && spkInput.dataset.originalSpk.includes('/SK-')) {
+            return spkInput.dataset.originalSpk.trim();
+        }
+        if (spkInput?.placeholder && spkInput.placeholder.includes('/SK-')) {
+            return spkInput.placeholder.trim();
+        }
+        // Fallback from server draft meta
+        const serverDraftMeta = document.getElementById('activeServerDraftMeta');
+        if (serverDraftMeta?.dataset?.spk && serverDraftMeta.dataset.spk.includes('/SK-')) {
+            return serverDraftMeta.dataset.spk.trim();
+        }
+        // Fallback from localStorage
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed?.nomor_spk && parsed.nomor_spk.includes('/SK-')) {
+                    return parsed.nomor_spk.trim();
+                }
+            }
+        } catch (e) {}
+        return '';
+    }
+
     function renderSummaryTab(form) {
         const container = document.getElementById('summaryFieldsContainer');
         if (!container) return;
@@ -4155,10 +4297,27 @@
             ? '<span class="badge bg-primary text-white py-1 px-2"><i class="bi bi-award me-1"></i>Dengan Fasilitas Support Promosi & Sewa</span>'
             : '<span class="badge bg-secondary text-white py-1 px-2"><i class="bi bi-shield-check me-1"></i>Kontrak Reguler (Murni Target & Diskon DO)</span>';
 
+        const spkVal = resolveCurrentSpk(form);
+        const spkInputEl = form.querySelector('[name="nomor_spk"]');
+        if (spkInputEl && !spkInputEl.value && spkVal) {
+            spkInputEl.value = spkVal;
+            spkInputEl.placeholder = spkVal;
+        }
+
+        const brandVal = (form.querySelector('[name="brand"]')?.value || '').trim();
+        let spkHtml = '';
+        if (spkVal) {
+            spkHtml = `<span id="summaryNomorSPK" class="fw-bold text-dark">${spkVal}</span>`;
+        } else if (brandVal && !brandVal.startsWith('--') && !brandVal.toLowerCase().includes('select')) {
+            spkHtml = `<span id="summaryNomorSPK" class="text-muted small"><i class="bi bi-arrow-repeat spin me-1"></i>Memuat nomor SPK...</span>`;
+        } else {
+            spkHtml = `<span id="summaryNomorSPK" class="fw-bold text-dark">—</span>`;
+        }
+
         container.innerHTML = `
             <div class="col-md-6">
                 <div class="small text-muted">Nomor SPK</div>
-                <div class="fw-bold text-dark">${getV('nomor_spk') || '—'}</div>
+                <div>${spkHtml}</div>
             </div>
             <div class="col-md-6">
                 <div class="small text-muted">Customer / Toko JDE</div>
@@ -4175,6 +4334,8 @@
             <div class="col-md-4">
                 <div class="small text-muted">Pemilik / Pihak Kedua</div>
                 <div class="fw-medium">${getV('nama_pemilik') || '-'}</div>
+                <div class="small text-muted mt-1">NIK: <span class="font-monospace">${getV('nomor_nik') || '—'}</span></div>
+                <div class="small text-muted">NPWP: <span class="font-monospace">${getV('nomor_npwp') || '—'}</span></div>
             </div>
             <div class="col-md-4">
                 <div class="small text-muted">Kota & Kontak</div>
@@ -4462,7 +4623,7 @@
 
     function setupWizardFooter(form) {
         // Ambil elemen seluruh tombol yang relevan di form
-        const btnBackToForms = form.querySelector('#btnBackToForms') || Array.from(form.querySelectorAll('a, button')).find(el => (el.textContent || '').includes('Kembali ke Riwayat'));
+        const btnBackToForms = form.querySelector('#btnBackToForms') || Array.from(form.querySelectorAll('a, button')).find(el => (el.textContent || '').includes('Kembali ke Riwayat') || (el.textContent || '').trim().includes('Back'));
         const btnPrev = form.querySelector('#btnWizardPrev') || document.getElementById('btnWizardPrev') || form.querySelector('.btn-wizard-prev') || document.querySelector('.btn-wizard-prev');
         const btnNext = form.querySelector('#btnWizardNext') || document.getElementById('btnWizardNext') || form.querySelector('.btn-wizard-next') || document.querySelector('.btn-wizard-next');
         const btnNextText = form.querySelector('#btnWizardNextText') || document.getElementById('btnWizardNextText');
@@ -4486,7 +4647,7 @@
             flex-direction: row !important;
             justify-content: space-between !important;
             align-items: center !important;
-            flex-wrap: wrap !important;
+            flex-wrap: nowrap !important;
             gap: 12px !important;
             width: 100% !important;
             margin-top: 24px !important;
@@ -4498,11 +4659,11 @@
 
         const leftGroup = document.createElement('div');
         leftGroup.className = 'footer-group-left footer-left-actions';
-        leftGroup.setAttribute('style', 'display: inline-flex !important; align-items: center !important; gap: 8px !important; flex-wrap: wrap !important;');
+        leftGroup.setAttribute('style', 'display: inline-flex !important; align-items: center !important; gap: 8px !important; flex-wrap: nowrap !important; flex-shrink: 0 !important;');
 
         const rightGroup = document.createElement('div');
         rightGroup.className = 'footer-group-right footer-right-actions';
-        rightGroup.setAttribute('style', 'display: inline-flex !important; align-items: center !important; gap: 8px !important; flex-wrap: wrap !important; margin-left: auto !important;');
+        rightGroup.setAttribute('style', 'display: inline-flex !important; align-items: center !important; gap: 8px !important; flex-wrap: nowrap !important; margin-left: auto !important; flex-shrink: 0 !important;');
 
         // Masukkan tombol ke group masing-masing:
         if (btnBackToForms) leftGroup.appendChild(btnBackToForms);
@@ -4514,14 +4675,23 @@
         if (btnPreviewSPK) rightGroup.appendChild(btnPreviewSPK);
         if (btnSubmit) rightGroup.appendChild(btnSubmit);
 
-        // Bersihkan inline style disruptif dari masing-masing tombol:
+        // Bersihkan inline style disruptif dari masing-masing tombol & kunci tinggi 38px:
         [btnBackToForms, btnPrev, btnDiscard, btnSaveDraft, btnNext, btnPreviewSPK, btnSubmit].forEach(el => {
             if (el) {
                 el.style.float = 'none';
                 el.style.position = 'static';
                 el.style.margin = '0';
+                el.style.height = '38px';
+                el.style.minHeight = '38px';
+                el.style.maxHeight = '38px';
+                el.style.borderRadius = '6px';
+                el.style.fontSize = '13.5px';
+                el.style.boxSizing = 'border-box';
+                el.classList.remove('btn-sm');
                 if (!el.classList.contains('d-none')) {
                     el.style.display = 'inline-flex';
+                    el.style.alignItems = 'center';
+                    el.style.justifyContent = 'center';
                 }
             }
         });
@@ -4921,6 +5091,9 @@
                     p.querySelectorAll('.field-wrapper, .fields-aligned-row, .mb-3').forEach(el => {
                         if (el.tagName !== 'INPUT') el.style.removeProperty('display');
                     });
+                    if (targetStep === 0) {
+                        try { setupStep1Layout(form); } catch (e) {}
+                    }
                 } else {
                     p.classList.remove('active');
                     p.classList.add('d-none');
@@ -4973,7 +5146,7 @@
             setElVisible(btnPrev, !isFirst);
             setElVisible(btnNext, !isLast);
             if (btnNextText) {
-                btnNextText.textContent = (targetStep === 0) ? 'Lanjut Detail Kontrak' : 'Lanjut Preview';
+                btnNextText.textContent = 'Next';
             }
             setElVisible(btnPreviewSPK, isLast);
             setElVisible(btnSubmit, isLast);
@@ -5389,6 +5562,10 @@
 
         const serverDiscardBtn = form.querySelector('#btnDiscardDraft');
         if (serverDiscardBtn) {
+            serverDiscardBtn.classList.remove('btn-sm');
+            serverDiscardBtn.style.height = '38px';
+            serverDiscardBtn.style.borderRadius = '6px';
+            serverDiscardBtn.style.fontSize = '13.5px';
             if (serverDiscardBtn.parentNode !== rightGroup) {
                 const btnSaveDraft = rightGroup.querySelector('#btnSaveDraft') || rightGroup.querySelector('#btnWizardNext');
                 if (btnSaveDraft) {
@@ -5405,8 +5582,11 @@
             btnDiscard = document.createElement('button');
             btnDiscard.type = 'button';
             btnDiscard.id = 'btnLocalDiscardDraft';
-            btnDiscard.className = 'btn btn-outline-danger btn-sm btn-discard-draft' + (show ? '' : ' d-none');
+            btnDiscard.className = 'btn btn-outline-danger btn-discard-draft' + (show ? '' : ' d-none');
             btnDiscard.innerHTML = '<i class="bi bi-trash3 me-1"></i> Discard Draft';
+            btnDiscard.style.height = '38px';
+            btnDiscard.style.borderRadius = '6px';
+            btnDiscard.style.fontSize = '13.5px';
             btnDiscard.addEventListener('click', async function(e) {
                 e.preventDefault();
                 await discardDraft(form);

@@ -513,6 +513,8 @@ class EMeteraiService:
         
         no_npwp = str(form_data.get("nomor_npwp") or "").strip()
         no_nik = str(form_data.get("nomor_nik") or form_data.get("nomor_identitas") or "").strip()
+        nik_val = no_nik if no_nik and no_nik not in ("—", "-") else "—"
+        npwp_val = no_npwp if no_npwp and no_npwp not in ("—", "-") else "—"
         if no_nik and no_npwp and no_nik not in ("—", "-") and no_npwp not in ("—", "-"):
             nik_npwp_val = f"{no_nik} / {no_npwp}"
         elif no_nik and no_nik not in ("—", "-"):
@@ -560,7 +562,8 @@ class EMeteraiService:
         jenis_pencairan_insentif = form_data.get("jenis_pencairan_insentif") or "Transfer/Giro"
 
         tgl_ttd = format_date_indonesia(form_data.get("tanggal_penandatanganan") or timezone.now().date())
-        kota_ttd = form_data.get("kota_penandatanganan") or cabang or "Bandung"
+        # Standardisasi kota penandatanganan SPK resmi selalu 'Bandung'
+        kota_ttd = "Bandung"
 
         # Check Support Promosi vs Standard
         raw_supp = form_data.get("is_sales_support") or form_data.get("tipe_kontrak")
@@ -625,7 +628,8 @@ class EMeteraiService:
             ["", Paragraph("Nama", cell_style), Paragraph(":", cell_center_style), Paragraph(f"<b>{nama_pemilik}</b>", cell_bold_style)],
             ["", Paragraph("Pemilik Tk.", cell_style), Paragraph(":", cell_center_style), Paragraph(f"<b>{nama_toko}</b>", cell_bold_style)],
             ["", Paragraph("Alamat", cell_style), Paragraph(":", cell_center_style), Paragraph(f"{alamat_toko}, {kota_toko}" if kota_toko not in alamat_toko else alamat_toko, cell_style)],
-            ["", Paragraph("NIK / NPWP", cell_style), Paragraph(":", cell_center_style), Paragraph(nik_npwp_val, cell_style)],
+            ["", Paragraph("NIK", cell_style), Paragraph(":", cell_center_style), Paragraph(nik_val, cell_style)],
+            ["", Paragraph("NPWP", cell_style), Paragraph(":", cell_center_style), Paragraph(npwp_val, cell_style)],
             ["", Paragraph("Email", cell_style), Paragraph(":", cell_center_style), Paragraph(no_email, cell_style)],
             [Paragraph(f"Selanjutnya disebut sebagai <b>PIHAK KEDUA</b> Dealer produk Springbed merk <b>“{brand}”</b>", body_style), "", "", ""],
         ]
@@ -636,11 +640,11 @@ class EMeteraiService:
                     ("GRID", (0, 0), (-1, -1), 0, colors.transparent),
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
                     ("SPAN", (0, 3), (3, 3)),
-                    ("SPAN", (0, 9), (3, 9)),
+                    ("SPAN", (0, 10), (3, 10)),
                     ("TOPPADDING", (0, 0), (-1, -1), 1.5),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
                     ("BOTTOMPADDING", (0, 3), (-1, 3), 4),
-                    ("BOTTOMPADDING", (0, 9), (-1, 9), 4),
+                    ("BOTTOMPADDING", (0, 10), (-1, 10), 4),
                     ("LEFTPADDING", (0, 0), (-1, -1), 0),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                 ]
@@ -1329,6 +1333,17 @@ class EMeteraiService:
             )
 
             logger.info("Successfully stamped e-Meterai on submission #%s (saved to %s)", submission.id, saved_path)
+
+            # Trigger 3: Send final SPK approved notifications with PDF attachment (Submitter, Sales Support, Store Owner)
+            try:
+                if getattr(submission.form_definition, "slug", "") == "permohonan-kontrak":
+                    from django_forms_workflows.services.contract_notification_service import (
+                        dispatch_final_spk_approved_async,
+                    )
+                    dispatch_final_spk_approved_async(submission, saved_path)
+            except Exception as _final_notif_err:
+                logger.warning("Could not dispatch final SPK approved notifications: %s", _final_notif_err)
+
             return stamped_doc
 
         except Exception as exc:

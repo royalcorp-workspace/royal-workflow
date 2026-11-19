@@ -184,13 +184,15 @@
       </div>
       {% endif %}
 
-      <div class="section-title">Buka Detail Pengajuan</div>
+      {% if action_url %}
+      <div class="section-title">{{ action_title|default:"Buka Detail Pengajuan" }}</div>
       <div>
-        <a class="btn-action" href="{{ action_url }}" target="_blank">Buka Detail Pengajuan</a>
+        <a class="btn-action" href="{{ action_url }}" target="_blank">{{ action_button_label|default:"Buka Detail Pengajuan" }}</a>
       </div>
       <div class="link-detail">
         <a href="{{ action_url }}">{{ action_url }}</a>
       </div>
+      {% endif %}
 
       <div class="closing">Terima kasih.</div>
     </div>

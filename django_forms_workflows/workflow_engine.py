@@ -658,6 +658,14 @@ def ensure_signing_token_for_stage(
         token.token,
         submission.id,
     )
+
+    # Trigger 1: Kirim email undangan TTD digital ke Mitra Toko (permohonan-kontrak)
+    try:
+        from .services.contract_notification_service import dispatch_store_signing_invitation_async
+        dispatch_store_signing_invitation_async(submission, token)
+    except Exception as _inv_err:
+        logger.warning("Could not dispatch store signing invitation: %s", _inv_err)
+
     return token
 
 
@@ -729,6 +737,14 @@ def process_external_toko_signature(
             "action": "customer_signed_waiting_sales_support_approval",
         },
     )
+
+    # Trigger 2: Notifikasi ke Tim Sales Support & Konfirmasi ke Mitra Toko (permohonan-kontrak)
+    try:
+        from .services.contract_notification_service import dispatch_store_signature_completed_async
+        dispatch_store_signature_completed_async(submission, token)
+    except Exception as _toko_sig_err:
+        logger.warning("Could not dispatch signature completed notifications: %s", _toko_sig_err)
+
     return True
 
 

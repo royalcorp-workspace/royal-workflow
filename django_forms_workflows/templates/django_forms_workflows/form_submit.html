@@ -208,7 +208,7 @@
                             <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Draft</span>
                         {% endif %}
                     </div>
-                    <p class="form-doc-subtitle mt-1">{% if is_revision %}Perbaiki kolom formulir yang diminta, lalu klik Kirim Ulang Revisi.{% else %}Complete all required fields below before submitting for approval.{% endif %}</p>
+                    <p class="form-doc-subtitle mt-1">{% if is_revision %}{% if form_def.slug == 'permohonan-kontrak' %}Revise the requested fields, then click Submit.{% else %}Perbaiki kolom formulir yang diminta, lalu klik Kirim Ulang Revisi.{% endif %}{% else %}Complete all required fields below before submitting for approval.{% endif %}</p>
                 </div>
                 <div id="autoSaveSlot">
                     {% if form_def.enable_auto_save and user.is_authenticated and not is_revision %}
@@ -307,35 +307,55 @@
                 <div id="unifiedWizardFooter" class="unified-wizard-footer form-wizard-footer">
                     <div class="footer-group-left footer-left-actions">
                         <a href="{% url 'forms_workflows:form_submission_hub' form_def.slug %}" class="btn btn-outline-secondary btn-back-to-forms" id="btnBackToForms">
-                            <i class="bi bi-arrow-left me-1"></i> <span class="d-none d-lg-inline">Kembali ke Riwayat Pengajuan</span><span class="d-inline d-lg-none">Riwayat</span>
+                            {% if form_def.slug == 'permohonan-kontrak' %}
+                                <i class="bi bi-arrow-left me-1"></i> Back
+                            {% else %}
+                                <i class="bi bi-arrow-left me-1"></i> <span class="d-none d-lg-inline">Kembali ke Riwayat Pengajuan</span><span class="d-inline d-lg-none">Riwayat</span>
+                            {% endif %}
                         </a>
                         {% if form_def.enable_multi_step %}
                         <button type="button" class="btn btn-outline-secondary btn-wizard-prev d-none" id="btnWizardPrev" formnovalidate>
-                            <i class="bi bi-arrow-left me-1"></i> Kembali
+                            {% if form_def.slug == 'permohonan-kontrak' %}
+                                <i class="bi bi-arrow-left me-1"></i> Back
+                            {% else %}
+                                <i class="bi bi-arrow-left me-1"></i> Kembali
+                            {% endif %}
                         </button>
                         {% endif %}
                     </div>
                     <div class="footer-group-right footer-right-actions">
                         {% if not is_anonymous and is_draft and draft_id %}
-                        <a href="{% url 'forms_workflows:discard_draft' draft_id %}" class="btn btn-outline-danger btn-sm btn-discard-draft" id="btnDiscardDraft">
+                        <a href="{% url 'forms_workflows:discard_draft' draft_id %}" class="btn btn-outline-danger btn-discard-draft" id="btnDiscardDraft">
                             <i class="bi bi-trash3 me-1"></i> Discard Draft
                         </a>
                         {% endif %}
                         {% if form_def.allow_save_draft and user.is_authenticated and not is_revision %}
                         <button type="submit" name="action" value="draft" class="btn btn-secondary btn-save-draft" id="btnSaveDraft" formnovalidate>
-                            <i class="bi bi-save me-1"></i> Simpan Draft
+                            {% if form_def.slug == 'permohonan-kontrak' %}
+                                <i class="bi bi-save me-1"></i> Save Draft
+                            {% else %}
+                                <i class="bi bi-save me-1"></i> Simpan Draft
+                            {% endif %}
                         </button>
                         {% endif %}
                         {% if form_def.enable_multi_step %}
                         <button type="button" class="btn btn-primary btn-wizard-next" id="btnWizardNext" formnovalidate>
-                            <span id="btnWizardNextText">Lanjut Detail Kontrak</span> <i class="bi bi-arrow-right ms-1"></i>
+                            {% if form_def.slug == 'permohonan-kontrak' %}
+                                <span id="btnWizardNextText">Next</span> <i class="bi bi-arrow-right ms-1"></i>
+                            {% else %}
+                                <span id="btnWizardNextText">Lanjut Detail Kontrak</span> <i class="bi bi-arrow-right ms-1"></i>
+                            {% endif %}
                         </button>
                         {% endif %}
                         <button type="submit" name="action" value="submit" class="btn btn-primary btn-wizard-submit {% if form_def.enable_multi_step %}d-none{% endif %}" id="btnSubmitApplication">
-                            {% if is_revision %}
-                                <i class="bi bi-arrow-repeat me-1"></i> Kirim Ulang Revisi
-                            {% else %}
+                            {% if form_def.slug == 'permohonan-kontrak' %}
                                 <i class="bi bi-check2-circle me-1"></i> Submit
+                            {% else %}
+                                {% if is_revision %}
+                                    <i class="bi bi-arrow-repeat me-1"></i> Kirim Ulang Revisi
+                                {% else %}
+                                    <i class="bi bi-check2-circle me-1"></i> Submit
+                                {% endif %}
                             {% endif %}
                         </button>
                     </div>

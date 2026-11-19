@@ -107,6 +107,7 @@
   }
   .filter-search-input {
     padding-left: 34px;
+    padding-right: 32px;
     font-size: 13px;
     border-radius: 6px;
     border: 1px solid #cbd5e1;
@@ -119,19 +120,46 @@
     box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.15);
     outline: none;
   }
+  .btn-search-clear {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    padding: 0;
+    color: #94a3b8;
+    font-size: 14px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    transition: color 0.15s ease;
+  }
+  .btn-search-clear:hover {
+    color: #475569;
+  }
   .filter-status-select {
     font-size: 13px;
     border-radius: 6px;
     border: 1px solid #cbd5e1;
     height: 38px;
-    min-width: 170px;
+    width: auto;
+    min-width: 180px;
     color: #334155;
     background-color: #ffffff;
+    flex-shrink: 0;
   }
   .filter-status-select:focus {
     border-color: #94a3b8;
     box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.15);
     outline: none;
+  }
+  @media (max-width: 767.98px) {
+    .filter-status-select {
+      width: 100%;
+    }
   }
   .btn-filter-neutral {
     height: 38px;
@@ -519,7 +547,7 @@
   {# ── Unified Enterprise Data Card (Filter Bar + Table) ── #}
   <div class="enterprise-card">
 
-    {# ── Filter Bar (Card Header) ── #}
+    {# ── Filter Bar (Card Header - Clean 1-Row Desktop Alignment) ── #}
     <div class="card-filter-header">
       <form method="get" class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center gap-2 mb-0" id="filterForm">
         <input type="hidden" name="per_page" id="hubFilterPerPage" value="{{ per_page }}">
@@ -533,25 +561,19 @@
                  value="{{ search_query }}"
                  aria-label="Cari no. SPK, brand, toko, atau pemohon"
                  autocomplete="off">
+          <button type="button" class="btn-search-clear" id="hubSearchClear" style="display: {% if search_query %}inline-flex{% else %}none{% endif %};" title="Hapus kata kunci pencarian" aria-label="Hapus kata kunci pencarian">
+            <i class="bi bi-x-circle-fill"></i>
+          </button>
         </div>
 
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-          <select name="status" id="hubStatusSelect" class="form-select filter-status-select" aria-label="Filter status pengajuan">
-            <option value="all" {% if not status_filter or status_filter == 'all' %}selected{% endif %}>Semua Status</option>
-            <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Menunggu Review</option>
-            <option value="needs_revision" {% if status_filter == 'needs_revision' %}selected{% endif %}>Perlu Revisi</option>
-            <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Disetujui</option>
-            <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Ditolak</option>
-            <option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>Draft</option>
-          </select>
-
-          {% if search_query or status_filter != 'all' and status_filter %}
-          <a href="?" class="btn btn-filter-reset" title="Reset filter pencarian">
-            <i class="bi bi-x-lg"></i>
-            <span>Reset</span>
-          </a>
-          {% endif %}
-        </div>
+        <select name="status" id="hubStatusSelect" class="form-select filter-status-select" aria-label="Filter status pengajuan">
+          <option value="" {% if not status_filter or status_filter == 'all' or status_filter == '' %}selected{% endif %}>Semua Status</option>
+          <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Menunggu Review</option>
+          <option value="needs_revision" {% if status_filter == 'needs_revision' %}selected{% endif %}>Perlu Revisi</option>
+          <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Disetujui</option>
+          <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Ditolak</option>
+          <option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>Draft</option>
+        </select>
       </form>
     </div>
 
@@ -788,8 +810,13 @@ document.addEventListener('DOMContentLoaded', function() {
             searchInput.setSelectionRange(val.length, val.length);
         }
 
+        const searchClearBtn = document.getElementById('hubSearchClear');
+
         searchInput.addEventListener('input', function() {
             const query = this.value.trim().toLowerCase();
+            if (searchClearBtn) {
+                searchClearBtn.style.display = this.value ? 'inline-flex' : 'none';
+            }
 
             // A. Live Instant DOM Filter (0ms delay)
             const rows = table.querySelectorAll('tbody tr');
@@ -817,6 +844,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 filterForm.submit();
             }
         });
+
+        if (searchClearBtn) {
+            searchClearBtn.addEventListener('click', function() {
+                searchInput.value = '';
+                searchClearBtn.style.display = 'none';
+                clearTimeout(debounceTimer);
+                filterForm.submit();
+            });
+        }
     }
 
     // 3. Handle Sinkronisasi Dropdown perPageSelect dengan filterForm
