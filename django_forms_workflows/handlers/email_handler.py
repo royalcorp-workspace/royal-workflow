@@ -10,10 +10,6 @@ from django.conf import settings
 from django.core.mail import EmailMessage, EmailMultiAlternatives
 from django.template.loader import render_to_string
 
-from ..services.test_email_rotator import (
-    format_test_email_content,
-    reroute_recipients,
-)
 from .base import BaseActionHandler
 
 logger = logging.getLogger(__name__)
@@ -313,54 +309,42 @@ class EmailHandler(BaseActionHandler):
             dict: Result with success status and message
         """
         try:
-            to_list, cc_list, _, _ = reroute_recipients(to, cc)
-            if not to_list:
+            if not to:
                 return {"success": False, "message": "No recipients specified"}
 
-            test_subject, test_body, test_html_body = format_test_email_content(
-                subject=subject,
-                text_body=body,
-                html_body=html_body,
-                original_to=to,
-                original_cc=cc,
-                new_to=to_list,
-            )
-
-            if test_html_body:
+            if html_body:
                 # Send multipart email with HTML
                 msg = EmailMultiAlternatives(
-                    subject=test_subject,
-                    body=test_body,
+                    subject=subject,
+                    body=body,
                     from_email=from_email,
-                    to=to_list,
-                    cc=cc_list if cc_list else None,
+                    to=to,
+                    cc=cc if cc else None,
                 )
-                msg.attach_alternative(test_html_body, "text/html")
+                msg.attach_alternative(html_body, "text/html")
             else:
                 # Send plain text email
                 msg = EmailMessage(
-                    subject=test_subject,
-                    body=test_body,
+                    subject=subject,
+                    body=body,
                     from_email=from_email,
-                    to=to_list,
-                    cc=cc_list if cc_list else None,
+                    to=to,
+                    cc=cc if cc else None,
                 )
 
             # Send the email
             sent = msg.send(fail_silently=False)
 
             if sent:
-                recipient_str = ", ".join(to_list)
-                orig_to_str = ", ".join(to)
+                recipient_str = ", ".join(to)
+                cc_str = f" (CC: {', '.join(cc)})" if cc else ""
                 return {
                     "success": True,
-                    "message": f"Email sent to {recipient_str} (rerouted from original: {orig_to_str})",
+                    "message": f"Email sent to {recipient_str}{cc_str}",
                     "data": {
-                        "to": to_list,
-                        "original_to": to,
-                        "cc": cc_list,
-                        "original_cc": cc,
-                        "subject": test_subject,
+                        "to": to,
+                        "cc": cc,
+                        "subject": subject,
                     },
                 }
             return {
