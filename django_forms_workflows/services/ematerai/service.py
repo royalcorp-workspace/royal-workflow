@@ -979,36 +979,15 @@ class EMeteraiService:
         # Blok Penutup & Tanda Tangan: 2 Kolom Bersih Dilindungi KeepTogether
         direksi_approved_time = timezone.now().strftime("%d/%m/%Y")
 
-        # Slot e-meterai: area transparan bersih tempat e-meterai resmi dibubuhkan
-        has_ematerai = False
-        if hasattr(submission, "stamped_document") and getattr(submission.stamped_document, "status", "") == "stamped":
-            has_ematerai = True
-        elif hasattr(submission, "approval_tasks"):
-            has_ematerai = submission.approval_tasks.filter(
-                workflow_stage__order=3,
-                status="approved",
-            ).exists()
-
+        # Slot e-meterai di kolom tengah baris tanda tangan:
         if for_stamping:
-            # Mode Final Stamping: Selalu kosongkan sel kolom tengah secara transparan bersih
-            # DILARANG menampilkan kotak border atau teks apapun agar QR e-Meterai resmi mendarat bersih
+            # Mode Final Stamping (sedang dikirim ke API resmi EzMeterai):
+            # Selalu gunakan ruang kosong transparan bersih tanpa border atau teks apapun
+            # agar QR e-Meterai resmi Peruri mendarat bersih pada koordinat tengah
             meterai_slot_p = Spacer(54, 52)
-        elif has_ematerai:
-            # Mode Sudah Distempel (Preview dokumen pasca-stamping):
-            # Kotak [POSISI STEMPEL] DILARANG muncul. Tampilkan gambar meterai resmi/mockup jika ada,
-            # atau biarkan Spacer kosong transparan jika file mockup tidak ditemukan.
-            img_candidates = [
-                os.path.join(settings.BASE_DIR, "django_forms_workflows", "static", "django_forms_workflows", "img", "ematerai_mockup.png"),
-                os.path.join(settings.BASE_DIR, "static", "images", "ematerai_mockup.png"),
-            ]
-            img_path = next((p for p in img_candidates if os.path.exists(p)), None)
-            if img_path:
-                meterai_slot_p = RLImage(img_path, width=54, height=52)
-            else:
-                meterai_slot_p = Spacer(54, 52)
         else:
-            # Mode Draft Awal (belum distempel dan bukan for_stamping):
-            # Tampilkan kotak panduan visual e-Meterai berbingkai biru lembut untuk panduan pemohon di Step 3
+            # Mode Draft / Preview / Mock:
+            # Selalu tampilkan kotak panduan visual e-Meterai berbingkai biru lembut
             guide_data = [
                 [Paragraph("<font size='7' color='#0369a1'><b>e-Meterai</b></font>", cell_center_style)],
                 [Paragraph("<font size='6' color='#0284c7'><b>Rp 10.000</b></font>", cell_center_style)],

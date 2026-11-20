@@ -94,15 +94,9 @@ class MockMeteraiProvider(BaseMeteraiProvider):
             num_pages = len(reader.pages)
             target_idx = (page_number - 1) if (0 <= page_number - 1 < num_pages) else (num_pages - 1)
 
-            img_candidates = [
-                os.path.join(settings.BASE_DIR, "static", "images", "ematerai_mockup.png"),
-                os.path.join(settings.BASE_DIR, "django_forms_workflows", "static", "django_forms_workflows", "img", "ematerai_mockup.png"),
-            ]
-            img_path = next((p for p in img_candidates if os.path.exists(p)), None)
-
             for idx, p in enumerate(reader.pages):
                 added_page = writer.add_page(p)
-                if idx == target_idx and img_path:
+                if idx == target_idx:
                     pw = float(p.mediabox.width)
                     ph = float(p.mediabox.height)
                     stamp_buf = io.BytesIO()
@@ -110,7 +104,23 @@ class MockMeteraiProvider(BaseMeteraiProvider):
                     # Stamping coordinates
                     w_stamp = max(10.0, urx - llx)
                     h_stamp = max(10.0, ury - lly)
-                    sc.drawImage(img_path, llx, lly, width=w_stamp, height=h_stamp, mask='auto')
+                    sc.saveState()
+                    from reportlab.lib import colors
+                    sc.setStrokeColor(colors.HexColor("#0284c7"))
+                    sc.setFillColor(colors.HexColor("#f0f9ff"))
+                    sc.setLineWidth(1)
+                    sc.setDash(2, 2)
+                    sc.roundRect(llx, lly, w_stamp, h_stamp, 3, fill=1, stroke=1)
+                    sc.setFont("Helvetica-Bold", 7)
+                    sc.setFillColor(colors.HexColor("#0369a1"))
+                    sc.drawCentredString(llx + w_stamp / 2.0, lly + h_stamp - 14, "e-Meterai")
+                    sc.setFont("Helvetica-Bold", 6.5)
+                    sc.setFillColor(colors.HexColor("#0284c7"))
+                    sc.drawCentredString(llx + w_stamp / 2.0, lly + h_stamp - 26, "Rp 10.000")
+                    sc.setFont("Helvetica-Bold", 5.5)
+                    sc.setFillColor(colors.HexColor("#0284c7"))
+                    sc.drawCentredString(llx + w_stamp / 2.0, lly + 8, "[MOCK SIMULASI]")
+                    sc.restoreState()
                     sc.save()
                     stamp_buf.seek(0)
                     stamp_reader = PdfReader(stamp_buf)

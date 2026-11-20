@@ -994,30 +994,14 @@ class DocumentTemplate(models.Model):
                     '<div style="height: 64px; width: 100%;"></div>'
                 )
 
-        # Check if e-Meterai should be displayed (after Stage 3 approval or when officially stamped)
-        has_ematerai = False
-        if hasattr(submission, "stamped_document") and getattr(submission.stamped_document, "status", "") == "stamped":
-            has_ematerai = True
-        elif hasattr(submission, "approval_tasks"):
-            has_ematerai = submission.approval_tasks.filter(
-                workflow_stage__order=3,
-                status="approved",
-            ).exists()
-
-        if has_ematerai:
-            context["ematerai_slot"] = (
-                '<div style="display: inline-block; width: 54pt; height: 52pt; text-align: center; vertical-align: middle;">'
-                '  <img src="/static/images/ematerai_mockup.png" alt="e-Meterai 10000" style="width: 54pt; height: 52pt; object-fit: contain;" />'
-                '</div>'
-            )
-        else:
-            context["ematerai_slot"] = (
-                '<div style="display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 54pt; height: 52pt; border: 1.5px dashed #0284c7; border-radius: 4px; background: #f0f9ff; margin: 0 auto; padding: 2px; box-sizing: border-box;">'
-                '  <span style="font-size: 7pt; font-weight: 700; color: #0369a1; line-height: 1.1;">e-Meterai</span>'
-                '  <span style="font-size: 6.5pt; font-weight: 600; color: #0284c7; line-height: 1.1;">Rp 10.000</span>'
-                '  <span style="font-size: 5pt; color: #64748b; margin-top: 2px;">[POSISI STEMPEL]</span>'
-                '</div>'
-            )
+        # e-Meterai guide placeholder slot for HTML/template preview (Step 3 preview & review)
+        context["ematerai_slot"] = (
+            '<div style="display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 54pt; height: 52pt; border: 1.5px dashed #0284c7; border-radius: 4px; background: #f0f9ff; margin: 0 auto; padding: 2px; box-sizing: border-box;">'
+            '  <span style="font-size: 7pt; font-weight: 700; color: #0369a1; line-height: 1.1;">e-Meterai</span>'
+            '  <span style="font-size: 6.5pt; font-weight: 600; color: #0284c7; line-height: 1.1;">Rp 10.000</span>'
+            '  <span style="font-size: 5pt; color: #64748b; margin-top: 2px;">[POSISI STEMPEL]</span>'
+            '</div>'
+        )
         context["ttd_direksi_image"] = (
             f'<div style="display: inline-block; width: 180px; height: 75px; vertical-align: middle;">{direksi_box}</div>'
         )
