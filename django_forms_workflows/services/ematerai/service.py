@@ -87,10 +87,21 @@ class EMeteraiService:
         of the e-meterai table slot from the PDF stream to ensure pixel-perfect
         alignment regardless of page content height / grid table variations.
         """
-        llx = float(getattr(settings, "EMATERAI_POS_LLX", 270.64))
-        lly = float(getattr(settings, "EMATERAI_POS_LLY", 119.0))
-        urx = float(getattr(settings, "EMATERAI_POS_URX", 324.64))
-        ury = float(getattr(settings, "EMATERAI_POS_URY", 171.0))
+        default_llx = 270.64
+        default_urx = 324.64
+        default_lly = 119.0
+        default_ury = 171.0
+
+        llx = float(getattr(settings, "EMATERAI_POS_LLX", default_llx))
+        lly = float(getattr(settings, "EMATERAI_POS_LLY", default_lly))
+        urx = float(getattr(settings, "EMATERAI_POS_URX", default_urx))
+        ury = float(getattr(settings, "EMATERAI_POS_URY", default_ury))
+
+        # Safeguard: if settings still contain legacy left-aligned coordinates (e.g. 45.0 / 145.0),
+        # force center column coordinates to avoid stamping over PIHAK PERTAMA (Direktur).
+        if llx < 150.0:
+            llx = default_llx
+            urx = default_urx
 
         if pdf_bytes:
             try:
@@ -100,14 +111,14 @@ class EMeteraiService:
                 r = PdfReader(io.BytesIO(pdf_bytes))
                 p_last = r.pages[-1]
                 content = p_last.get_contents().get_data().decode('latin-1')
-                # Look for anchor or table transform in stream
-                idx_slot = content.find('1 0 0 1 215')
-                if idx_slot != -1:
-                    prefix = content[:idx_slot]
-                    m = re.findall(r'1 0 0 1 36\.1378 ([\d\.]+) cm', prefix)
+                idx_pihak = content.find('PIHAK PERTAMA')
+                if idx_pihak != -1:
+                    prefix = content[:idx_pihak]
+                    # Find transformation matrix of signature table right before PIHAK PERTAMA
+                    m = re.findall(r'1 0 0 1 [\d\.]+ ([\d\.]+) cm', prefix)
                     if m:
                         y_table = float(m[-1])
-                        dynamic_lly = round(y_table + 26.0, 1)
+                        dynamic_lly = round(y_table + 25.0, 1)
                         dynamic_ury = round(dynamic_lly + 52.0, 1)
                         return (llx, dynamic_lly, urx, dynamic_ury)
             except Exception as e:
@@ -978,11 +989,26 @@ class EMeteraiService:
                 status="approved",
             ).exists()
 
-        mockup_img_path = os.path.join(settings.BASE_DIR, "static", "images", "ematerai_mockup.png")
-        if has_ematerai and not for_stamping and os.path.exists(mockup_img_path):
-            meterai_slot_p = RLImage(mockup_img_path, width=54, height=52)
-        elif not for_stamping:
-            # Mode Preview: Kotak panduan visual e-Meterai berbingkai biru lembut
+        if for_stamping:
+            # Mode Final Stamping: Selalu kosongkan sel kolom tengah secara transparan bersih
+            # DILARANG menampilkan kotak border atau teks apapun agar QR e-Meterai resmi mendarat bersih
+            meterai_slot_p = Spacer(54, 52)
+        elif has_ematerai:
+            # Mode Sudah Distempel (Preview dokumen pasca-stamping):
+            # Kotak [POSISI STEMPEL] DILARANG muncul. Tampilkan gambar meterai resmi/mockup jika ada,
+            # atau biarkan Spacer kosong transparan jika file mockup tidak ditemukan.
+            img_candidates = [
+                os.path.join(settings.BASE_DIR, "django_forms_workflows", "static", "django_forms_workflows", "img", "ematerai_mockup.png"),
+                os.path.join(settings.BASE_DIR, "static", "images", "ematerai_mockup.png"),
+            ]
+            img_path = next((p for p in img_candidates if os.path.exists(p)), None)
+            if img_path:
+                meterai_slot_p = RLImage(img_path, width=54, height=52)
+            else:
+                meterai_slot_p = Spacer(54, 52)
+        else:
+            # Mode Draft Awal (belum distempel dan bukan for_stamping):
+            # Tampilkan kotak panduan visual e-Meterai berbingkai biru lembut untuk panduan pemohon di Step 3
             guide_data = [
                 [Paragraph("<font size='7' color='#0369a1'><b>e-Meterai</b></font>", cell_center_style)],
                 [Paragraph("<font size='6' color='#0284c7'><b>Rp 10.000</b></font>", cell_center_style)],
@@ -1000,8 +1026,6 @@ class EMeteraiService:
                 ("RIGHTPADDING", (0, 0), (-1, -1), 0),
             ]))
             meterai_slot_p = t_guide
-        else:
-            meterai_slot_p = Spacer(54, 52)
 
         direksi_ttd_flowable = None
         ttd_direksi_b64 = form_data.get("ttd_direksi_image") or form_data.get("signature_direksi")
