@@ -172,10 +172,24 @@
 
           {% if submission.stamped_document %}
             {% if submission.stamped_document.status == 'stamped' %}
-              <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1.5 d-inline-flex align-items-center gap-1 font-monospace" style="font-size: 11px;">
-                <i class="bi bi-patch-check-fill text-success"></i>
-                <span>e-Meterai Resmi</span>
-              </span>
+              {% if submission.stamped_document.provider == 'MockMeteraiProvider' and can_manage_ematerai %}
+                <span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1.5 d-inline-flex align-items-center gap-1 font-monospace" style="font-size: 11px;" title="Dokumen ini dibubuhi stempel simulasi lokal (Mock)">
+                  <i class="bi bi-patch-exclamation-fill text-warning"></i>
+                  <span>e-Meterai (Mock Sim)</span>
+                </span>
+                <form method="post" action="{% url 'forms_workflows:retry_ematerai_stamping' submission.id %}" class="d-inline">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" title="Stamp ulang dokumen SPK menggunakan provider resmi EzMeterai">
+                    <i class="bi bi-patch-check"></i>
+                    <span>Stamp Resmi EzMeterai</span>
+                  </button>
+                </form>
+              {% else %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1.5 d-inline-flex align-items-center gap-1 font-monospace" style="font-size: 11px;">
+                  <i class="bi bi-patch-check-fill text-success"></i>
+                  <span>e-Meterai Resmi</span>
+                </span>
+              {% endif %}
             {% elif submission.stamped_document.status == 'in_progress' %}
               <span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-1.5 d-inline-flex align-items-center gap-1 font-monospace" style="font-size: 11px;">
                 <span class="spinner-border spinner-border-sm" role="status" style="width: 0.75rem; height: 0.75rem;"></span>
