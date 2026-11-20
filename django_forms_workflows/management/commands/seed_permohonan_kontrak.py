@@ -545,7 +545,7 @@ class Command(BaseCommand):
             name_label=name_label,
             defaults=defaults,
         )
-        return wf
+        return wf 
 
     def _ensure_stage(self, workflow, name, order, defaults):
         st, _ = WorkflowStage.objects.update_or_create(
