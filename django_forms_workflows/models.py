@@ -1005,20 +1005,22 @@ class DocumentTemplate(models.Model):
             ).exists()
 
         if has_ematerai:
-            context["ttd_direksi_image"] = (
-                f'<div style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 200px; height: 80px; margin: 0 auto; vertical-align: middle; text-align: left;">'
-                f'  <div style="flex: 0 0 62px; text-align: center;" title="e-Meterai Rp 10.000 (Mockup Terbubuh Digital)">'
-                f'    <img src="/static/images/ematerai_mockup.png" alt="e-Meterai 10000" style="width: 60px; height: 60px; object-fit: contain; border-radius: 4px; border: 1px solid #7dd3fc; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: inline-block; margin: 0 auto;" />'
-                f'  </div>'
-                f'  <div style="flex: 0 0 130px; height: 64px; display: flex; align-items: center; justify-content: center;">'
-                f'    {direksi_box}'
-                f'  </div>'
-                f'</div>'
+            context["ematerai_slot"] = (
+                '<div style="display: inline-block; width: 54pt; height: 52pt; text-align: center; vertical-align: middle;">'
+                '  <img src="/static/images/ematerai_mockup.png" alt="e-Meterai 10000" style="width: 54pt; height: 52pt; object-fit: contain;" />'
+                '</div>'
             )
         else:
-            context["ttd_direksi_image"] = (
-                f'<div style="display: inline-block; width: 180px; height: 75px; vertical-align: middle;">{direksi_box}</div>'
+            context["ematerai_slot"] = (
+                '<div style="display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 54pt; height: 52pt; border: 1.5px dashed #0284c7; border-radius: 4px; background: #f0f9ff; margin: 0 auto; padding: 2px; box-sizing: border-box;">'
+                '  <span style="font-size: 7pt; font-weight: 700; color: #0369a1; line-height: 1.1;">e-Meterai</span>'
+                '  <span style="font-size: 6.5pt; font-weight: 600; color: #0284c7; line-height: 1.1;">Rp 10.000</span>'
+                '  <span style="font-size: 5pt; color: #64748b; margin-top: 2px;">[POSISI STEMPEL]</span>'
+                '</div>'
             )
+        context["ttd_direksi_image"] = (
+            f'<div style="display: inline-block; width: 180px; height: 75px; vertical-align: middle;">{direksi_box}</div>'
+        )
 
         # Resolve formatted rupiah for nilai_target if present
         raw_target = form_data.get("nilai_target")

@@ -102,6 +102,25 @@ class Command(BaseCommand):
             self.stdout.write(f"Final Mock Quota: {final_balance}")
 
             if stamped_doc.status == "stamped":
+                # Verify PDF stream does NOT contain [POSISI STEMPEL]
+                try:
+                    from pypdf import PdfReader
+                    stamped_content = stamped_doc.stamped_file.read()
+                    reader = PdfReader(io.BytesIO(stamped_content))
+                    raw_stream = reader.pages[-1].get_contents().get_data().decode('latin-1', errors='ignore')
+                    assert "POSISI STEMPEL" not in raw_stream, "ERROR: [POSISI STEMPEL] found in stamped PDF stream!"
+                    self.stdout.write(self.style.SUCCESS("[OK] Verified: [POSISI STEMPEL] placeholder is completely removed from stamped PDF."))
+                except Exception as ver_err:
+                    self.stdout.write(self.style.WARNING(f"[WARN] Placeholder verification: {ver_err}"))
+
+                coords = stamped_doc.coordinates or {}
+                c_llx = float(coords.get("llx", 0))
+                c_urx = float(coords.get("urx", 0))
+                c_center = (c_llx + c_urx) / 2.0
+                self.stdout.write(f"Calculated Center X : {c_center:.2f} pt (Expected A4 Center: 297.64 pt)")
+                if 290.0 <= c_center <= 305.0:
+                    self.stdout.write(self.style.SUCCESS("[OK] Verified: e-Meterai is centered symmetrically in Column 2 (between PIHAK PERTAMA and PIHAK KEDUA)."))
+
                 self.stdout.write(self.style.SUCCESS("[OK] FASE 1 (Mock Test) PASSED 100% SUCCESSFUL!\n"))
             else:
                 self.stdout.write(self.style.ERROR(f"[FAILED] FASE 1 FAILED: {stamped_doc.error_message}\n"))

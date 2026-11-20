@@ -101,6 +101,7 @@ class MockMeteraiProvider(BaseMeteraiProvider):
             img_path = next((p for p in img_candidates if os.path.exists(p)), None)
 
             for idx, p in enumerate(reader.pages):
+                added_page = writer.add_page(p)
                 if idx == target_idx and img_path:
                     pw = float(p.mediabox.width)
                     ph = float(p.mediabox.height)
@@ -113,8 +114,7 @@ class MockMeteraiProvider(BaseMeteraiProvider):
                     sc.save()
                     stamp_buf.seek(0)
                     stamp_reader = PdfReader(stamp_buf)
-                    p.merge_page(stamp_reader.pages[0])
-                writer.add_page(p)
+                    added_page.merge_page(stamp_reader.pages[0])
 
             out_buf = io.BytesIO()
             writer.write(out_buf)

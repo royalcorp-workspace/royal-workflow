@@ -770,11 +770,7 @@ class Command(BaseCommand):
                             {ttd_direksi_image}
                         </td>
                         <td style="height: 85px; vertical-align: middle; text-align: center;">
-                            <div style="display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 54pt; height: 52pt; border: 1.5px dashed #0284c7; border-radius: 4px; background: #f0f9ff; margin: 0 auto; padding: 2px; box-sizing: border-box;">
-                                <span style="font-size: 7pt; font-weight: 700; color: #0369a1; line-height: 1.1;">e-Meterai</span>
-                                <span style="font-size: 6.5pt; font-weight: 600; color: #0284c7; line-height: 1.1;">Rp 10.000</span>
-                                <span style="font-size: 5pt; color: #64748b; margin-top: 2px;">[POSISI STEMPEL]</span>
-                            </div>
+                            {ematerai_slot}
                         </td>
                         <td style="height: 85px; vertical-align: middle;">
                             {ttd_toko_image}
@@ -1032,11 +1028,7 @@ class Command(BaseCommand):
                             {ttd_direksi_image}
                         </td>
                         <td style="height: 85px; vertical-align: middle; text-align: center;">
-                            <div style="display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 54pt; height: 52pt; border: 1.5px dashed #0284c7; border-radius: 4px; background: #f0f9ff; margin: 0 auto; padding: 2px; box-sizing: border-box;">
-                                <span style="font-size: 7pt; font-weight: 700; color: #0369a1; line-height: 1.1;">e-Meterai</span>
-                                <span style="font-size: 6.5pt; font-weight: 600; color: #0284c7; line-height: 1.1;">Rp 10.000</span>
-                                <span style="font-size: 5pt; color: #64748b; margin-top: 2px;">[POSISI STEMPEL]</span>
-                            </div>
+                            {ematerai_slot}
                         </td>
                         <td style="height: 85px; vertical-align: middle;">
                             {ttd_toko_image}
