@@ -4795,6 +4795,46 @@
             }, 8000);
         }
 
+        // Setup Step 3 Warning Banner & Checkbox Layout
+        function setupStep3Confirmation() {
+            const chkData = form.querySelector('[name="chk_konfirmasi_data"]');
+            const chkPreview = form.querySelector('[name="chk_konfirmasi_preview"]');
+            if (!chkData && !chkPreview) return;
+
+            // 1. Inject Warning Banner if not present
+            if (!document.getElementById('kontrakStep3WarningBox')) {
+                const wrapperData = chkData ? (chkData.closest('.field-wrapper') || chkData.closest('.mb-3') || chkData.parentElement) : null;
+                const warningBox = document.createElement('div');
+                warningBox.id = 'kontrakStep3WarningBox';
+                warningBox.className = 'kontrak-step3-warning-box mb-3';
+                warningBox.innerHTML = `
+                    <div class="kontrak-step3-warning-title">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        <span>SANGAT PENTING!!</span>
+                    </div>
+                    <div class="kontrak-step3-warning-desc">
+                        Pastikan kembali semua data sesuai, <span class="highlight-red">khususnya NO TELEPON &amp; ALAMAT EMAIL</span> agar tidak terjadi <span class="highlight-red">pengiriman SURAT PERJANJIAN KERJA SAMA</span> ke Toko yang salah
+                    </div>
+                `;
+
+                if (wrapperData && wrapperData.parentNode) {
+                    wrapperData.parentNode.insertBefore(warningBox, wrapperData);
+                } else if (pane3) {
+                    pane3.insertBefore(warningBox, pane3.firstChild);
+                }
+            }
+
+            // 2. Enhance Checkbox Container Classes for clean flexbox alignment
+            [chkData, chkPreview].forEach(chk => {
+                if (chk) {
+                    const formCheck = chk.closest('.form-check');
+                    if (formCheck) {
+                        formCheck.classList.add('kontrak-confirmation-check-row');
+                    }
+                }
+            });
+        }
+
         // Handle Confirmation Checkboxes in Step 3
         function updateSubmitButtonState() {
             if (!btnSubmit) return;
@@ -4832,6 +4872,8 @@
                 updateSubmitButtonState();
             });
         }
+        setupStep3Confirmation();
+        updateSubmitButtonState();
 
         // Core Step Switching Function
         function switchWizardStep(targetStep, validate, shouldScroll = true) {
@@ -5153,6 +5195,7 @@
 
             // If entering Step 3: Refresh summary & SPK document preview and checkbox state
             if (isLast) {
+                setupStep3Confirmation();
                 renderSummaryTab(form);
                 renderSPKTab(form);
                 updateSubmitButtonState();

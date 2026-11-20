@@ -1640,5 +1640,103 @@ input[name="top"][readonly] {
     font-weight: 500 !important;
 }
 
+/* ==========================================================================
+   Step 3 Confirmation Checkboxes & Warning Banner (permohonan-kontrak)
+   ========================================================================== */
+
+/* 1. Banner Peringatan SANGAT PENTING!! */
+.kontrak-step3-warning-box {
+    background-color: #fef2f2 !important;
+    border: 1px solid #fecaca !important;
+    border-left: 4px solid #dc2626 !important;
+    border-radius: 6px !important;
+    padding: 12px 16px !important;
+    margin-top: 18px !important;
+    margin-bottom: 14px !important;
+}
+
+.kontrak-step3-warning-title {
+    color: #dc2626 !important;
+    font-weight: 800 !important;
+    font-size: 13.5px !important;
+    letter-spacing: 0.02em !important;
+    margin-bottom: 4px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+}
+
+.kontrak-step3-warning-desc {
+    color: #0f172a !important;
+    font-size: 13px !important;
+    line-height: 1.5 !important;
+    font-weight: 600 !important;
+}
+
+.kontrak-step3-warning-desc .highlight-red {
+    color: #dc2626 !important;
+    font-weight: 700 !important;
+}
+
+/* 2. Checkbox Konfirmasi Step 3 (Visibilitas & Alignment Presisi) */
+.field-chk_konfirmasi_data .form-check,
+.field-chk_konfirmasi_preview .form-check,
+#div_id_chk_konfirmasi_data,
+#div_id_chk_konfirmasi_preview,
+.kontrak-confirmation-check-row {
+    display: flex !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+    padding-left: 0 !important;
+    margin-bottom: 10px !important;
+    min-height: auto !important;
+}
+
+.field-chk_konfirmasi_data input[type="checkbox"],
+.field-chk_konfirmasi_preview input[type="checkbox"],
+#id_chk_konfirmasi_data,
+#id_chk_konfirmasi_preview {
+    -webkit-appearance: checkbox !important;
+    -moz-appearance: checkbox !important;
+    appearance: checkbox !important;
+    display: inline-block !important;
+    float: none !important;
+    margin: 2px 0 0 0 !important;
+    width: 17px !important;
+    height: 17px !important;
+    min-width: 17px !important;
+    min-height: 17px !important;
+    border: 1.5px solid #64748b !important;
+    border-radius: 3px !important;
+    cursor: pointer !important;
+    accent-color: #0d6efd !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background-color: #ffffff !important;
+}
+
+.field-chk_konfirmasi_data input[type="checkbox"]:focus,
+.field-chk_konfirmasi_preview input[type="checkbox"]:focus,
+#id_chk_konfirmasi_data:focus,
+#id_chk_konfirmasi_preview:focus {
+    outline: 2px solid rgba(13, 110, 253, 0.25) !important;
+    outline-offset: 1px !important;
+}
+
+.field-chk_konfirmasi_data .form-check-label,
+.field-chk_konfirmasi_preview .form-check-label,
+label[for="id_chk_konfirmasi_data"],
+label[for="id_chk_konfirmasi_preview"] {
+    cursor: pointer !important;
+    font-size: 13.5px !important;
+    line-height: 1.45 !important;
+    color: #1e293b !important;
+    font-weight: 500 !important;
+    user-select: none !important;
+    padding-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+
 
 
