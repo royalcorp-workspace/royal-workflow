@@ -294,58 +294,134 @@ class EzMeteraiProvider(BaseMeteraiProvider):
         """
         Download final stamped PDF bytes:
         GET /v2/doc/{document_id}/download
-        Supports polling retry while stamping is in progress.
+        Supports progressive backoff polling while Peruri asynchronous stamping is in progress.
+        Total polling window: ~36 seconds (8 attempts, delays: 3s, 4s, 5s, 6s, 6s, 6s, 6s).
         """
         import time
         url = f"{self.base_url}/v2/doc/{document_id}/download"
         headers = {"x-api-key": self.api_key}
 
-        logger.info("[EzMeterai] Downloading stamped document: %s", url)
-
-        max_attempts = 6
+        delays = [3, 4, 5, 6, 6, 6, 6]
+        max_attempts = len(delays) + 1  # 8 attempts total
         last_resp_text = ""
+
+        logger.info(
+            "[EzMeterai Polling] Initiating download for document '%s' (max %d attempts, target URL: %s)",
+            document_id,
+            max_attempts,
+            url,
+        )
+
         for attempt in range(max_attempts):
             try:
                 response = requests.get(url, headers=headers, timeout=60, stream=True)
                 if response.status_code == 200:
                     content_type = response.headers.get("Content-Type", "")
-                    if "application/pdf" in content_type or response.content.startswith(b"%PDF"):
-                        return response.content
+                    content = response.content
 
-                    # Check if it returned a JSON containing a download URL
+                    if content.startswith(b"%PDF") and len(content) > 1000:
+                        logger.info(
+                            "[EzMeterai Polling] Stamped PDF successfully downloaded for '%s' on attempt %d/%d (%d bytes)",
+                            document_id,
+                            attempt + 1,
+                            max_attempts,
+                            len(content),
+                        )
+                        return content
+
+                    # Check if response returned a JSON containing a download URL
                     try:
                         data = response.json()
                         dl_url = data.get("download_url") or data.get("data", {}).get("download_url")
                         if dl_url:
+                            logger.info(
+                                "[EzMeterai Polling] Resolving direct download URL on attempt %d/%d: %s",
+                                attempt + 1,
+                                max_attempts,
+                                dl_url,
+                            )
                             dl_res = requests.get(dl_url, timeout=60)
-                            if dl_res.status_code == 200 and dl_res.content.startswith(b"%PDF"):
+                            if dl_res.status_code == 200 and dl_res.content.startswith(b"%PDF") and len(dl_res.content) > 1000:
+                                logger.info(
+                                    "[EzMeterai Polling] Stamped PDF successfully downloaded via URL for '%s' (%d bytes)",
+                                    document_id,
+                                    len(dl_res.content),
+                                )
                                 return dl_res.content
                     except Exception:
                         pass
 
-                    if response.content.startswith(b"%PDF"):
-                        return response.content
+                    if content.startswith(b"%PDF") and len(content) > 1000:
+                        return content
 
                 last_resp_text = response.text[:200]
-                if response.status_code in (202, 404, 400, 425) and attempt < max_attempts - 1:
+                resp_text_lower = last_resp_text.lower()
+
+                # Check if response indicates document is still in progress / processing in Peruri queue
+                is_pending = (
+                    response.status_code in (202, 425)
+                    or (
+                        response.status_code in (400, 404)
+                        and any(
+                            phrase in resp_text_lower
+                            for phrase in (
+                                "belum selesai",
+                                "proses",
+                                "processing",
+                                "in progress",
+                                "not ready",
+                                "queue",
+                                "antrian",
+                            )
+                        )
+                    )
+                )
+
+                if is_pending and attempt < max_attempts - 1:
+                    delay = delays[attempt]
                     logger.info(
-                        "[EzMeterai] Stamping in progress (HTTP %d, attempt %d/%d). Waiting 2.5s...",
+                        "[EzMeterai Polling] Document '%s' is still being stamped (HTTP %d: %s, attempt %d/%d). Waiting %ds...",
+                        document_id,
                         response.status_code,
+                        last_resp_text.strip(),
                         attempt + 1,
                         max_attempts,
+                        delay,
                     )
-                    time.sleep(2.5)
+                    time.sleep(delay)
                     continue
 
+                # Permanent error or attempts exhausted
+                logger.error(
+                    "[EzMeterai Polling] Download terminated for '%s' on attempt %d/%d (HTTP %d): %s",
+                    document_id,
+                    attempt + 1,
+                    max_attempts,
+                    response.status_code,
+                    last_resp_text.strip(),
+                )
                 raise ValueError(
                     f"Download failed with HTTP {response.status_code}: {last_resp_text}"
                 )
 
             except requests.RequestException as exc:
                 if attempt < max_attempts - 1:
-                    time.sleep(2)
+                    delay = delays[attempt]
+                    logger.warning(
+                        "[EzMeterai Polling] Network error for '%s' on attempt %d/%d: %s. Retrying in %ds...",
+                        document_id,
+                        attempt + 1,
+                        max_attempts,
+                        exc,
+                        delay,
+                    )
+                    time.sleep(delay)
                     continue
-                logger.error("[EzMeterai] Error downloading stamped document: %s", exc)
+                logger.error(
+                    "[EzMeterai Polling] Network error exhausting all attempts for '%s': %s",
+                    document_id,
+                    exc,
+                )
                 raise
 
 
