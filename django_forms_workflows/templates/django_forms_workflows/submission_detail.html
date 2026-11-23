@@ -19,59 +19,21 @@
                     <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle-fill me-1"></i>Needs Revision</span>
                 {% elif submission.status == 'approved' %}
                     <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Approved</span>
+                    {% if submission.stamped_document and submission.stamped_document.status == 'stamped' and submission.stamped_document.provider != 'MockMeteraiProvider' %}
+                      <span class="badge d-inline-flex align-items-center" style="background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 6px;">
+                        <i class="bi bi-patch-check-fill me-1" style="color: #059669;"></i>e-Meterai Terpasang
+                      </span>
+                    {% elif can_manage_ematerai and submission.form_definition.slug == 'permohonan-kontrak' %}
+                      {% if not submission.stamped_document or submission.stamped_document.status == 'failed' or submission.stamped_document.provider == 'MockMeteraiProvider' %}
+                        <span style="font-size: 12px; color: #b45309; font-weight: 500;">&bull; Menunggu e-Meterai</span>
+                      {% endif %}
+                    {% endif %}
                 {% elif submission.status == 'rejected' %}
                     <span class="badge bg-danger">Rejected</span>
                 {% elif submission.status == 'withdrawn' %}
                     <span class="badge bg-secondary">Withdrawn</span>
                 {% endif %}
 
-                {% if submission.stamped_document %}
-                    {% if submission.stamped_document.status == 'stamped' %}
-                        {% if submission.stamped_document.provider == 'MockMeteraiProvider' and can_manage_ematerai %}
-                            <span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1.5 d-inline-flex align-items-center gap-1 font-monospace" style="font-size: 11px;" title="Dokumen ini dibubuhi stempel simulasi lokal (Mock)">
-                                <i class="bi bi-patch-exclamation-fill text-warning"></i>
-                                <span>e-Meterai (Mock Sim)</span>
-                            </span>
-                            <form method="post" action="{% url 'forms_workflows:retry_ematerai_stamping' submission.id %}" class="d-inline">
-                                {% csrf_token %}
-                                <button type="submit" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" title="Stamp ulang dokumen SPK menggunakan provider resmi EzMeterai">
-                                    <i class="bi bi-patch-check"></i>
-                                    <span>Stamp Resmi EzMeterai</span>
-                                </button>
-                            </form>
-                        {% else %}
-                            <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1.5 d-inline-flex align-items-center gap-1 font-monospace" style="font-size: 11px;">
-                                <i class="bi bi-patch-check-fill text-success"></i>
-                                <span>e-Meterai Resmi</span>
-                            </span>
-                        {% endif %}
-                    {% elif submission.stamped_document.status == 'in_progress' %}
-                        <span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-1.5 d-inline-flex align-items-center gap-1 font-monospace" style="font-size: 11px;">
-                            <span class="spinner-border spinner-border-sm" role="status" style="width: 0.75rem; height: 0.75rem;"></span>
-                            <span>Proses e-Meterai...</span>
-                        </span>
-                    {% elif submission.stamped_document.status == 'failed' and can_manage_ematerai %}
-                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1.5 d-inline-flex align-items-center gap-1 font-monospace" style="font-size: 11px;" title="{{ submission.stamped_document.error_message }}">
-                            <i class="bi bi-exclamation-triangle-fill text-danger"></i>
-                            <span>e-Meterai Gagal</span>
-                        </span>
-                        <form method="post" action="{% url 'forms_workflows:retry_ematerai_stamping' submission.id %}" class="d-inline">
-                            {% csrf_token %}
-                            <button type="submit" class="btn btn-sm btn-outline-warning d-inline-flex align-items-center gap-1" title="Coba ulang pembubuhan e-Meterai">
-                                <i class="bi bi-arrow-repeat"></i>
-                                <span>Retry e-Meterai</span>
-                            </button>
-                        </form>
-                    {% endif %}
-                {% elif submission.status == 'approved' and submission.form_definition.slug == 'permohonan-kontrak' and can_manage_ematerai %}
-                    <form method="post" action="{% url 'forms_workflows:retry_ematerai_stamping' submission.id %}" class="d-inline">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" title="Bubuhkan e-Meterai resmi ke dokumen SPK">
-                            <i class="bi bi-patch-plus"></i>
-                            <span>Bubuhkan e-Meterai</span>
-                        </button>
-                    </form>
-                {% endif %}
                 {% with pdf=submission.form_definition.pdf_generation %}
                     {% if pdf == 'anytime' and submission.status != 'draft' or pdf == 'post_approval' and submission.status == 'approved' or can_approve_pdf and submission.status != 'draft' %}
                         <a href="{% url 'forms_workflows:submission_pdf' submission.id %}SPK_Submission_{{ submission.id }}.pdf" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1.5" target="_blank" title="Buka dokumen PDF di tab baru">
@@ -98,41 +60,46 @@
             </div>
         </div>
 
-        {# ── High-Visibility e-Meterai Failure Alert (Sales Support & Administrator Only) ── #}
-        {% if can_manage_ematerai and submission.stamped_document and submission.stamped_document.status == 'failed' %}
-        <div class="alert alert-danger border border-danger shadow-sm mb-4 p-3 rounded-3" role="alert">
-            <div class="d-flex flex-column flex-md-row align-items-start justify-content-between gap-3">
-                <div class="d-flex align-items-start gap-3">
-                    <div class="p-2 bg-danger bg-opacity-25 rounded-circle text-danger flex-shrink-0">
-                        <i class="bi bi-exclamation-octagon-fill fs-4 text-danger"></i>
-                    </div>
-                    <div>
-                        <h6 class="fw-bold text-danger mb-1 d-flex align-items-center gap-2 flex-wrap">
-                            <span>Pembubuhan e-Meterai Otomatis Gagal</span>
-                            <span class="badge bg-danger text-white font-monospace" style="font-size: 11px;">stamped_failed</span>
-                        </h6>
-                        <p class="text-secondary small mb-2">
-                            Sistem gagal membubuhkan e-Meterai resmi ke dokumen SPK. Pesan kendala dari provider:
-                        </p>
-                        <div class="p-2 rounded bg-light border font-monospace text-danger small text-break">
-                            <i class="bi bi-terminal me-1"></i>{{ submission.stamped_document.error_message|default:"Koneksi atau autentikasi ke provider e-Meterai gagal." }}
-                        </div>
-                        <div class="text-muted small mt-2">
-                            <i class="bi bi-info-circle me-1"></i>Pastikan alamat IP publik server/klien sudah terdaftar di <em>IP Whitelist</em> dashboard EzMeterai Sandbox, lalu klik <strong>Retry e-Meterai</strong>.
-                        </div>
-                    </div>
+        {# ── Clean Enterprise Notice: e-Meterai Status & Action (Sales Support & Administrator Only) ── #}
+        {% if can_manage_ematerai and submission.status == 'approved' and submission.form_definition.slug == 'permohonan-kontrak' %}
+          {% if not submission.stamped_document or submission.stamped_document.status == 'failed' or submission.stamped_document.provider == 'MockMeteraiProvider' %}
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: flex-start; gap: 12px; min-width: 0;">
+                <i class="bi bi-info-circle" style="font-size: 15px; color: #d97706; margin-top: 2px; flex-shrink: 0;"></i>
+                <div style="min-width: 0;">
+                  <div style="font-size: 13px; font-weight: 600; color: #0f172a; line-height: 1.4;">
+                    {% if submission.stamped_document and submission.stamped_document.status == 'failed' %}
+                      Pembubuhan e-Meterai tertunda
+                    {% elif submission.stamped_document and submission.stamped_document.provider == 'MockMeteraiProvider' %}
+                      Dokumen menggunakan simulasi e-Meterai
+                    {% else %}
+                      Stempel e-Meterai belum terpasang
+                    {% endif %}
+                  </div>
+                  <div style="font-size: 12.5px; color: #64748b; line-height: 1.4; margin-top: 2px;">
+                    {% if submission.stamped_document and submission.stamped_document.status == 'failed' %}
+                      {% if "IP whitelist" in submission.stamped_document.error_message %}
+                        IP publik belum terdaftar di whitelist EzMeterai (403).
+                      {% else %}
+                        Kendala provider: {{ submission.stamped_document.error_message|cut:"Provider Upload Failed: "|cut:"Upload failed "|cut:"{"|cut:"}"|cut:'"msg":'|truncatechars:110 }}
+                      {% endif %}
+                    {% elif submission.stamped_document and submission.stamped_document.provider == 'MockMeteraiProvider' %}
+                      SPK saat ini dibubuhi stempel simulasi lokal. Klik Proses Ulang untuk menggunakan EzMeterai resmi.
+                    {% else %}
+                      SPK telah disetujui Direksi. Silakan proses pembubuhan stempel resmi Peruri.
+                    {% endif %}
+                  </div>
                 </div>
-                <div class="flex-shrink-0 mt-2 mt-md-0 align-self-md-center">
-                    <form method="post" action="{% url 'forms_workflows:retry_ematerai_stamping' submission.id %}" class="d-inline">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-danger btn-sm d-inline-flex align-items-center gap-1.5 shadow-sm px-3 py-2" title="Coba ulang pembubuhan e-Meterai sekarang">
-                            <i class="bi bi-arrow-repeat"></i>
-                            <span>Retry e-Meterai Sekarang</span>
-                        </button>
-                    </form>
-                </div>
+              </div>
+              <form method="post" action="{% url 'forms_workflows:retry_ematerai_stamping' submission.id %}" style="margin: 0; flex-shrink: 0;">
+                {% csrf_token %}
+                <button type="submit" style="display: inline-flex; align-items: center; gap: 6px; background: #0f172a; color: #ffffff; border: none; border-radius: 6px; padding: 6px 14px; font-size: 12.5px; font-weight: 500; cursor: pointer; transition: background 0.15s;">
+                  <i class="bi bi-arrow-clockwise" style="font-size: 13px;"></i>
+                  <span>{% if submission.stamped_document and submission.stamped_document.provider == 'MockMeteraiProvider' %}Proses e-Meterai Resmi{% else %}Proses Ulang{% endif %}</span>
+                </button>
+              </form>
             </div>
-        </div>
+          {% endif %}
         {% endif %}
 
         {% if submission.status == 'needs_revision' %}

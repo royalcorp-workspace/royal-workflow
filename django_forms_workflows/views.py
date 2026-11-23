@@ -2849,39 +2849,6 @@ def approve_submission(request, task_id):
 
             handle_approval(submission, task, workflow)
 
-            # If Stage 3 (Sales Support) was approved, automatically stamp mockup e-Meterai for SPK
-            is_stage_3 = False
-            if task.workflow_stage:
-                is_stage_3 = (
-                    task.workflow_stage.order == 3
-                    or "sales support" in (task.workflow_stage.name or "").lower()
-                )
-            if is_stage_3 and getattr(form_def, "slug", "") == "permohonan-kontrak":
-                try:
-                    from .services.ematerai import EMeteraiService
-                    EMeteraiService.stamp_submission(submission=submission, force_retry=True, user=request.user)
-                    submission.refresh_from_db()
-                    logger.info("Successfully stamped e-Meterai mockup on Stage 3 approval for sub #%s", submission.id)
-                except Exception as stamp_err:
-                    logger.error("Failed to stamp mockup e-meterai on Stage 3 approval: %s", stamp_err, exc_info=True)
-
-            # If Stage 4 (Final Review / Direksi) was approved, refresh final stamped SPK document with Direksi signature
-            is_stage_4 = False
-            if task.workflow_stage:
-                is_stage_4 = (
-                    task.workflow_stage.order == 4
-                    or "direksi" in (task.workflow_stage.name or "").lower()
-                    or "final" in (task.workflow_stage.name or "").lower()
-                )
-            if is_stage_4 and getattr(form_def, "slug", "") == "permohonan-kontrak":
-                try:
-                    from .services.ematerai import EMeteraiService
-                    EMeteraiService.stamp_submission(submission=submission, force_retry=True, user=request.user)
-                    submission.refresh_from_db()
-                    logger.info("Successfully refreshed final stamped SPK document with Direksi signature for sub #%s", submission.id)
-                except Exception as stamp_err:
-                    logger.error("Failed to refresh final stamped SPK document on Stage 4 approval: %s", stamp_err, exc_info=True)
-
         # Log audit
         audit_changes = {"task_id": task.id, "comments": comments}
         if acting_on_behalf:
@@ -7054,8 +7021,10 @@ def retry_ematerai_stamping(request, submission_id):
     if stamped_doc.status == "stamped":
         messages.success(request, "e-Meterai resmi berhasil dibubuhkan ke dokumen SPK.")
     else:
-        err = stamped_doc.error_message or "Terjadi kesalahan pada layanan e-Meterai."
-        messages.error(request, f"Pembubuhan e-Meterai gagal: {err}")
+        messages.error(
+            request,
+            "Pembubuhan e-Meterai belum berhasil. Silakan coba lagi setelah kendala teratasi."
+        )
 
     referer = request.META.get("HTTP_REFERER")
     if referer and ("approve" in referer or "submissions" in referer):

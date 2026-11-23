@@ -235,15 +235,15 @@ def _finalize_submission(submission: FormSubmission) -> None:
     if submission.status == "approved":
         _notify_final_approval(submission)
 
-        # Trigger automatic e-Meterai stamping for SPK contracts
+        # Trigger automatic e-Meterai stamping for SPK contracts (Stage 4 Approved)
         try:
             form_slug = getattr(submission.form_definition, "slug", "")
             if form_slug == "permohonan-kontrak" or "spk" in form_slug:
                 from .services.ematerai import EMeteraiService
                 EMeteraiService.stamp_submission_async(submission.id)
-                logger.info("Triggered async e-Meterai stamping for submission %s", submission.id)
+                logger.info("Triggered final e-Meterai stamping (Stage 4 Approved) for submission %s", submission.id)
         except Exception as stamp_err:
-            logger.error("Failed to trigger async e-meterai for sub %s: %s", submission.id, stamp_err)
+            logger.error("Failed to trigger e-meterai for sub %s: %s", submission.id, stamp_err)
 
 
 
@@ -1114,15 +1114,6 @@ def _advance_to_next_stage(
             "stage_decision",
             task_id=completed_task.id if completed_task else None,
         )
-
-    # When Stage 3 (Sales Support) completes on SPK, automatically stamp e-meterai mockup
-    if current_order == 3 and getattr(submission.form_definition, "slug", "") == "permohonan-kontrak":
-        try:
-            from .services.ematerai import EMeteraiService
-            EMeteraiService.stamp_submission(submission=submission, force_retry=True)
-            logger.info("Auto-stamped mockup e-Meterai for submission #%s upon advancing past Stage 3", submission.id)
-        except Exception as stamp_err:
-            logger.error("Failed to auto-stamp mockup e-meterai on stage 3 completion: %s", stamp_err)
 
     # Find stages at the next order level within this workflow track,
     # filtering by trigger_conditions against the submission data.

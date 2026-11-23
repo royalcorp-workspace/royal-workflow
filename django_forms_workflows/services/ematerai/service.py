@@ -1239,6 +1239,18 @@ class EMeteraiService:
         6. Save stamped PDF to media storage and mark status='stamped'.
         7. Audit log the execution.
         """
+        # Safeguard: Pembubuhan e-Meterai resmi hanya diizinkan untuk pengajuan yang telah disetujui final (Approved)
+        sub_status = getattr(submission, "status", "")
+        if sub_status != "approved":
+            logger.warning(
+                "Refusing e-Meterai stamping for submission #%s: submission status is '%s' (expected 'approved')",
+                getattr(submission, "id", None),
+                sub_status,
+            )
+            raise ValueError(
+                f"Pembubuhan e-Meterai hanya dapat dilakukan pada pengajuan yang berstatus 'approved' (status saat ini: '{sub_status}')."
+            )
+
         from django_forms_workflows.models import AuditLog, StampedContractDocument
 
         stamped_doc, _created = StampedContractDocument.objects.get_or_create(
