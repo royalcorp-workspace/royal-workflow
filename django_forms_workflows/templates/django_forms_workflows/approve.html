@@ -237,6 +237,43 @@
     </div>
   </div>
 
+  {# ── High-Visibility e-Meterai Failure Alert (Sales Support & Administrator Only) ── #}
+  {% if can_manage_ematerai and submission.stamped_document and submission.stamped_document.status == 'failed' %}
+    <div class="alert alert-danger border border-danger shadow-sm mb-3 p-3 rounded-3" role="alert">
+      <div class="d-flex flex-column flex-md-row align-items-start justify-content-between gap-3">
+        <div class="d-flex align-items-start gap-3">
+          <div class="p-2 bg-danger bg-opacity-25 rounded-circle text-danger flex-shrink-0">
+            <i class="bi bi-exclamation-octagon-fill fs-4 text-danger"></i>
+          </div>
+          <div>
+            <h6 class="fw-bold text-danger mb-1 d-flex align-items-center gap-2 flex-wrap">
+              <span>Pembubuhan e-Meterai Otomatis Gagal</span>
+              <span class="badge bg-danger text-white font-monospace" style="font-size: 11px;">stamped_failed</span>
+            </h6>
+            <p class="text-secondary small mb-2">
+              Sistem gagal membubuhkan e-Meterai resmi ke dokumen SPK. Pesan kendala dari provider:
+            </p>
+            <div class="p-2 rounded bg-light border font-monospace text-danger small text-break">
+              <i class="bi bi-terminal me-1"></i>{{ submission.stamped_document.error_message|default:"Koneksi atau autentikasi ke provider e-Meterai gagal." }}
+            </div>
+            <div class="text-muted small mt-2">
+              <i class="bi bi-info-circle me-1"></i>Pastikan alamat IP publik server/klien sudah terdaftar di <em>IP Whitelist</em> dashboard EzMeterai Sandbox, lalu klik <strong>Retry e-Meterai</strong>.
+            </div>
+          </div>
+        </div>
+        <div class="flex-shrink-0 mt-2 mt-md-0 align-self-md-center">
+          <form method="post" action="{% url 'forms_workflows:retry_ematerai_stamping' submission.id %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger btn-sm d-inline-flex align-items-center gap-1.5 shadow-sm px-3 py-2" title="Coba ulang pembubuhan e-Meterai sekarang">
+              <i class="bi bi-arrow-repeat"></i>
+              <span>Retry e-Meterai Sekarang</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
   {# ── Approval Pipeline Stepper (Linear Progress Tracker) ── #}
   {% if workflow_mode == "staged" and approval_stages %}
     <div class="doc-card mb-3">

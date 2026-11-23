@@ -7033,6 +7033,16 @@ def retry_ematerai_stamping(request, submission_id):
         messages.error(request, "Anda tidak memiliki wewenang untuk mengelola atau membubuhkan e-Meterai.")
         return HttpResponseForbidden("Forbidden: Akses e-Meterai terbatas untuk Sales Support dan Administrator.")
 
+    if submission.status != "approved":
+        messages.error(
+            request,
+            "e-Meterai hanya dapat dibubuhkan setelah dokumen SPK disetujui penuh oleh Direksi (Status: Approved)."
+        )
+        referer = request.META.get("HTTP_REFERER")
+        if referer and ("approve" in referer or "submissions" in referer):
+            return redirect(referer)
+        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
     from .services.ematerai import EMeteraiService
 
     stamped_doc = EMeteraiService.stamp_submission(
