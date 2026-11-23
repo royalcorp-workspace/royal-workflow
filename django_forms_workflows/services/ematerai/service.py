@@ -1274,41 +1274,84 @@ class EMeteraiService:
         stamped_doc.save(update_fields=["status", "provider", "error_message", "updated_at"])
 
         try:
-            # 1. Generate clean SPK PDF bytes (leaving slot open for provider stamping)
-            pdf_bytes, page_count = cls.generate_spk_pdf_bytes(submission, for_stamping=True)
-            target_page = page_count  # Always stamp on the last page
-            llx, lly, urx, ury = cls.get_stamping_coordinates(pdf_bytes=pdf_bytes)
+            # 0. Direct Download Recovery (Quota-Saving Check):
+            # Jika dokumen ini sudah memiliki provider_document_id dari permintaan stempel sebelumnya
+            # (misal karena unduhan sebelumnya terputus/timeout saat Peruri masih memproses),
+            # coba unduh langsung terlebih dahulu tanpa mengunggah & memotong kuota baru.
+            stamped_bytes = None
+            target_page = stamped_doc.page_number or 1
+            llx, lly, urx, ury = 270.64, 119.0, 324.64, 171.0
+            doc_id = stamped_doc.provider_document_id or ""
 
-            filename = f"spk_raw_sub_{submission.id}.pdf"
+            if doc_id and active_provider_name == "EzMeteraiProvider":
+                logger.info(
+                    "Submission #%s already has provider_document_id '%s'. Attempting direct recovery download...",
+                    submission.id,
+                    doc_id,
+                )
+                try:
+                    recovered_bytes = provider.download_stamped_document(doc_id)
+                    if recovered_bytes and recovered_bytes.startswith(b"%PDF") and len(recovered_bytes) > 1000:
+                        logger.info(
+                            "Direct recovery download succeeded for submission #%s (0 new quota consumed)!",
+                            submission.id,
+                        )
+                        stamped_bytes = recovered_bytes
+                        try:
+                            _, raw_page_count = cls.generate_spk_pdf_bytes(submission, for_stamping=True)
+                            target_page = raw_page_count
+                            llx, lly, urx, ury = cls.get_stamping_coordinates()
+                        except Exception:
+                            pass
+                except Exception as recovery_exc:
+                    logger.warning(
+                        "Direct recovery download failed for submission #%s (%s). Proceeding with fresh upload & stamping pipeline.",
+                        submission.id,
+                        recovery_exc,
+                    )
 
-            # 2. Upload to Provider
-            upload_res: UploadResult = provider.upload_document(pdf_bytes, filename)
-            if not upload_res.success or not upload_res.file_key:
-                raise RuntimeError(f"Provider Upload Failed: {upload_res.message}")
+            if not stamped_bytes:
+                # 1. Generate clean SPK PDF bytes (leaving slot open for provider stamping)
+                pdf_bytes, page_count = cls.generate_spk_pdf_bytes(submission, for_stamping=True)
+                target_page = page_count  # Always stamp on the last page
+                llx, lly, urx, ury = cls.get_stamping_coordinates(pdf_bytes=pdf_bytes)
 
-            file_key = upload_res.file_key
+                filename = f"spk_raw_sub_{submission.id}.pdf"
 
-            # 3. Request Stamping
-            stamp_res: StampingResult = provider.stamp_document(
-                file_key=file_key,
-                page_number=target_page,
-                llx=llx,
-                lly=lly,
-                urx=urx,
-                ury=ury,
-            )
-            if not stamp_res.success:
-                raise RuntimeError(f"Provider Stamping Failed: {stamp_res.message}")
+                # 2. Upload to Provider
+                upload_res: UploadResult = provider.upload_document(pdf_bytes, filename)
+                if not upload_res.success or not upload_res.file_key:
+                    raise RuntimeError(f"Provider Upload Failed: {upload_res.message}")
 
-            doc_id = stamp_res.document_id or file_key
+                file_key = upload_res.file_key
 
-            # 4. Download Stamped Document
-            if stamp_res.stamped_pdf_bytes:
-                stamped_bytes = stamp_res.stamped_pdf_bytes
-            else:
-                stamped_bytes = provider.download_stamped_document(doc_id)
+                # 3. Request Stamping
+                stamp_res: StampingResult = provider.stamp_document(
+                    file_key=file_key,
+                    page_number=target_page,
+                    llx=llx,
+                    lly=lly,
+                    urx=urx,
+                    ury=ury,
+                )
+                if not stamp_res.success:
+                    raise RuntimeError(f"Provider Stamping Failed: {stamp_res.message}")
 
-            if not stamped_bytes or not stamped_bytes.startswith(b"%PDF"):
+                doc_id = stamp_res.document_id or file_key
+
+                # PERSIST EARLY: Segera rekam provider_document_id ke DB sebelum proses unduh dimulai
+                stamped_doc.provider_document_id = doc_id
+                stamped_doc.page_number = target_page
+                stamped_doc.coordinates = {"llx": llx, "lly": lly, "urx": urx, "ury": ury}
+                stamped_doc.save(update_fields=["provider_document_id", "page_number", "coordinates", "updated_at"])
+
+                # 4. Download Stamped Document
+                if stamp_res.stamped_pdf_bytes:
+                    stamped_bytes = stamp_res.stamped_pdf_bytes
+                else:
+                    stamped_bytes = provider.download_stamped_document(doc_id)
+
+            if not stamped_bytes or not stamped_bytes.startswith(b"%PDF") or len(stamped_bytes) <= 1000:
                 raise ValueError("Downloaded file is empty or not a valid PDF")
 
             # 5. Save to Media Storage
