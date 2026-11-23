@@ -573,7 +573,7 @@
             progressContainer.id = 'kontrakWizardProgress';
             progressContainer.className = 'form-progress mb-4';
             progressContainer.innerHTML = `
-                <div class="d-flex align-items-center justify-content-between mb-2">
+                <div class="stepper-top-bar d-flex align-items-center justify-content-between mb-2">
                     <span class="text-muted small fw-medium" id="stepperStepCounter">Langkah 1 dari 3</span>
                     <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1 small fw-semibold" id="stepperStepTitle">Informasi Toko & Partner</span>
                 </div>
@@ -2749,33 +2749,34 @@
             });
 
             let html = `
-                <div class="kontrak-discount-toggles p-3 mb-3 bg-light rounded border">
-                    <div class="fw-semibold text-dark small mb-2">
-                        <i class="bi bi-tags-fill text-primary me-1"></i> Program Diskon Tambahan / Khusus (Centang untuk menambahkan baris ke tabel):
+                <div class="kontrak-discount-toggles">
+                    <div class="kontrak-discount-toggles-header">
+                        <i class="bi bi-tags-fill text-primary"></i>
+                        <span>Program Diskon Tambahan / Khusus (Centang untuk menambahkan baris ke tabel):</span>
                     </div>
-                    <div class="d-flex flex-wrap gap-4 align-items-center">
-                        <div class="form-check m-0">
+                    <div class="kontrak-discount-grid">
+                        <div class="kontrak-discount-card ${hasMd4 ? 'is-checked' : ''}">
                             <input class="form-check-input chk-diskon-toggle" type="checkbox" id="chk_toggle_md4" data-type="md4" ${hasMd4 ? 'checked' : ''}>
-                            <label class="form-check-label small fw-medium text-dark" for="chk_toggle_md4">
-                                <strong>MD4</strong> <span class="text-secondary small">(5% - Special Price)</span>
+                            <label class="kontrak-discount-label" for="chk_toggle_md4">
+                                <strong>MD4</strong> <span class="kontrak-discount-desc">(5% - Special Price)</span>
                             </label>
                         </div>
-                        <div class="form-check m-0">
+                        <div class="kontrak-discount-card ${hasMthmt ? 'is-checked' : ''}">
                             <input class="form-check-input chk-diskon-toggle" type="checkbox" id="chk_toggle_mthmt" data-type="mthmt" ${hasMthmt ? 'checked' : ''}>
-                            <label class="form-check-label small fw-medium text-dark" for="chk_toggle_mthmt">
-                                <strong>MTHMT</strong> <span class="text-secondary small">(Sesuai Program Thematic yang berlaku)</span>
+                            <label class="kontrak-discount-label" for="chk_toggle_mthmt">
+                                <strong>MTHMT</strong> <span class="kontrak-discount-desc">(Sesuai Program Thematic yang berlaku)</span>
                             </label>
                         </div>
-                        <div class="form-check m-0">
+                        <div class="kontrak-discount-card ${hasMprto ? 'is-checked' : ''}">
                             <input class="form-check-input chk-diskon-toggle" type="checkbox" id="chk_toggle_mprto" data-type="mprto" ${hasMprto ? 'checked' : ''}>
-                            <label class="form-check-label small fw-medium text-dark" for="chk_toggle_mprto">
-                                <strong>MPRTO</strong> <span class="text-secondary small">(5% - Pareto)</span>
+                            <label class="kontrak-discount-label" for="chk_toggle_mprto">
+                                <strong>MPRTO</strong> <span class="kontrak-discount-desc">(5% - Pareto)</span>
                             </label>
                         </div>
-                        <div class="form-check m-0">
+                        <div class="kontrak-discount-card ${hasMlcd ? 'is-checked' : ''}">
                             <input class="form-check-input chk-diskon-toggle" type="checkbox" id="chk_toggle_mlcd" data-type="mlcd" ${hasMlcd ? 'checked' : ''}>
-                            <label class="form-check-label small fw-medium text-dark" for="chk_toggle_mlcd">
-                                <strong>MLCD</strong> <span class="text-secondary small">(5% - Tambahan)</span>
+                            <label class="kontrak-discount-label" for="chk_toggle_mlcd">
+                                <strong>MLCD</strong> <span class="kontrak-discount-desc">(5% - Tambahan)</span>
                             </label>
                         </div>
                     </div>
@@ -2939,6 +2940,17 @@
                     }
                     saveRows(currentRows);
                     render();
+                });
+            });
+
+            container.querySelectorAll('.kontrak-discount-card').forEach(card => {
+                card.addEventListener('click', (e) => {
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
+                    const chk = card.querySelector('.chk-diskon-toggle');
+                    if (chk) {
+                        chk.checked = !chk.checked;
+                        chk.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
                 });
             });
 
@@ -3676,14 +3688,14 @@
                         </span>
                     </div>
                 </div>
-                <div class="form-text text-muted mb-0 mt-1" style="font-size: 12px; margin-left: 3.8em;">
+                <div class="support-toggle-hint form-text text-muted mb-0 mt-1">
                     Aktifkan jika perjanjian mencakup kontribusi support promosi / operasional toko (otomatis menyisipkan Pasal 4).
                 </div>
             </div>
             <div class="spk-clause-body" id="kontrak-sales-support-drawer" style="display: none; background: #f8fafc; border-top: 1px dashed #cbd5e1; padding: 20px 22px;">
                 <!-- Baris 1: Input Persentase Support & Info Kontekstual Seimbang -->
                 <div class="row align-items-center mb-3 g-3">
-                    <div class="col-md-4 col-sm-6">
+                    <div class="col-12 col-md-4">
                         <label class="form-label fw-bold small text-dark mb-1 text-nowrap" for="input_persen_support">
                             Persentase Support (%) <span class="text-danger">*</span>
                         </label>
@@ -3693,7 +3705,7 @@
                         </div>
                         <div class="form-text text-muted mt-1" style="font-size: 11px;">Nilai support promo toko (default 5%).</div>
                     </div>
-                    <div class="col-md-8 col-sm-6">
+                    <div class="col-12 col-md-8">
                         <div class="alert alert-light border border-info-subtle text-muted small p-2 px-3 mb-0 rounded-2 d-flex align-items-center gap-2" style="background-color: #f0f9ff !important;">
                             <i class="bi bi-info-circle text-primary fs-5 flex-shrink-0"></i>
                             <div style="font-size: 11.5px; line-height: 1.4;">
@@ -4638,32 +4650,16 @@
         // Hapus kontainer footer lama / wrapper bawaan Django yang rusak
         form.querySelectorAll('#unifiedWizardFooter, .unified-wizard-footer, .form-wizard-footer, .step-navigation').forEach(el => el.remove());
 
-        // Buat kontainer tunggal baru dengan inline-style defensif (agar tidak bisa ditimpa CSS lain)
+        // Buat kontainer tunggal baru (tata letak dikendalikan penuh oleh CSS kontrak-form.css)
         const footerContainer = document.createElement('div');
         footerContainer.id = 'unifiedWizardFooter';
         footerContainer.className = 'unified-wizard-footer form-wizard-footer';
-        footerContainer.setAttribute('style', `
-            display: flex !important;
-            flex-direction: row !important;
-            justify-content: space-between !important;
-            align-items: center !important;
-            flex-wrap: nowrap !important;
-            gap: 12px !important;
-            width: 100% !important;
-            margin-top: 24px !important;
-            padding-top: 16px !important;
-            border-top: 1px solid #e2e8f0 !important;
-            box-sizing: border-box !important;
-            clear: both !important;
-        `);
 
         const leftGroup = document.createElement('div');
         leftGroup.className = 'footer-group-left footer-left-actions';
-        leftGroup.setAttribute('style', 'display: inline-flex !important; align-items: center !important; gap: 8px !important; flex-wrap: nowrap !important; flex-shrink: 0 !important;');
 
         const rightGroup = document.createElement('div');
         rightGroup.className = 'footer-group-right footer-right-actions';
-        rightGroup.setAttribute('style', 'display: inline-flex !important; align-items: center !important; gap: 8px !important; flex-wrap: nowrap !important; margin-left: auto !important; flex-shrink: 0 !important;');
 
         // Masukkan tombol ke group masing-masing:
         if (btnBackToForms) leftGroup.appendChild(btnBackToForms);
@@ -4675,18 +4671,16 @@
         if (btnPreviewSPK) rightGroup.appendChild(btnPreviewSPK);
         if (btnSubmit) rightGroup.appendChild(btnSubmit);
 
-        // Bersihkan inline style disruptif dari masing-masing tombol & kunci tinggi 38px:
+        // Bersihkan inline style disruptif dari masing-masing tombol:
         [btnBackToForms, btnPrev, btnDiscard, btnSaveDraft, btnNext, btnPreviewSPK, btnSubmit].forEach(el => {
             if (el) {
                 el.style.float = 'none';
                 el.style.position = 'static';
                 el.style.margin = '0';
-                el.style.height = '38px';
-                el.style.minHeight = '38px';
-                el.style.maxHeight = '38px';
-                el.style.borderRadius = '6px';
-                el.style.fontSize = '13.5px';
-                el.style.boxSizing = 'border-box';
+                el.style.removeProperty('height');
+                el.style.removeProperty('min-height');
+                el.style.removeProperty('max-height');
+                el.style.removeProperty('font-size');
                 el.classList.remove('btn-sm');
                 if (!el.classList.contains('d-none')) {
                     el.style.display = 'inline-flex';
