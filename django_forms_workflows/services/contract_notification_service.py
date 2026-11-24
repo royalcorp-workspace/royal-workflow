@@ -444,3 +444,290 @@ def dispatch_final_spk_approved_async(submission, stamped_pdf_path: str | None =
         args=(submission, stamped_pdf_path),
         daemon=True,
     ).start()
+
+
+# -----------------------------------------------------------------------------
+# Manual Push Reminder by Sales Support
+# -----------------------------------------------------------------------------
+
+def resolve_active_stage_push_target(submission) -> dict:
+    """Resolve active stage and recipient targets for manual push notification."""
+    if not submission or getattr(submission.form_definition, "slug", "") != "permohonan-kontrak":
+        return {"valid": False, "reason": "Bukan formulir Kontrak Toko"}
+
+    if submission.status not in ["pending_approval", "submitted"]:
+        return {"valid": False, "reason": "Pengajuan tidak dalam status aktif berjalan"}
+
+    form_data = submission.form_data or {}
+    nama_toko = form_data.get("nama_toko") or "Toko Mitra"
+    nomor_spk = form_data.get("nomor_spk") or f"SPK#{submission.id}"
+
+    # Get active pending tasks
+    all_tasks = list(submission.approval_tasks.all())
+    pending_tasks = [t for t in all_tasks if t.status == "pending"]
+    if not pending_tasks:
+        return {"valid": False, "reason": "Tidak ada tugas approval yang sedang pending"}
+
+    active_task = pending_tasks[0]
+    stage = active_task.workflow_stage
+    stage_order = stage.order if stage else 0
+
+    tokens = list(submission.signing_tokens.order_by("-id"))
+    latest_token = tokens[0] if tokens else None
+    is_token_signed = (latest_token and latest_token.status == "signed") or bool(form_data.get("ttd_toko_image"))
+
+    base_url = _resolve_base_url()
+
+    # Stage 1: Review ASM
+    if stage_order == 1:
+        stage_name = "Stage 1: Review ASM"
+        role_label = "ASM (Sales Area Manager)"
+        recipient_users = []
+        if active_task.assigned_to and active_task.assigned_to.email:
+            recipient_users = [active_task.assigned_to]
+        elif active_task.assigned_group:
+            recipient_users = list(active_task.assigned_group.user_set.filter(is_active=True).exclude(email=""))
+        else:
+            asm_group = Group.objects.filter(name="Sales Area Manager").first()
+            if asm_group:
+                recipient_users = list(asm_group.user_set.filter(is_active=True).exclude(email=""))
+
+        recipient_emails = list(dict.fromkeys([u.email.strip() for u in recipient_users if _is_valid_email(u.email)]))
+        recipient_names = [u.get_full_name() or u.username for u in recipient_users]
+        action_url = f"{base_url}/forms/approvals/{active_task.id}/approve/"
+        return {
+            "valid": True,
+            "stage_order": 1,
+            "stage_name": stage_name,
+            "role_label": role_label,
+            "is_store": False,
+            "task": active_task,
+            "token": None,
+            "recipient_emails": recipient_emails,
+            "recipient_names": recipient_names,
+            "action_url": action_url,
+            "nomor_spk": nomor_spk,
+            "nama_toko": nama_toko,
+        }
+
+    # Stage 2: Review Sales Support
+    elif stage_order == 2:
+        stage_name = "Stage 2: Review Sales Support"
+        role_label = "Sales Support"
+        recipient_users = []
+        if active_task.assigned_to and active_task.assigned_to.email:
+            recipient_users = [active_task.assigned_to]
+        elif active_task.assigned_group:
+            recipient_users = list(active_task.assigned_group.user_set.filter(is_active=True).exclude(email=""))
+        else:
+            ss_group = Group.objects.filter(name="Sales Support").first()
+            if ss_group:
+                recipient_users = list(ss_group.user_set.filter(is_active=True).exclude(email=""))
+
+        recipient_emails = list(dict.fromkeys([u.email.strip() for u in recipient_users if _is_valid_email(u.email)]))
+        recipient_names = [u.get_full_name() or u.username for u in recipient_users]
+        action_url = f"{base_url}/forms/approvals/{active_task.id}/approve/"
+        return {
+            "valid": True,
+            "stage_order": 2,
+            "stage_name": stage_name,
+            "role_label": role_label,
+            "is_store": False,
+            "task": active_task,
+            "token": None,
+            "recipient_emails": recipient_emails,
+            "recipient_names": recipient_names,
+            "action_url": action_url,
+            "nomor_spk": nomor_spk,
+            "nama_toko": nama_toko,
+        }
+
+    # Stage 3: Review RSOM
+    elif stage_order == 3:
+        stage_name = "Stage 3: Review RSOM"
+        role_label = "RSOM (Regional Sales Operations Manager)"
+        recipient_users = []
+        if active_task.assigned_to and active_task.assigned_to.email:
+            recipient_users = [active_task.assigned_to]
+        elif active_task.assigned_group:
+            recipient_users = list(active_task.assigned_group.user_set.filter(is_active=True).exclude(email=""))
+        else:
+            rsom_group = Group.objects.filter(name__in=["General Manager Sales", "Sales Area Manager"]).first()
+            if rsom_group:
+                recipient_users = list(rsom_group.user_set.filter(is_active=True).exclude(email=""))
+
+        recipient_emails = list(dict.fromkeys([u.email.strip() for u in recipient_users if _is_valid_email(u.email)]))
+        recipient_names = [u.get_full_name() or u.username for u in recipient_users]
+        action_url = f"{base_url}/forms/approvals/{active_task.id}/approve/"
+        return {
+            "valid": True,
+            "stage_order": 3,
+            "stage_name": stage_name,
+            "role_label": role_label,
+            "is_store": False,
+            "task": active_task,
+            "token": None,
+            "recipient_emails": recipient_emails,
+            "recipient_names": recipient_names,
+            "action_url": action_url,
+            "nomor_spk": nomor_spk,
+            "nama_toko": nama_toko,
+        }
+
+    # Stage 4: Gate TTD Toko vs Approval Direksi
+    elif stage_order == 4:
+        if not is_token_signed:
+            stage_name = "Gate: Menunggu TTD Mitra Toko"
+            role_label = "Mitra Toko"
+            store_email = (form_data.get("email") or "").strip()
+            signer_name = latest_token.signer_name if latest_token else (form_data.get("nama_pemilik") or "Pimpinan Toko")
+            signing_url = f"{base_url}/spk/sign/{latest_token.token}/" if latest_token else f"{base_url}/forms/submissions/{submission.id}/"
+            return {
+                "valid": True,
+                "stage_order": 4,
+                "stage_name": stage_name,
+                "role_label": role_label,
+                "is_store": True,
+                "task": active_task,
+                "token": latest_token,
+                "recipient_emails": [store_email] if _is_valid_email(store_email) else [],
+                "recipient_names": [f"{nama_toko} ({signer_name})"],
+                "action_url": signing_url,
+                "nomor_spk": nomor_spk,
+                "nama_toko": nama_toko,
+            }
+        else:
+            stage_name = "Stage 4: Final Approval Direksi"
+            role_label = "Direksi"
+            recipient_users = []
+            if active_task.assigned_to and active_task.assigned_to.email:
+                recipient_users = [active_task.assigned_to]
+            elif active_task.assigned_group:
+                recipient_users = list(active_task.assigned_group.user_set.filter(is_active=True).exclude(email=""))
+            else:
+                dir_group = Group.objects.filter(name="Direksi").first()
+                if dir_group:
+                    recipient_users = list(dir_group.user_set.filter(is_active=True).exclude(email=""))
+
+            recipient_emails = list(dict.fromkeys([u.email.strip() for u in recipient_users if _is_valid_email(u.email)]))
+            recipient_names = [u.get_full_name() or u.username for u in recipient_users]
+            action_url = f"{base_url}/forms/approvals/{active_task.id}/approve/"
+            return {
+                "valid": True,
+                "stage_order": 4,
+                "stage_name": stage_name,
+                "role_label": role_label,
+                "is_store": False,
+                "task": active_task,
+                "token": latest_token,
+                "recipient_emails": recipient_emails,
+                "recipient_names": recipient_names,
+                "action_url": action_url,
+                "nomor_spk": nomor_spk,
+                "nama_toko": nama_toko,
+            }
+
+    return {"valid": False, "reason": f"Tahap urutan ke-{stage_order} tidak terdefinisi"}
+
+
+def send_manual_stage_reminder(submission, sender_user) -> dict:
+    """Send manual push reminder to the current active stage PIC or store partner."""
+    target = resolve_active_stage_push_target(submission)
+    if not target.get("valid"):
+        return {"success": False, "message": target.get("reason", "Target tahap tidak valid")}
+
+    sender_name = (sender_user.get_full_name() or sender_user.username) if sender_user else "Sales Support"
+    nomor_spk = target["nomor_spk"]
+    nama_toko = target["nama_toko"]
+    stage_name = target["stage_name"]
+    recipient_emails = target["recipient_emails"]
+    recipient_names = target["recipient_names"]
+    action_url = target["action_url"]
+    is_store = target["is_store"]
+
+    if not recipient_emails:
+        return {
+            "success": False,
+            "message": f"Tidak ditemukan alamat email valid untuk penerima pada {stage_name}.",
+            "stage_label": stage_name,
+            "recipient_summary": "Belum ada email terdaftar",
+            "recipient_emails": [],
+        }
+
+    doc_info = extract_document_info(submission)
+
+    if is_store:
+        subject = f"[Pengingat TTD Digital] Mohon Tandatangani SPK {nomor_spk} - {nama_toko}"
+        event_message = (
+            f"Tim Sales Support ({sender_name}) mengirimkan pengingat penandatanganan Perjanjian Kerjasama (SPK) "
+            f"untuk {nama_toko}. Mohon kesediaan Bapak/Ibu mitra toko untuk meninjau draf dan menandatangani dokumen "
+            f"secara digital melalui tautan resmi berikut."
+        )
+        status_label = "Pengingat: Menunggu TTD Mitra Toko"
+        action_instruction = "Klik tombol di bawah untuk membuka portal tanda tangan digital resmi kami."
+        action_button_label = "Tanda Tangani SPK Sekarang"
+        notification_type = "signing_reminder"
+    else:
+        subject = f"[Pengingat {target['role_label']}] SPK {nomor_spk} - {nama_toko} Menunggu Persetujuan Anda"
+        event_message = (
+            f"Tim Sales Support ({sender_name}) mengirimkan pengingat bahwa pengajuan SPK {nomor_spk} "
+            f"untuk toko {nama_toko} saat ini sedang berada pada tahap {stage_name} dan menunggu persetujuan Anda."
+        )
+        status_label = f"Pengingat: {stage_name}"
+        action_instruction = "Mohon tinjau berkas dan berikan persetujuan untuk meneruskan pengajuan ke tahap selanjutnya."
+        action_button_label = "Review & Berikan Persetujuan"
+        notification_type = "manual_reminder"
+
+    ctx = {
+        "submission": submission,
+        "token": target.get("token"),
+        "form_data": submission.form_data or {},
+        "doc_info": doc_info,
+        "event_message": event_message,
+        "status_label": status_label,
+        "action_instruction": action_instruction,
+        "action_url": action_url,
+        "action_title": f"Pengingat: {stage_name}",
+        "action_button_label": action_button_label,
+        "site_name": getattr(settings, "SITE_NAME", "Royal Workflow"),
+    }
+    html = render_to_string("emails/standard_notification.html", ctx)
+
+    sent = _send_email_message(
+        subject=subject,
+        to_list=recipient_emails,
+        html_content=html,
+        notification_type=notification_type,
+        submission_id=submission.id,
+    )
+
+    # Optional background Telegram dispatch
+    try:
+        from .telegram_service import dispatch_telegram_workflow_event
+        task = target.get("task")
+        if task:
+            threading.Thread(
+                target=dispatch_telegram_workflow_event,
+                args=(submission.id, "approval_request", task.id),
+                daemon=True,
+            ).start()
+    except Exception as tel_err:
+        logger.debug("Telegram manual reminder dispatch skipped: %s", tel_err)
+
+    rec_summary = ", ".join(recipient_names) if recipient_names else ", ".join(recipient_emails)
+    if sent:
+        return {
+            "success": True,
+            "message": f"Push notifikasi pengingat berhasil dikirimkan ke {stage_name} ({rec_summary}).",
+            "stage_label": stage_name,
+            "recipient_summary": rec_summary,
+            "recipient_emails": recipient_emails,
+        }
+    else:
+        return {
+            "success": False,
+            "message": f"Gagal mengirimkan email pengingat ke {rec_summary}. Periksa konfigurasi email server.",
+            "stage_label": stage_name,
+            "recipient_summary": rec_summary,
+            "recipient_emails": recipient_emails,
+        }

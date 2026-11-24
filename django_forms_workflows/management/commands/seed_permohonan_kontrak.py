@@ -210,7 +210,11 @@ class Command(BaseCommand):
                 groups["Sales Staff"],
             ],
             admin_groups=[],
-            reviewer_groups=[groups["General Manager Sales"], groups["Legal Team"]],
+            reviewer_groups=[
+                groups["General Manager Sales"],
+                groups["Legal Team"],
+                groups["Sales Support"],
+            ],
         )
 
         # 5. Form Fields (46 fields)

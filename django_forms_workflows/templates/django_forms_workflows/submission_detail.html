@@ -46,6 +46,20 @@
                         </a>
                     {% endif %}
                 {% endwith %}
+                {% if can_push_notification %}
+                    <button type="button" 
+                            class="btn btn-sm btn-outline-warning text-dark d-inline-flex align-items-center gap-1.5"
+                            data-bs-toggle="modal" 
+                            data-bs-target="#pushNotificationModal"
+                            title="Kirim pengingat manual ke PIC stage aktif saat ini"
+                            {% if push_cooldown_remaining > 0 %}disabled{% endif %}>
+                        <i class="bi bi-bell-fill text-warning"></i>
+                        <span>Push Notifikasi</span>
+                        {% if push_cooldown_remaining > 0 %}
+                            <span class="badge bg-secondary ms-1">{{ push_cooldown_remaining }}s</span>
+                        {% endif %}
+                    </button>
+                {% endif %}
                 {% if is_approver_user %}
                     <a href="{% url 'forms_workflows:approval_inbox' %}" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1.5">
                         <i class="bi bi-inbox-fill"></i>
@@ -537,5 +551,82 @@
         </div>
     </div>
 </div>
+
+{# ── Modal Konfirmasi Push Notifikasi (Khusus Sales Support & Admin) ── #}
+{% if can_push_notification %}
+<div class="modal fade" id="pushNotificationModal" tabindex="-1" aria-labelledby="pushNotificationModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width: 520px;">
+    <div class="modal-content border-0 shadow" style="border-radius: 10px;">
+      <div class="modal-header border-0 pb-0 pt-4 px-4">
+        <h6 class="modal-title fw-bold text-dark d-flex align-items-center gap-2" id="pushNotificationModalLabel">
+          <i class="bi bi-bell-fill text-warning fs-5"></i> Kirim Push Notifikasi Pengingat
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+      </div>
+
+      <form method="post" action="{% url 'forms_workflows:push_stage_notification' submission.id %}" id="pushNotificationFormSecondary">
+        {% csrf_token %}
+        <div class="modal-body px-4 py-3">
+          <p class="text-secondary small mb-3">
+            Kirimkan pengingat notifikasi manual secara langsung kepada pihak yang sedang bertanggung jawab pada tahap aktif saat ini.
+          </p>
+
+          <div class="p-3 bg-light rounded border mb-3">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <span class="text-muted small" style="font-size: 11px; text-transform: uppercase; font-weight: 600;">Tahap Aktif Saat Ini</span>
+              <span class="badge bg-primary bg-opacity-10 text-primary border border-primary-subtle px-2 py-1" style="font-size: 11px;">
+                {{ push_target_info.stage_name|default:"Tahap Berjalan" }}
+              </span>
+            </div>
+            
+            <div class="text-muted small mt-2" style="font-size: 11px; text-transform: uppercase; font-weight: 600;">Target Penerima Notifikasi</div>
+            <div class="fw-semibold text-dark small mt-0.5">
+              {% if push_target_info.recipient_names %}
+                {{ push_target_info.recipient_names|join:", " }}
+              {% else %}
+                {{ push_target_info.role_label|default:"PIC Stage" }}
+              {% endif %}
+            </div>
+
+            {% if push_target_info.recipient_emails %}
+            <div class="text-muted small mt-1" style="font-size: 11.5px;">
+              <i class="bi bi-envelope me-1"></i>{{ push_target_info.recipient_emails|join:", " }}
+            </div>
+            {% endif %}
+          </div>
+
+          <div class="alert alert-info bg-info bg-opacity-10 border border-info-subtle p-2.5 small text-dark mb-0 rounded-2" style="font-size: 11.5px; line-height: 1.45;">
+            <i class="bi bi-info-circle-fill text-info me-1"></i>
+            Tindakan ini <strong>tidak mengubah</strong> status pengajuan, urutan stage, maupun persetujuan task. Pengingat hanya akan dikirimkan via email resmi dan notifikasi internal.
+          </div>
+        </div>
+
+        <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-between" style="border-bottom-left-radius: 10px; border-bottom-right-radius: 10px;">
+          <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal">
+            Batal
+          </button>
+          <button type="submit" class="btn btn-warning btn-sm px-3.5 fw-semibold d-inline-flex align-items-center gap-1.5" id="btnConfirmPushNotifSecondary" {% if push_cooldown_remaining > 0 %}disabled{% endif %}>
+            <i class="bi bi-send-fill"></i>
+            <span>{% if push_cooldown_remaining > 0 %}Tunggu {{ push_cooldown_remaining }}s{% else %}Kirim Pengingat Sekarang{% endif %}</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const pushForm = document.getElementById('pushNotificationFormSecondary');
+    const pushBtn = document.getElementById('btnConfirmPushNotifSecondary');
+    if (pushForm && pushBtn) {
+      pushForm.addEventListener('submit', function() {
+        pushBtn.disabled = true;
+        pushBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span> Mengirim Pengingat...';
+      });
+    }
+  });
+</script>
+{% endif %}
 {% endblock %}
 

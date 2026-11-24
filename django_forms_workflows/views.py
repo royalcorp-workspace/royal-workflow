@@ -1455,6 +1455,7 @@ def form_submission_hub(request, slug):
         or user.is_staff
         or form_def.reviewer_groups.filter(id__in=user_groups).exists()
         or form_def.admin_groups.filter(id__in=user_groups).exists()
+        or (form_def.slug == "permohonan-kontrak" and user_groups.filter(name="Sales Support").exists())
     )
 
     if is_privileged:
@@ -1845,9 +1846,14 @@ def submission_detail(request, submission_id):
     is_reviewer = request.user.groups.filter(
         id__in=form_def_early.reviewer_groups.all()
     ).exists()
+    is_sales_support = (
+        getattr(form_def_early, "slug", "") == "permohonan-kontrak"
+        and request.user.groups.filter(name="Sales Support").exists()
+    )
     is_approver_user = (
         request.user.is_superuser
         or is_reviewer
+        or is_sales_support
         or user_can_approve(request.user, submission)
         or request.user.groups.filter(id__in=form_def_early.admin_groups.all()).exists()
         or submission.approval_tasks.filter(
@@ -2148,6 +2154,31 @@ def submission_detail(request, submission_id):
         signing_token = signing_token.order_by("-created_at").first()
     signing_url = signing_token.get_signing_url(request) if signing_token else None
 
+    # ── Push Notification Context (Sales Support & Administrator) ──
+    from django.core.cache import cache
+    from .services.contract_notification_service import resolve_active_stage_push_target
+
+    can_push_notification = False
+    push_target_info = None
+    push_cooldown_remaining = 0
+
+    if (
+        getattr(form_def_early, "slug", "") == "permohonan-kontrak"
+        and submission.status in ["pending_approval", "submitted"]
+        and (request.user.is_superuser or request.user.groups.filter(name="Sales Support").exists())
+    ):
+        can_push_notification = True
+        push_target_info = resolve_active_stage_push_target(submission)
+        cooldown_key = f"push_notif_cooldown_{submission.id}"
+        cooldown_val = cache.get(cooldown_key)
+        if cooldown_val:
+            try:
+                sent_at = datetime.fromisoformat(cooldown_val)
+                elapsed = (timezone.now() - sent_at).total_seconds()
+                push_cooldown_remaining = max(0, int(60 - elapsed))
+            except Exception:
+                push_cooldown_remaining = 60
+
     return render(
         request,
         "django_forms_workflows/submission_detail.html",
@@ -2177,8 +2208,67 @@ def submission_detail(request, submission_id):
             "approval_stages": approval_stages,
             "current_stage_number": current_stage_number,
             "total_stages": len(approval_stages),
+            "can_push_notification": can_push_notification,
+            "push_target_info": push_target_info,
+            "push_cooldown_remaining": push_cooldown_remaining,
         },
     )
+
+
+@login_required
+@require_http_methods(["POST"])
+def push_stage_notification(request, submission_id):
+    """
+    Manual push notification trigger for Sales Support to remind the currently active stage approver / store.
+    Strictly restricted to users in Sales Support group or Superusers.
+    """
+    submission = get_object_or_404(FormSubmission, id=submission_id)
+    form_def = submission.form_definition
+
+    if not form_def or form_def.slug != "permohonan-kontrak":
+        return HttpResponseForbidden("Fitur ini hanya tersedia untuk formulir Kontrak Toko.")
+
+    is_sales_support = request.user.is_superuser or request.user.groups.filter(name="Sales Support").exists()
+    if not is_sales_support:
+        return HttpResponseForbidden("Hanya Sales Support atau Administrator yang berhak mengirimkan push notifikasi pengingat.")
+
+    if submission.status not in ["pending_approval", "submitted"]:
+        messages.error(request, "Push notifikasi hanya dapat dikirimkan untuk pengajuan yang sedang aktif berjalan.")
+        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+    # Rate limiting cooldown check (60 seconds)
+    from django.core.cache import cache
+    cooldown_key = f"push_notif_cooldown_{submission.id}"
+    if cache.get(cooldown_key):
+        messages.warning(
+            request,
+            "Pengingat baru saja dikirimkan. Mohon tunggu 60 detik sebelum mengirimkan push notifikasi berikutnya.",
+        )
+        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+    from .services.contract_notification_service import send_manual_stage_reminder
+    result = send_manual_stage_reminder(submission, request.user)
+
+    if result.get("success"):
+        cache.set(cooldown_key, timezone.now().isoformat(), timeout=60)
+        AuditLog.objects.create(
+            action="comment",
+            object_type="FormSubmission",
+            object_id=submission.id,
+            user=request.user,
+            user_ip=get_client_ip(request),
+            comments=(
+                f"Sales Support ({request.user.get_full_name() or request.user.username}) "
+                f"mengirimkan pengingat manual ke {result.get('stage_label', 'Stage Aktif')} "
+                f"({result.get('recipient_summary', '-')})."
+            ),
+            changes={"notification_pushed": True, "target": result.get("stage_label")},
+        )
+        messages.success(request, result["message"])
+    else:
+        messages.error(request, result.get("message", "Gagal mengirimkan push notifikasi pengingat."))
+
+    return redirect("forms_workflows:submission_detail", submission_id=submission.id)
 
 
 @login_required
