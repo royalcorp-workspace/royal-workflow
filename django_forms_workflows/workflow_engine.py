@@ -238,7 +238,7 @@ def _finalize_submission(submission: FormSubmission) -> None:
         # Trigger automatic e-Meterai stamping for SPK contracts (Stage 4 Approved)
         try:
             form_slug = getattr(submission.form_definition, "slug", "")
-            if form_slug == "permohonan-kontrak" or "spk" in form_slug:
+            if (form_slug == "permohonan-kontrak" or "spk" in form_slug) and not getattr(submission, "_skip_async_ematerai", False):
                 from .services.ematerai import EMeteraiService
                 EMeteraiService.stamp_submission_async(submission.id)
                 logger.info("Triggered final e-Meterai stamping (Stage 4 Approved) for submission %s", submission.id)

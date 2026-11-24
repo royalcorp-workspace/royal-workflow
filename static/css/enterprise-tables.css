@@ -325,6 +325,38 @@ table.dataTable.no-footer,
   color: #52525b;
   border: 1px solid #e4e4e7;
 }
+.badge-status-waiting-toko {
+  background-color: #faf5ff;
+  color: #6b21a8;
+  border: 1px solid #e9d5ff;
+}
+.badge-status-waiting-toko .badge-status-dot {
+  background-color: #a855f7;
+}
+.badge-status-direksi {
+  background-color: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #dbeafe;
+}
+.badge-status-direksi .badge-status-dot {
+  background-color: #3b82f6;
+}
+.badge-status-menunggu {
+  background-color: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+.badge-status-menunggu .badge-status-dot {
+  background-color: #f59e0b;
+}
+.badge-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 5px;
+  vertical-align: middle;
+}
 
 /* Action Buttons */
 .btn-action-review {

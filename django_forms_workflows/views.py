@@ -2302,6 +2302,20 @@ def approval_inbox(request):
         .distinct()
     )
 
+    if is_super:
+        if not reviewer_form_ids:
+            reviewer_form_ids = list(
+                FormDefinition.objects.filter(reviewer_groups__isnull=False)
+                .values_list("id", flat=True)
+                .distinct()
+            )
+        if not admin_form_ids:
+            admin_form_ids = list(
+                FormDefinition.objects.filter(admin_groups__isnull=False)
+                .values_list("id", flat=True)
+                .distinct()
+            )
+
     available_role_filters = []
     if reviewer_form_ids:
         available_role_filters.append("reviewing")
@@ -2315,7 +2329,18 @@ def approval_inbox(request):
         active_role = "mine"
 
     if is_super:
-        base_tasks = ApprovalTask.objects.filter(status="pending")
+        if active_role == "reviewing":
+            base_tasks = ApprovalTask.objects.filter(
+                status="pending",
+                submission__form_definition_id__in=reviewer_form_ids,
+            )
+        elif active_role == "overseeing":
+            base_tasks = ApprovalTask.objects.filter(
+                status="pending",
+                submission__form_definition_id__in=admin_form_ids,
+            )
+        else:
+            base_tasks = ApprovalTask.objects.filter(status="pending")
     elif active_role == "reviewing":
         base_tasks = ApprovalTask.objects.filter(
             status="pending",
@@ -3088,6 +3113,13 @@ def approve_submission(request, task_id):
         # Update submission status
         workflow = form_def.workflow
 
+        is_direksi_approval = (
+            decision == "approve"
+            and getattr(form_def, "slug", "") == "permohonan-kontrak"
+            and task.workflow_stage
+            and task.workflow_stage.order == 4
+        )
+
         if task.sub_workflow_instance_id:
             # Sub-workflow task — dispatch to sub-workflow engine
             from .workflow_engine import (
@@ -3106,6 +3138,9 @@ def approve_submission(request, task_id):
         else:
             # Approval - check workflow logic
             from .workflow_engine import handle_approval
+
+            if is_direksi_approval:
+                submission._skip_async_ematerai = True
 
             handle_approval(submission, task, workflow)
 
@@ -3129,6 +3164,40 @@ def approve_submission(request, task_id):
             or submission.form_data.get("nomor_dokumen")
             or f"#{submission.id}"
         )
+
+        if is_direksi_approval:
+            # Direct synchronous e-Meterai stamping for final SPK Direksi approval
+            try:
+                from .services.ematerai import EMeteraiService
+
+                stamped_doc = EMeteraiService.stamp_submission(
+                    submission=submission,
+                    user=request.user,
+                )
+                if stamped_doc and stamped_doc.status == "stamped":
+                    messages.success(
+                        request,
+                        f"Pengajuan {doc_no} berhasil disetujui dan e-Meterai resmi telah berhasil dibubuhkan pada dokumen SPK.",
+                    )
+                else:
+                    err_txt = f" ({stamped_doc.error_message})" if (stamped_doc and stamped_doc.error_message) else ""
+                    messages.warning(
+                        request,
+                        f"Pengajuan {doc_no} berhasil disetujui. Namun pembubuhan e-Meterai mengalami kendala{err_txt}. Anda dapat mencoba proses ulang pada halaman detail.",
+                    )
+            except Exception as stamp_exc:
+                logger.error(
+                    "Direct synchronous e-meterai stamping error for sub #%s: %s",
+                    submission.id,
+                    stamp_exc,
+                    exc_info=True,
+                )
+                messages.warning(
+                    request,
+                    f"Pengajuan {doc_no} berhasil disetujui. Pembubuhan e-Meterai belum berhasil: {stamp_exc}. Gunakan tombol 'Proses Ulang e-Meterai' pada halaman detail.",
+                )
+            return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
         if decision == "approve":
             stage_info = f" ({stage_name})" if stage_name else ""
             messages.success(request, f"Pengajuan {doc_no} berhasil disetujui{stage_info}.")
@@ -6215,22 +6284,35 @@ def approval_inbox_ajax(request):
     # AJAX endpoint returns, so the table contents stay aligned with the
     # active filter pill.
     user_groups = request.user.groups.all()
+    user_group_ids = set(user_groups.values_list("id", flat=True))
     if requested_role == "reviewing":
-        privileged_form_ids = (
+        privileged_form_ids = list(
             FormDefinition.objects.filter(reviewer_groups__in=user_groups)
             .values_list("id", flat=True)
             .distinct()
         )
+        if request.user.is_superuser and not privileged_form_ids:
+            privileged_form_ids = list(
+                FormDefinition.objects.filter(reviewer_groups__isnull=False)
+                .values_list("id", flat=True)
+                .distinct()
+            )
         qs = ApprovalTask.objects.filter(
             status="pending",
             submission__form_definition_id__in=privileged_form_ids,
         )
     elif requested_role == "overseeing":
-        privileged_form_ids = (
+        privileged_form_ids = list(
             FormDefinition.objects.filter(admin_groups__in=user_groups)
             .values_list("id", flat=True)
             .distinct()
         )
+        if request.user.is_superuser and not privileged_form_ids:
+            privileged_form_ids = list(
+                FormDefinition.objects.filter(admin_groups__isnull=False)
+                .values_list("id", flat=True)
+                .distinct()
+            )
         qs = ApprovalTask.objects.filter(
             status="pending",
             submission__form_definition_id__in=privileged_form_ids,
@@ -6315,6 +6397,7 @@ def approval_inbox_ajax(request):
         "submission__form_definition__workflows",
         "delegations__delegated_to",
         "delegations__delegated_by",
+        "submission__signing_tokens",
     )[start : start + length]
 
     # --- Serialise ---
@@ -6335,7 +6418,22 @@ def approval_inbox_ajax(request):
         active_del = next((d for d in task.delegations.all() if d.status == "pending"), None)
         completed_del = next((d for d in task.delegations.all() if d.status == "completed"), None)
 
-        if active_del and active_del.delegated_to_id == request.user.id:
+        # Determine task ownership / actionability
+        can_act_as_assignee = (
+            task.assigned_to_id == request.user.id
+            or (task.assigned_group_id in user_group_ids and not task.assigned_to_id)
+            or any(d.delegated_to_id == request.user.id and d.status == "pending" for d in task.delegations.all())
+        )
+
+        is_monitoring_scope = (requested_role == "reviewing")
+
+        if is_monitoring_scope and not can_act_as_assignee:
+            step_badge = ""
+            action_btn = (
+                f'<a href="{det_url}" class="btn-action-view">'
+                f'<i class="bi bi-eye"></i> Detail</a>'
+            )
+        elif active_del and active_del.delegated_to_id == request.user.id:
             del_by_name = active_del.delegated_by.get_full_name() or active_del.delegated_by.username
             step_badge = (
                 f'<span class="badge bg-warning text-dark me-1" title="Tugas delegasi telaah awal dari {escape(del_by_name)}">'
@@ -6352,7 +6450,7 @@ def approval_inbox_ajax(request):
                 f'<i class="bi bi-hourglass-split"></i> Didelegasikan ke: {escape(del_to_name)}</span><br>'
             )
             action_btn = (
-                f'<a href="{approve_url}" class="btn btn-sm btn-outline-primary">'
+                f'<a href="{approve_url}" class="btn-action-view">'
                 f'<i class="bi bi-eye"></i> Pantau / Aksi</a>'
             )
         elif completed_del:
@@ -6362,14 +6460,89 @@ def approval_inbox_ajax(request):
                 f'<i class="bi bi-check2-all"></i> Telaah Staf Selesai</span><br>'
             )
             action_btn = (
-                f'<a href="{approve_url}" class="btn btn-sm btn-primary fw-semibold">'
+                f'<a href="{approve_url}" class="btn-action-review fw-semibold">'
                 f'<i class="bi bi-check2-circle"></i> Eksekusi Approval</a>'
             )
         else:
             step_badge = ""
             action_btn = (
-                f'<a href="{approve_url}" class="btn btn-sm btn-primary">'
+                f'<a href="{approve_url}" class="btn-action-review">'
                 f'<i class="bi bi-check-circle"></i> Review</a>'
+            )
+
+        # Kontrak Toko stage and assigned formatting
+        is_kontrak_toko = bool(sub.form_definition and sub.form_definition.slug == "permohonan-kontrak")
+        if is_kontrak_toko and task.workflow_stage:
+            s_order = task.workflow_stage.order
+            tokens = list(sub.signing_tokens.all())
+            latest_token = tokens[0] if tokens else None
+            fd = sub.form_data or {}
+            is_token_signed = (latest_token and latest_token.status == "signed") or bool(fd.get("ttd_toko_image"))
+
+            if s_order == 1:
+                step_val = (
+                    '<span class="badge badge-status-menunggu"><span class="badge-status-dot"></span>Menunggu Review ASM</span>'
+                    '<div class="text-muted" style="font-size: 11.5px; margin-top: 3px;">Step 1: Review SPK oleh ASM</div>'
+                )
+                assigned_val = escape(
+                    (task.assigned_to.get_full_name() or task.assigned_to.username)
+                    if task.assigned_to
+                    else (task.assigned_group.name if task.assigned_group else "—")
+                )
+            elif s_order == 2:
+                step_val = (
+                    '<span class="badge badge-status-menunggu"><span class="badge-status-dot"></span>Menunggu Review Sales Support</span>'
+                    '<div class="text-muted" style="font-size: 11.5px; margin-top: 3px;">Step 2: Review & Penomoran SPK</div>'
+                )
+                assigned_val = escape(
+                    (task.assigned_to.get_full_name() or task.assigned_to.username)
+                    if task.assigned_to
+                    else (task.assigned_group.name if task.assigned_group else "—")
+                )
+            elif s_order == 3:
+                step_val = (
+                    '<span class="badge badge-status-menunggu"><span class="badge-status-dot"></span>Menunggu Review RSOM</span>'
+                    '<div class="text-muted" style="font-size: 11.5px; margin-top: 3px;">Step 3: Review SPK oleh RSOM</div>'
+                )
+                assigned_val = escape(
+                    (task.assigned_to.get_full_name() or task.assigned_to.username)
+                    if task.assigned_to
+                    else (task.assigned_group.name if task.assigned_group else "—")
+                )
+            elif s_order == 4:
+                if not is_token_signed:
+                    toko_name = fd.get("nama_toko") or fd.get("nama_pemilik") or ""
+                    step_val = (
+                        '<span class="badge badge-status-waiting-toko"><span class="badge-status-dot"></span>Menunggu TTD Mitra Toko</span>'
+                        '<div class="text-muted" style="font-size: 11.5px; margin-top: 3px;">Step 4: Final Review & Approval</div>'
+                    )
+                    assigned_val = (
+                        f'<span class="badge badge-status-waiting-toko px-2 py-1" style="font-size: 12px;">'
+                        f'<i class="bi bi-shop me-1"></i>Mitra: {escape(toko_name or "Toko")}</span>'
+                    )
+                else:
+                    step_val = (
+                        '<span class="badge badge-status-direksi"><span class="badge-status-dot"></span>Menunggu Approval Direksi</span>'
+                        '<div class="text-muted" style="font-size: 11.5px; margin-top: 3px;">Step 4: Final Review & Approval</div>'
+                    )
+                    assigned_val = escape(
+                        (task.assigned_to.get_full_name() or task.assigned_to.username)
+                        if task.assigned_to
+                        else (task.assigned_group.name if task.assigned_group else "Direksi")
+                    )
+            else:
+                step_val = step_badge + escape(stage_name)
+                assigned_val = escape(
+                    (task.assigned_to.get_full_name() or task.assigned_to.username)
+                    if task.assigned_to
+                    else (task.assigned_group.name if task.assigned_group else "—")
+                )
+        else:
+            step_val = step_badge + escape(stage_name)
+            assigned_val = escape(
+                (task.assigned_to.get_full_name() or task.assigned_to.username)
+                if task.assigned_to
+                else (task.assigned_group.name if task.assigned_group else "—")
             )
 
         row = {
@@ -6383,17 +6556,8 @@ def approval_inbox_ajax(request):
             "actions": action_btn,
             "form": escape((sub.form_data or {}).get("nomor_spk") or sub.form_definition.name),
             "submitter": escape(_submitter_label(sub)),
-            "step_num": step_badge + escape(stage_name),
-            # Prefer the individual when both are set. The reassign view
-            # (post-fix) always clears `assigned_group` when setting
-            # `assigned_to`, but defending here covers any task that was
-            # reassigned before the fix landed and still has both fields
-            # populated — the live owner is `assigned_to`.
-            "assigned": escape(
-                (task.assigned_to.get_full_name() or task.assigned_to.username)
-                if task.assigned_to
-                else (task.assigned_group.name if task.assigned_group else "—")
-            ),
+            "step_num": step_val,
+            "assigned": assigned_val,
             "submitted_at": timezone.localtime(sub.submitted_at).strftime("%Y-%m-%d %H:%M")
             if sub.submitted_at
             else "—",

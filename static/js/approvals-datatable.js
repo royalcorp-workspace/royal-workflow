@@ -313,7 +313,9 @@
                 name: 'workflow_stage__name',
                 className: 'align-middle',
                 render: function(data) {
-                    var cleaned = data ? data.replace(/^(Step \d+:\s*)(Step \d+:\s*)+/i, '$1') : '—';
+                    if (!data || data === '—') return '<span class="text-muted">—</span>';
+                    if (data.indexOf('<') !== -1) return data;
+                    var cleaned = data.replace(/^(Step \d+:\s*)(Step \d+:\s*)+/i, '$1');
                     return '<span class="text-dark fw-medium" style="font-size: 13px;">' + cleaned + '</span>';
                 }
             },
@@ -323,6 +325,7 @@
                 className: 'align-middle',
                 render: function(data) {
                     if (!data || data === '—') return '<span class="text-muted">—</span>';
+                    if (data.indexOf('<') !== -1) return data;
                     return '<span class="badge bg-light text-dark border border-secondary-subtle px-2.5 py-1.5 fw-medium" style="font-size: 12px; letter-spacing: 0.1px;">' + data + '</span>';
                 }
             },
@@ -348,13 +351,11 @@
             className: 'text-end align-middle',
             render: function(data) {
                 if (!data) return '';
-                var reviewMatch = data.match(/href="([^"]+)"[^>]*>\s*<i[^>]*><\/i>\s*Review/i);
-                var reviewUrl = reviewMatch ? reviewMatch[1] : '';
-                if (!reviewUrl) {
-                    var anyHref = data.match(/href="([^"]+)"/i);
-                    reviewUrl = anyHref ? anyHref[1] : '#';
+                if (data.indexOf('btn-action-') !== -1 || data.indexOf('btn ') !== -1 || data.indexOf('btn-') !== -1) {
+                    return '<div class="d-inline-flex align-items-center justify-content-end text-nowrap">' + data + '</div>';
                 }
-
+                var anyHref = data.match(/href="([^"]+)"/i);
+                var reviewUrl = anyHref ? anyHref[1] : '#';
                 return '<div class="d-inline-flex align-items-center justify-content-end text-nowrap">' +
                        '<a href="' + reviewUrl + '" class="btn-action-review"><i class="bi bi-check-circle"></i> Review</a>' +
                        '</div>';
