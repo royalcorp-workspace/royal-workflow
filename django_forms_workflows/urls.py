@@ -53,6 +53,11 @@ urlpatterns = [
         name="submission_detail",
     ),
     path(
+        "submissions/<int:submission_id>/push-notification/",
+        views.push_stage_notification,
+        name="push_stage_notification",
+    ),
+    path(
         "submissions/<int:submission_id>/withdraw/",
         views.withdraw_submission,
         name="withdraw_submission",

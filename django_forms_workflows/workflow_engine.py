@@ -238,7 +238,7 @@ def _finalize_submission(submission: FormSubmission) -> None:
         # Trigger automatic e-Meterai stamping for SPK contracts (Stage 4 Approved)
         try:
             form_slug = getattr(submission.form_definition, "slug", "")
-            if form_slug == "permohonan-kontrak" or "spk" in form_slug:
+            if (form_slug == "permohonan-kontrak" or "spk" in form_slug) and not getattr(submission, "_skip_async_ematerai", False):
                 from .services.ematerai import EMeteraiService
                 EMeteraiService.stamp_submission_async(submission.id)
                 logger.info("Triggered final e-Meterai stamping (Stage 4 Approved) for submission %s", submission.id)
@@ -603,17 +603,12 @@ def ensure_signing_token_for_stage(
     stage: WorkflowStage,
     task: ApprovalTask | None = None,
 ) -> ContractSigningToken | None:
-    """Ensure an active ContractSigningToken exists when entering Stage 3 (Sales Support)."""
+    """Ensure an active ContractSigningToken exists when entering Stage 4 (Direksi) or after RSOM approval."""
+    form_slug = getattr(getattr(stage.workflow, "form_definition", None), "slug", "") or getattr(submission.form_definition, "slug", "")
     is_signing_stage = (
-        stage.order == 3
-        or "sales support" in (stage.name or "").lower()
+        (form_slug == "permohonan-kontrak" and stage.order == 4)
+        or "direksi" in (stage.name or "").lower()
         or "ttd toko" in (stage.name or "").lower()
-        or (
-            stage.workflow
-            and getattr(stage.workflow, "form_definition", None)
-            and stage.workflow.form_definition.slug == "permohonan-kontrak"
-            and stage.order == 3
-        )
     )
     if not is_signing_stage:
         return None
@@ -654,7 +649,7 @@ def ensure_signing_token_for_stage(
         token_expiry=timezone.now() + timedelta(days=7),
     )
     logger.info(
-        "Generated ContractSigningToken %s for submission %s (Stage 3 Sales Support)",
+        "Generated ContractSigningToken %s for submission %s (Stage 4 Direksi / Post-RSOM)",
         token.token,
         submission.id,
     )
@@ -682,7 +677,7 @@ def process_external_toko_signature(
     """Process digital signature submitted via the external public signing portal.
 
     Persists signature in the signing token and submission form_data.
-    The task remains pending at Stage 3 for Sales Support to review and approve manually.
+    The task remains pending at Stage 4 for Direksi to review and approve officially.
     """
     submission = token.submission
 
@@ -710,19 +705,19 @@ def process_external_toko_signature(
     submission.form_data = form_data
     submission.save(update_fields=["form_data"])
 
-    # 3. Locate Stage 3 task (task remains pending for Sales Support review)
+    # 3. Locate Stage 4 task (task remains pending for Direksi review)
     task = token.task
     if not task or task.status != "pending":
         task = submission.approval_tasks.filter(
             status="pending",
-            workflow_stage__order=3,
+            workflow_stage__order=4,
         ).first()
 
-    current_stage_num = 3
+    current_stage_num = 4
     if task and task.workflow_stage:
         current_stage_num = task.workflow_stage.order
 
-    # 4. Record audit log indicating customer signed and ticket awaits Sales Support approval
+    # 4. Record audit log indicating customer signed and ticket awaits Direksi approval
     AuditLog.objects.create(
         action="update",
         object_type="FormSubmission",
@@ -734,11 +729,11 @@ def process_external_toko_signature(
             "signer_name": signer_name,
             "signer_title": signer_title,
             "stage": current_stage_num,
-            "action": "customer_signed_waiting_sales_support_approval",
+            "action": "customer_signed_waiting_direksi_approval",
         },
     )
 
-    # Trigger 2: Notifikasi ke Tim Sales Support & Konfirmasi ke Mitra Toko (permohonan-kontrak)
+    # Trigger 2: Notifikasi ke Direksi & Sales Support serta Konfirmasi ke Mitra Toko (permohonan-kontrak)
     try:
         from .services.contract_notification_service import dispatch_store_signature_completed_async
         dispatch_store_signature_completed_async(submission, token)
@@ -868,19 +863,23 @@ def _create_stage_tasks(
         submitter = submission.submitter
         if submitter:
             ep = getattr(submitter, "employee_profile", None)
-            if stage.order == 1:
+            if stage.order == 1 or "asm" in (stage.name or "").lower():
                 # Level 1: ASM / Section Head
                 if ep and ep.supervisor_1:
                     manager = ep.supervisor_1
                 elif hasattr(submitter, "forms_profile") and submitter.forms_profile.manager:
                     manager = submitter.forms_profile.manager
-            elif stage.order == 2:
-                # Level 2: RSOM / NSM
+            elif stage.order == 3 or "rsom" in (stage.name or "").lower():
+                # Level 2: RSOM / NSM (order 3 in static linear flow)
+                if ep and ep.supervisor_2:
+                    manager = ep.supervisor_2
+            elif stage.order == 2 and "rsom" in (stage.name or "").lower():
+                # Legacy fallback for old order 2 if stage name is RSOM
                 if ep and ep.supervisor_2:
                     manager = ep.supervisor_2
 
             # Fallback for Stage 1 if supervisor_1 not yet in employee_profile
-            if not manager and stage.order == 1:
+            if not manager and (stage.order == 1 or "asm" in (stage.name or "").lower()):
                 try:
                     from .utils import get_user_manager
                     manager = get_user_manager(submitter)

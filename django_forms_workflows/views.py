@@ -26,7 +26,15 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from .forms import DynamicForm
-from .models import ApprovalTask, AuditLog, FormDefinition, FormField, FormSubmission, TaskDelegation
+from .models import (
+    ApprovalTask,
+    AuditLog,
+    ContractSigningToken,
+    FormDefinition,
+    FormField,
+    FormSubmission,
+    TaskDelegation,
+)
 from .utils import (
     check_rate_limit,
     user_can_approve,
@@ -1447,6 +1455,7 @@ def form_submission_hub(request, slug):
         or user.is_staff
         or form_def.reviewer_groups.filter(id__in=user_groups).exists()
         or form_def.admin_groups.filter(id__in=user_groups).exists()
+        or (form_def.slug == "permohonan-kontrak" and user_groups.filter(name="Sales Support").exists())
     )
 
     if is_privileged:
@@ -1472,21 +1481,92 @@ def form_submission_hub(request, slug):
             | models.Q(submitter__last_name__icontains=search_query)
         )
 
-    # Filter Bar: Dropdown filter status: [ Semua Status | Menunggu Review | Perlu Revisi | Disetujui | Ditolak | Draft ]
+    # Filter Bar: Dropdown filter stage alur statis lurus (SPK Kontrak Toko)
+    stage_filter = request.GET.get("stage_filter", "").strip().lower()
     status_filter = request.GET.get("status", "all").strip().lower()
-    if status_filter in ["menunggu", "pending", "pending_approval"]:
-        submissions_qs = submissions_qs.filter(status__in=["pending_approval", "submitted"])
-    elif status_filter in ["needs_revision", "revisi"]:
-        submissions_qs = submissions_qs.filter(status="needs_revision")
-    elif status_filter in ["disetujui", "approved"]:
+
+    has_joined_filter = False
+    if stage_filter == "stage_1_asm":
+        submissions_qs = submissions_qs.filter(
+            status__in=["pending_approval", "submitted"],
+            approval_tasks__status="pending",
+            approval_tasks__workflow_stage__order=1,
+        )
+        has_joined_filter = True
+    elif stage_filter == "stage_2_support":
+        submissions_qs = submissions_qs.filter(
+            status__in=["pending_approval", "submitted"],
+            approval_tasks__status="pending",
+            approval_tasks__workflow_stage__order=2,
+        )
+        has_joined_filter = True
+    elif stage_filter == "stage_3_rsom":
+        submissions_qs = submissions_qs.filter(
+            status__in=["pending_approval", "submitted"],
+            approval_tasks__status="pending",
+            approval_tasks__workflow_stage__order=3,
+        )
+        has_joined_filter = True
+    elif stage_filter == "waiting_toko":
+        submissions_qs = submissions_qs.filter(
+            status__in=["pending_approval", "submitted"],
+            approval_tasks__status="pending",
+            approval_tasks__workflow_stage__order=4,
+        ).exclude(signing_tokens__status="signed").exclude(form_data__ttd_toko_image__isnull=False)
+        has_joined_filter = True
+    elif stage_filter == "stage_4_direksi":
+        submissions_qs = submissions_qs.filter(
+            status__in=["pending_approval", "submitted"],
+            approval_tasks__status="pending",
+            approval_tasks__workflow_stage__order=4,
+        ).filter(
+            models.Q(signing_tokens__status="signed") | models.Q(form_data__ttd_toko_image__isnull=False)
+        )
+        has_joined_filter = True
+    elif stage_filter == "approved":
         submissions_qs = submissions_qs.filter(status="approved")
-    elif status_filter in ["ditolak", "rejected"]:
+    elif stage_filter == "rejected":
         submissions_qs = submissions_qs.filter(status="rejected")
-    elif status_filter in ["draft"]:
+    elif stage_filter == "needs_revision":
+        submissions_qs = submissions_qs.filter(status="needs_revision")
+    elif stage_filter == "draft":
         submissions_qs = submissions_qs.filter(status="draft")
+    elif status_filter and status_filter != "all":
+        # Fallback to status_filter if stage_filter is not explicitly set
+        if status_filter in ["menunggu", "pending", "pending_approval"]:
+            submissions_qs = submissions_qs.filter(status__in=["pending_approval", "submitted"])
+        elif status_filter in ["needs_revision", "revisi"]:
+            submissions_qs = submissions_qs.filter(status="needs_revision")
+        elif status_filter in ["disetujui", "approved"]:
+            submissions_qs = submissions_qs.filter(status="approved")
+        elif status_filter in ["ditolak", "rejected"]:
+            submissions_qs = submissions_qs.filter(status="rejected")
+        elif status_filter in ["draft"]:
+            submissions_qs = submissions_qs.filter(status="draft")
+
+    if has_joined_filter:
+        submissions_qs = submissions_qs.distinct()
+
+    # Eager loading anti N+1: Prefetch tasks with stage and assignees, and signing tokens
+    from django.db.models import Prefetch
+
+    tasks_prefetch = Prefetch(
+        "approval_tasks",
+        queryset=ApprovalTask.objects.select_related(
+            "workflow_stage", "assigned_to", "assigned_group", "completed_by"
+        ).order_by("-id"),
+    )
+    tokens_prefetch = Prefetch(
+        "signing_tokens",
+        queryset=ContractSigningToken.objects.order_by("-id"),
+    )
 
     # Order newest first
-    submissions_qs = submissions_qs.select_related("submitter").order_by("-created_at")
+    submissions_qs = (
+        submissions_qs.select_related("submitter")
+        .prefetch_related(tasks_prefetch, tokens_prefetch)
+        .order_by("-created_at")
+    )
 
     # Whitelist & parse per_page (default 25, options [10, 25, 50, 100])
     PER_PAGE_CHOICES = [10, 25, 50, 100]
@@ -1519,20 +1599,20 @@ def form_submission_hub(request, slug):
         del query_params["page"]
     query_params_no_page = query_params.urlencode()
 
-    # Pending approval tasks assigned to current user for submissions on active page only
-    pending_tasks_sub_ids = set(
-        ApprovalTask.objects.filter(
-            status="pending",
-            submission__in=page_obj.object_list,
-        )
-        .filter(models.Q(assigned_to=user) | models.Q(assigned_group__in=user_groups))
-        .values_list("submission_id", flat=True)
-    )
+    user_id = user.id
+    user_group_ids = set(user.groups.values_list("id", flat=True))
 
     # Transform to unified table rows (active page only)
     rows = []
     for sub in page_obj.object_list:
         fd = sub.form_data or {}
+        all_tasks = list(sub.approval_tasks.all())
+        pending_tasks = [t for t in all_tasks if t.status == "pending"]
+        active_task = pending_tasks[0] if pending_tasks else None
+
+        tokens = list(sub.signing_tokens.all())
+        latest_token = tokens[0] if tokens else None
+        is_token_signed = (latest_token and latest_token.status == "signed") or bool(fd.get("ttd_toko_image"))
 
         # 1. No. SPK (semi-bold)
         spk_no = fd.get("nomor_spk") or f"SPK-{sub.id:04d}"
@@ -1570,27 +1650,103 @@ def form_submission_hub(request, slug):
         # 4. Tanggal Diajukan
         tanggal = sub.submitted_at or sub.created_at
 
-        # 5. Status (Badge status halus: Menunggu, Perlu Revisi, Disetujui, Ditolak, Draft)
+        # 5. Status & PIC Aktif (Dinamis per Stage Tanpa Data Dummy)
         status_raw = sub.status
+        status_subtext = ""
         if status_raw in ["pending_approval", "submitted"]:
-            status_label = "Menunggu Review"
-            badge_class = "badge-status-menunggu"
+            if active_task and active_task.workflow_stage:
+                s_order = active_task.workflow_stage.order
+                pic_user = active_task.assigned_to
+                pic_user_name = (pic_user.get_full_name() or pic_user.username) if pic_user else ""
+                
+                if s_order == 1:
+                    stage_desc = "Review ASM"
+                    pic_name = pic_user_name or "-"
+                    status_subtext = f"PIC: {pic_user_name}" if pic_user_name else ""
+                    status_label = f"Menunggu Review ASM — {pic_user_name}" if pic_user_name else "Menunggu Review ASM"
+                    badge_class = "badge-status-menunggu"
+                elif s_order == 2:
+                    stage_desc = "Review Sales Support"
+                    pic_name = pic_user_name or "-"
+                    status_subtext = f"PIC: {pic_user_name}" if pic_user_name else ""
+                    status_label = f"Menunggu Review Sales Support — {pic_user_name}" if pic_user_name else "Menunggu Review Sales Support"
+                    badge_class = "badge-status-menunggu"
+                elif s_order == 3:
+                    stage_desc = "Review RSOM"
+                    pic_name = pic_user_name or "-"
+                    status_subtext = f"PIC: {pic_user_name}" if pic_user_name else ""
+                    status_label = f"Menunggu Review RSOM — {pic_user_name}" if pic_user_name else "Menunggu Review RSOM"
+                    badge_class = "badge-status-menunggu"
+                elif s_order == 4:
+                    if not is_token_signed:
+                        toko_name = fd.get("nama_toko") or fd.get("nama_pemilik") or ""
+                        stage_desc = "Menunggu TTD Toko"
+                        pic_name = toko_name or "-"
+                        status_subtext = f"Mitra: {toko_name}" if toko_name else ""
+                        status_label = f"Menunggu TTD Mitra Toko — {toko_name}" if toko_name else "Menunggu TTD Mitra Toko"
+                        badge_class = "badge-status-waiting-toko"
+                    else:
+                        stage_desc = "Approval Direksi"
+                        pic_name = pic_user_name or "-"
+                        status_subtext = f"PIC: {pic_user_name}" if pic_user_name else ""
+                        status_label = f"Menunggu Approval Direksi — {pic_user_name}" if pic_user_name else "Menunggu Approval Direksi"
+                        badge_class = "badge-status-direksi"
+                else:
+                    stage_desc = active_task.workflow_stage.name or "Menunggu Review"
+                    pic_name = pic_user_name or "-"
+                    status_subtext = f"PIC: {pic_user_name}" if pic_user_name else ""
+                    status_label = f"{stage_desc} — {pic_user_name}" if pic_user_name else stage_desc
+                    badge_class = "badge-status-menunggu"
+            else:
+                stage_desc = "Menunggu Review"
+                pic_name = "-"
+                status_subtext = ""
+                status_label = "Menunggu Review"
+                badge_class = "badge-status-menunggu"
+
         elif status_raw == "needs_revision":
-            status_label = "Perlu Revisi"
+            rev_tasks = [t for t in all_tasks if t.status in ("needs_revision", "rejected") and t.comments]
+            rev_by = rev_tasks[0].completed_by if rev_tasks and rev_tasks[0].completed_by else None
+            rev_by_name = (rev_by.get_full_name() or rev_by.username) if rev_by else ""
+            stage_desc = "Perlu Revisi"
+            pic_name = rev_by_name or "-"
+            status_subtext = f"Oleh: {rev_by_name}" if rev_by_name else ""
+            status_label = f"Perlu Revisi (oleh {rev_by_name})" if rev_by_name else "Perlu Revisi"
             badge_class = "badge-status-revisi"
+
         elif status_raw == "approved":
+            stage_desc = "Disetujui"
+            pic_name = "-"
+            status_subtext = ""
             status_label = "Disetujui"
             badge_class = "badge-status-disetujui"
+
         elif status_raw == "rejected":
+            stage_desc = "Ditolak"
+            pic_name = "-"
+            status_subtext = ""
             status_label = "Ditolak"
             badge_class = "badge-status-ditolak"
+
         elif status_raw == "draft":
+            stage_desc = "Draft"
+            sub_user = sub.submitter
+            pic_name = (sub_user.get_full_name() or sub_user.username) if sub_user else "-"
+            status_subtext = ""
             status_label = "Draft"
             badge_class = "badge-status-draft"
+
         elif status_raw == "withdrawn":
+            stage_desc = "Ditarik"
+            pic_name = "-"
+            status_subtext = ""
             status_label = "Ditarik"
             badge_class = "badge-status-draft"
+
         else:
+            stage_desc = sub.get_status_display()
+            pic_name = "-"
+            status_subtext = ""
             status_label = sub.get_status_display()
             badge_class = "badge-status-draft"
 
@@ -1605,7 +1761,10 @@ def form_submission_hub(request, slug):
             action_is_review = False
         else:
             action_url = reverse("forms_workflows:submission_detail", kwargs={"submission_id": sub.id})
-            action_is_review = sub.id in pending_tasks_sub_ids
+            action_is_review = False
+            if active_task:
+                if active_task.assigned_to_id == user_id or (active_task.assigned_group_id and active_task.assigned_group_id in user_group_ids):
+                    action_is_review = True
             action_label = "Review" if action_is_review else "Detail"
 
         rows.append({
@@ -1615,7 +1774,10 @@ def form_submission_hub(request, slug):
             "toko": toko,
             "jenis": jenis,
             "tanggal": tanggal,
+            "stage_desc": stage_desc,
             "status_label": status_label,
+            "status_subtext": status_subtext,
+            "pic_name": pic_name,
             "badge_class": badge_class,
             "action_url": action_url,
             "action_label": action_label,
@@ -1637,6 +1799,7 @@ def form_submission_hub(request, slug):
             "query_params_no_page": query_params_no_page,
             "search_query": search_query,
             "status_filter": status_filter,
+            "stage_filter": stage_filter,
             "submit_url": reverse("forms_workflows:form_submit", kwargs={"slug": form_def.slug}),
         },
     )
@@ -1683,9 +1846,14 @@ def submission_detail(request, submission_id):
     is_reviewer = request.user.groups.filter(
         id__in=form_def_early.reviewer_groups.all()
     ).exists()
+    is_sales_support = (
+        getattr(form_def_early, "slug", "") == "permohonan-kontrak"
+        and request.user.groups.filter(name="Sales Support").exists()
+    )
     is_approver_user = (
         request.user.is_superuser
         or is_reviewer
+        or is_sales_support
         or user_can_approve(request.user, submission)
         or request.user.groups.filter(id__in=form_def_early.admin_groups.all()).exists()
         or submission.approval_tasks.filter(
@@ -1981,6 +2149,36 @@ def submission_detail(request, submission_id):
                     }
                 )
 
+    signing_token = getattr(submission, "signing_tokens", None)
+    if signing_token:
+        signing_token = signing_token.order_by("-created_at").first()
+    signing_url = signing_token.get_signing_url(request) if signing_token else None
+
+    # ── Push Notification Context (Sales Support & Administrator) ──
+    from django.core.cache import cache
+    from .services.contract_notification_service import resolve_active_stage_push_target
+
+    can_push_notification = False
+    push_target_info = None
+    push_cooldown_remaining = 0
+
+    if (
+        getattr(form_def_early, "slug", "") == "permohonan-kontrak"
+        and submission.status in ["pending_approval", "submitted"]
+        and (request.user.is_superuser or request.user.groups.filter(name="Sales Support").exists())
+    ):
+        can_push_notification = True
+        push_target_info = resolve_active_stage_push_target(submission)
+        cooldown_key = f"push_notif_cooldown_{submission.id}"
+        cooldown_val = cache.get(cooldown_key)
+        if cooldown_val:
+            try:
+                sent_at = datetime.fromisoformat(cooldown_val)
+                elapsed = (timezone.now() - sent_at).total_seconds()
+                push_cooldown_remaining = max(0, int(60 - elapsed))
+            except Exception:
+                push_cooldown_remaining = 60
+
     return render(
         request,
         "django_forms_workflows/submission_detail.html",
@@ -2002,14 +2200,75 @@ def submission_detail(request, submission_id):
             "approval_step_sections": approval_step_sections,
             "can_approve_pdf": can_approve_pdf,
             "can_manage_ematerai": user_can_manage_ematerai(request.user, submission),
+            "signing_token": signing_token,
+            "signing_url": signing_url,
             "hide_approval_history": hide_approval_history,
             "is_approver_user": is_approver_user,
             "workflow_mode": workflow_mode,
             "approval_stages": approval_stages,
             "current_stage_number": current_stage_number,
             "total_stages": len(approval_stages),
+            "can_push_notification": can_push_notification,
+            "push_target_info": push_target_info,
+            "push_cooldown_remaining": push_cooldown_remaining,
         },
     )
+
+
+@login_required
+@require_http_methods(["POST"])
+def push_stage_notification(request, submission_id):
+    """
+    Manual push notification trigger for Sales Support to remind the currently active stage approver / store.
+    Strictly restricted to users in Sales Support group or Superusers.
+    """
+    submission = get_object_or_404(FormSubmission, id=submission_id)
+    form_def = submission.form_definition
+
+    if not form_def or form_def.slug != "permohonan-kontrak":
+        return HttpResponseForbidden("Fitur ini hanya tersedia untuk formulir Kontrak Toko.")
+
+    is_sales_support = request.user.is_superuser or request.user.groups.filter(name="Sales Support").exists()
+    if not is_sales_support:
+        return HttpResponseForbidden("Hanya Sales Support atau Administrator yang berhak mengirimkan push notifikasi pengingat.")
+
+    if submission.status not in ["pending_approval", "submitted"]:
+        messages.error(request, "Push notifikasi hanya dapat dikirimkan untuk pengajuan yang sedang aktif berjalan.")
+        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+    # Rate limiting cooldown check (60 seconds)
+    from django.core.cache import cache
+    cooldown_key = f"push_notif_cooldown_{submission.id}"
+    if cache.get(cooldown_key):
+        messages.warning(
+            request,
+            "Pengingat baru saja dikirimkan. Mohon tunggu 60 detik sebelum mengirimkan push notifikasi berikutnya.",
+        )
+        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+    from .services.contract_notification_service import send_manual_stage_reminder
+    result = send_manual_stage_reminder(submission, request.user)
+
+    if result.get("success"):
+        cache.set(cooldown_key, timezone.now().isoformat(), timeout=60)
+        AuditLog.objects.create(
+            action="comment",
+            object_type="FormSubmission",
+            object_id=submission.id,
+            user=request.user,
+            user_ip=get_client_ip(request),
+            comments=(
+                f"Sales Support ({request.user.get_full_name() or request.user.username}) "
+                f"mengirimkan pengingat manual ke {result.get('stage_label', 'Stage Aktif')} "
+                f"({result.get('recipient_summary', '-')})."
+            ),
+            changes={"notification_pushed": True, "target": result.get("stage_label")},
+        )
+        messages.success(request, result["message"])
+    else:
+        messages.error(request, result.get("message", "Gagal mengirimkan push notifikasi pengingat."))
+
+    return redirect("forms_workflows:submission_detail", submission_id=submission.id)
 
 
 @login_required
@@ -2043,6 +2302,20 @@ def approval_inbox(request):
         .distinct()
     )
 
+    if is_super:
+        if not reviewer_form_ids:
+            reviewer_form_ids = list(
+                FormDefinition.objects.filter(reviewer_groups__isnull=False)
+                .values_list("id", flat=True)
+                .distinct()
+            )
+        if not admin_form_ids:
+            admin_form_ids = list(
+                FormDefinition.objects.filter(admin_groups__isnull=False)
+                .values_list("id", flat=True)
+                .distinct()
+            )
+
     available_role_filters = []
     if reviewer_form_ids:
         available_role_filters.append("reviewing")
@@ -2056,7 +2329,18 @@ def approval_inbox(request):
         active_role = "mine"
 
     if is_super:
-        base_tasks = ApprovalTask.objects.filter(status="pending")
+        if active_role == "reviewing":
+            base_tasks = ApprovalTask.objects.filter(
+                status="pending",
+                submission__form_definition_id__in=reviewer_form_ids,
+            )
+        elif active_role == "overseeing":
+            base_tasks = ApprovalTask.objects.filter(
+                status="pending",
+                submission__form_definition_id__in=admin_form_ids,
+            )
+        else:
+            base_tasks = ApprovalTask.objects.filter(status="pending")
     elif active_role == "reviewing":
         base_tasks = ApprovalTask.objects.filter(
             status="pending",
@@ -2540,21 +2824,22 @@ def approve_submission(request, task_id):
             )
             return redirect("forms_workflows:approve_submission", task_id=task_id)
 
-        # Guardrail: For SPK (permohonan-kontrak) at Stage 3 (Sales Support), manual approval is blocked
+        # Guardrail: For SPK (permohonan-kontrak) at Stage 4 (Direksi), manual approval is blocked
         # until the store partner has signed via the public portal.
         if decision == "approve" and task.workflow_stage and getattr(form_def, "slug", "") == "permohonan-kontrak":
             if (
-                task.workflow_stage.order == 3
-                or "sales support" in (task.workflow_stage.name or "").lower()
-                or "ttd toko" in (task.workflow_stage.name or "").lower()
+                task.workflow_stage.order == 4
+                or "direksi" in (task.workflow_stage.name or "").lower()
             ):
                 from .workflow_engine import ensure_signing_token_for_stage
                 token = ensure_signing_token_for_stage(submission, task.workflow_stage, task)
-                if not token or token.status != "signed":
+                token_signed = token and token.status == "signed"
+                form_has_sign = bool((submission.form_data or {}).get("ttd_toko_image"))
+                if not (token_signed or form_has_sign):
                     messages.warning(
                         request,
                         "Pihak mitra toko belum menandatangani draf SPK via portal publik. "
-                        "Tombol persetujuan akan aktif setelah mitra menyelesaikan tanda tangan digital."
+                        "Persetujuan Direksi hanya dapat dilakukan setelah mitra toko menyelesaikan tanda tangan digital."
                     )
                     return redirect("forms_workflows:approve_submission", task_id=task_id)
 
@@ -2828,6 +3113,13 @@ def approve_submission(request, task_id):
         # Update submission status
         workflow = form_def.workflow
 
+        is_direksi_approval = (
+            decision == "approve"
+            and getattr(form_def, "slug", "") == "permohonan-kontrak"
+            and task.workflow_stage
+            and task.workflow_stage.order == 4
+        )
+
         if task.sub_workflow_instance_id:
             # Sub-workflow task — dispatch to sub-workflow engine
             from .workflow_engine import (
@@ -2846,6 +3138,9 @@ def approve_submission(request, task_id):
         else:
             # Approval - check workflow logic
             from .workflow_engine import handle_approval
+
+            if is_direksi_approval:
+                submission._skip_async_ematerai = True
 
             handle_approval(submission, task, workflow)
 
@@ -2869,6 +3164,40 @@ def approve_submission(request, task_id):
             or submission.form_data.get("nomor_dokumen")
             or f"#{submission.id}"
         )
+
+        if is_direksi_approval:
+            # Direct synchronous e-Meterai stamping for final SPK Direksi approval
+            try:
+                from .services.ematerai import EMeteraiService
+
+                stamped_doc = EMeteraiService.stamp_submission(
+                    submission=submission,
+                    user=request.user,
+                )
+                if stamped_doc and stamped_doc.status == "stamped":
+                    messages.success(
+                        request,
+                        f"Pengajuan {doc_no} berhasil disetujui dan e-Meterai resmi telah berhasil dibubuhkan pada dokumen SPK.",
+                    )
+                else:
+                    err_txt = f" ({stamped_doc.error_message})" if (stamped_doc and stamped_doc.error_message) else ""
+                    messages.warning(
+                        request,
+                        f"Pengajuan {doc_no} berhasil disetujui. Namun pembubuhan e-Meterai mengalami kendala{err_txt}. Anda dapat mencoba proses ulang pada halaman detail.",
+                    )
+            except Exception as stamp_exc:
+                logger.error(
+                    "Direct synchronous e-meterai stamping error for sub #%s: %s",
+                    submission.id,
+                    stamp_exc,
+                    exc_info=True,
+                )
+                messages.warning(
+                    request,
+                    f"Pengajuan {doc_no} berhasil disetujui. Pembubuhan e-Meterai belum berhasil: {stamp_exc}. Gunakan tombol 'Proses Ulang e-Meterai' pada halaman detail.",
+                )
+            return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
         if decision == "approve":
             stage_info = f" ({stage_name})" if stage_name else ""
             messages.success(request, f"Pengajuan {doc_no} berhasil disetujui{stage_info}.")
@@ -3031,11 +3360,11 @@ def approve_submission(request, task_id):
         else "null"
     )
 
-    # Signing token for Stage 3 (Sales Support) / External store signature portal
+    # Signing token for Stage 4 (Direksi) / External store signature portal
     signing_token = None
     if task.workflow_stage and (
-        task.workflow_stage.order == 3
-        or "sales support" in (task.workflow_stage.name or "").lower()
+        task.workflow_stage.order == 4
+        or "direksi" in (task.workflow_stage.name or "").lower()
         or "ttd toko" in (task.workflow_stage.name or "").lower()
     ):
         from .workflow_engine import ensure_signing_token_for_stage
@@ -5955,22 +6284,35 @@ def approval_inbox_ajax(request):
     # AJAX endpoint returns, so the table contents stay aligned with the
     # active filter pill.
     user_groups = request.user.groups.all()
+    user_group_ids = set(user_groups.values_list("id", flat=True))
     if requested_role == "reviewing":
-        privileged_form_ids = (
+        privileged_form_ids = list(
             FormDefinition.objects.filter(reviewer_groups__in=user_groups)
             .values_list("id", flat=True)
             .distinct()
         )
+        if request.user.is_superuser and not privileged_form_ids:
+            privileged_form_ids = list(
+                FormDefinition.objects.filter(reviewer_groups__isnull=False)
+                .values_list("id", flat=True)
+                .distinct()
+            )
         qs = ApprovalTask.objects.filter(
             status="pending",
             submission__form_definition_id__in=privileged_form_ids,
         )
     elif requested_role == "overseeing":
-        privileged_form_ids = (
+        privileged_form_ids = list(
             FormDefinition.objects.filter(admin_groups__in=user_groups)
             .values_list("id", flat=True)
             .distinct()
         )
+        if request.user.is_superuser and not privileged_form_ids:
+            privileged_form_ids = list(
+                FormDefinition.objects.filter(admin_groups__isnull=False)
+                .values_list("id", flat=True)
+                .distinct()
+            )
         qs = ApprovalTask.objects.filter(
             status="pending",
             submission__form_definition_id__in=privileged_form_ids,
@@ -6055,6 +6397,7 @@ def approval_inbox_ajax(request):
         "submission__form_definition__workflows",
         "delegations__delegated_to",
         "delegations__delegated_by",
+        "submission__signing_tokens",
     )[start : start + length]
 
     # --- Serialise ---
@@ -6075,7 +6418,22 @@ def approval_inbox_ajax(request):
         active_del = next((d for d in task.delegations.all() if d.status == "pending"), None)
         completed_del = next((d for d in task.delegations.all() if d.status == "completed"), None)
 
-        if active_del and active_del.delegated_to_id == request.user.id:
+        # Determine task ownership / actionability
+        can_act_as_assignee = (
+            task.assigned_to_id == request.user.id
+            or (task.assigned_group_id in user_group_ids and not task.assigned_to_id)
+            or any(d.delegated_to_id == request.user.id and d.status == "pending" for d in task.delegations.all())
+        )
+
+        is_monitoring_scope = (requested_role == "reviewing")
+
+        if is_monitoring_scope and not can_act_as_assignee:
+            step_badge = ""
+            action_btn = (
+                f'<a href="{det_url}" class="btn-action-view">'
+                f'<i class="bi bi-eye"></i> Detail</a>'
+            )
+        elif active_del and active_del.delegated_to_id == request.user.id:
             del_by_name = active_del.delegated_by.get_full_name() or active_del.delegated_by.username
             step_badge = (
                 f'<span class="badge bg-warning text-dark me-1" title="Tugas delegasi telaah awal dari {escape(del_by_name)}">'
@@ -6092,7 +6450,7 @@ def approval_inbox_ajax(request):
                 f'<i class="bi bi-hourglass-split"></i> Didelegasikan ke: {escape(del_to_name)}</span><br>'
             )
             action_btn = (
-                f'<a href="{approve_url}" class="btn btn-sm btn-outline-primary">'
+                f'<a href="{approve_url}" class="btn-action-view">'
                 f'<i class="bi bi-eye"></i> Pantau / Aksi</a>'
             )
         elif completed_del:
@@ -6102,14 +6460,89 @@ def approval_inbox_ajax(request):
                 f'<i class="bi bi-check2-all"></i> Telaah Staf Selesai</span><br>'
             )
             action_btn = (
-                f'<a href="{approve_url}" class="btn btn-sm btn-primary fw-semibold">'
+                f'<a href="{approve_url}" class="btn-action-review fw-semibold">'
                 f'<i class="bi bi-check2-circle"></i> Eksekusi Approval</a>'
             )
         else:
             step_badge = ""
             action_btn = (
-                f'<a href="{approve_url}" class="btn btn-sm btn-primary">'
+                f'<a href="{approve_url}" class="btn-action-review">'
                 f'<i class="bi bi-check-circle"></i> Review</a>'
+            )
+
+        # Kontrak Toko stage and assigned formatting
+        is_kontrak_toko = bool(sub.form_definition and sub.form_definition.slug == "permohonan-kontrak")
+        if is_kontrak_toko and task.workflow_stage:
+            s_order = task.workflow_stage.order
+            tokens = list(sub.signing_tokens.all())
+            latest_token = tokens[0] if tokens else None
+            fd = sub.form_data or {}
+            is_token_signed = (latest_token and latest_token.status == "signed") or bool(fd.get("ttd_toko_image"))
+
+            if s_order == 1:
+                step_val = (
+                    '<span class="badge badge-status-menunggu"><span class="badge-status-dot"></span>Menunggu Review ASM</span>'
+                    '<div class="text-muted" style="font-size: 11.5px; margin-top: 3px;">Step 1: Review SPK oleh ASM</div>'
+                )
+                assigned_val = escape(
+                    (task.assigned_to.get_full_name() or task.assigned_to.username)
+                    if task.assigned_to
+                    else (task.assigned_group.name if task.assigned_group else "—")
+                )
+            elif s_order == 2:
+                step_val = (
+                    '<span class="badge badge-status-menunggu"><span class="badge-status-dot"></span>Menunggu Review Sales Support</span>'
+                    '<div class="text-muted" style="font-size: 11.5px; margin-top: 3px;">Step 2: Review & Penomoran SPK</div>'
+                )
+                assigned_val = escape(
+                    (task.assigned_to.get_full_name() or task.assigned_to.username)
+                    if task.assigned_to
+                    else (task.assigned_group.name if task.assigned_group else "—")
+                )
+            elif s_order == 3:
+                step_val = (
+                    '<span class="badge badge-status-menunggu"><span class="badge-status-dot"></span>Menunggu Review RSOM</span>'
+                    '<div class="text-muted" style="font-size: 11.5px; margin-top: 3px;">Step 3: Review SPK oleh RSOM</div>'
+                )
+                assigned_val = escape(
+                    (task.assigned_to.get_full_name() or task.assigned_to.username)
+                    if task.assigned_to
+                    else (task.assigned_group.name if task.assigned_group else "—")
+                )
+            elif s_order == 4:
+                if not is_token_signed:
+                    toko_name = fd.get("nama_toko") or fd.get("nama_pemilik") or ""
+                    step_val = (
+                        '<span class="badge badge-status-waiting-toko"><span class="badge-status-dot"></span>Menunggu TTD Mitra Toko</span>'
+                        '<div class="text-muted" style="font-size: 11.5px; margin-top: 3px;">Step 4: Final Review & Approval</div>'
+                    )
+                    assigned_val = (
+                        f'<span class="badge badge-status-waiting-toko px-2 py-1" style="font-size: 12px;">'
+                        f'<i class="bi bi-shop me-1"></i>Mitra: {escape(toko_name or "Toko")}</span>'
+                    )
+                else:
+                    step_val = (
+                        '<span class="badge badge-status-direksi"><span class="badge-status-dot"></span>Menunggu Approval Direksi</span>'
+                        '<div class="text-muted" style="font-size: 11.5px; margin-top: 3px;">Step 4: Final Review & Approval</div>'
+                    )
+                    assigned_val = escape(
+                        (task.assigned_to.get_full_name() or task.assigned_to.username)
+                        if task.assigned_to
+                        else (task.assigned_group.name if task.assigned_group else "Direksi")
+                    )
+            else:
+                step_val = step_badge + escape(stage_name)
+                assigned_val = escape(
+                    (task.assigned_to.get_full_name() or task.assigned_to.username)
+                    if task.assigned_to
+                    else (task.assigned_group.name if task.assigned_group else "—")
+                )
+        else:
+            step_val = step_badge + escape(stage_name)
+            assigned_val = escape(
+                (task.assigned_to.get_full_name() or task.assigned_to.username)
+                if task.assigned_to
+                else (task.assigned_group.name if task.assigned_group else "—")
             )
 
         row = {
@@ -6123,17 +6556,8 @@ def approval_inbox_ajax(request):
             "actions": action_btn,
             "form": escape((sub.form_data or {}).get("nomor_spk") or sub.form_definition.name),
             "submitter": escape(_submitter_label(sub)),
-            "step_num": step_badge + escape(stage_name),
-            # Prefer the individual when both are set. The reassign view
-            # (post-fix) always clears `assigned_group` when setting
-            # `assigned_to`, but defending here covers any task that was
-            # reassigned before the fix landed and still has both fields
-            # populated — the live owner is `assigned_to`.
-            "assigned": escape(
-                (task.assigned_to.get_full_name() or task.assigned_to.username)
-                if task.assigned_to
-                else (task.assigned_group.name if task.assigned_group else "—")
-            ),
+            "step_num": step_val,
+            "assigned": assigned_val,
             "submitted_at": timezone.localtime(sub.submitted_at).strftime("%Y-%m-%d %H:%M")
             if sub.submitted_at
             else "—",
@@ -6993,7 +7417,7 @@ from django.views.decorators.http import require_POST
 @login_required
 @require_POST
 def retry_ematerai_stamping(request, submission_id):
-    """Manually trigger or retry e-Meterai stamping for an approved SPK submission."""
+    """Manually trigger or retry e-Meterai stamping for an approved SPK submission (Non-blocking / Asynchronous)."""
     submission = get_object_or_404(FormSubmission, id=submission_id)
 
     if not user_can_manage_ematerai(request.user, submission):
@@ -7010,21 +7434,43 @@ def retry_ematerai_stamping(request, submission_id):
             return redirect(referer)
         return redirect("forms_workflows:submission_detail", submission_id=submission.id)
 
+    from .models import StampedContractDocument
     from .services.ematerai import EMeteraiService
 
-    stamped_doc = EMeteraiService.stamp_submission(
-        submission=submission,
+    # Cegah double submission jika proses latar belakang sedang berjalan
+    stamped_doc = getattr(submission, "stamped_document", None)
+    if stamped_doc and stamped_doc.status in ("pending", "in_progress"):
+        messages.warning(
+            request,
+            "Pembubuhan e-Meterai sedang diproses di latar belakang. Silakan tunggu beberapa saat dan muat ulang halaman."
+        )
+        referer = request.META.get("HTTP_REFERER")
+        if referer and ("approve" in referer or "submissions" in referer):
+            return redirect(referer)
+        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+    # Reset status ke "pending" dan bersihkan pesan error sebelumnya,
+    # sambil tetap mempertahankan provider_document_id agar fitur Direct Download Recovery (0 kuota) tetap bekerja
+    if not stamped_doc:
+        stamped_doc, _ = StampedContractDocument.objects.get_or_create(
+            submission=submission,
+            defaults={"status": "pending", "provider": getattr(settings, "EMATERAI_PROVIDER", "mock")},
+        )
+    stamped_doc.status = "pending"
+    stamped_doc.error_message = ""
+    stamped_doc.save(update_fields=["status", "error_message", "updated_at"])
+
+    # Jalankan proses pembubuhan & unduhan di background thread non-blocking
+    EMeteraiService.stamp_submission_async(
+        submission_id=submission.id,
         force_retry=True,
-        user=request.user,
+        user_id=request.user.id,
     )
 
-    if stamped_doc.status == "stamped":
-        messages.success(request, "e-Meterai resmi berhasil dibubuhkan ke dokumen SPK.")
-    else:
-        messages.error(
-            request,
-            "Pembubuhan e-Meterai belum berhasil. Silakan coba lagi setelah kendala teratasi."
-        )
+    messages.info(
+        request,
+        "Permintaan pembubuhan e-Meterai sedang diproses di latar belakang. Halaman akan memperbarui status secara otomatis saat selesai."
+    )
 
     referer = request.META.get("HTTP_REFERER")
     if referer and ("approve" in referer or "submissions" in referer):

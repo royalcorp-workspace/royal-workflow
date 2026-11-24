@@ -295,14 +295,14 @@ class EzMeteraiProvider(BaseMeteraiProvider):
         Download final stamped PDF bytes:
         GET /v2/doc/{document_id}/download
         Supports progressive backoff polling while Peruri asynchronous stamping is in progress.
-        Total polling window: ~36 seconds (8 attempts, delays: 3s, 4s, 5s, 6s, 6s, 6s, 6s).
+        Total polling window: ~66 seconds (10 attempts, delays: 3s, 4s, 5s, 6s, 8s, 10s, 10s, 10s, 10s).
         """
         import time
         url = f"{self.base_url}/v2/doc/{document_id}/download"
         headers = {"x-api-key": self.api_key}
 
-        delays = [3, 4, 5, 6, 6, 6, 6]
-        max_attempts = len(delays) + 1  # 8 attempts total
+        delays = [3, 4, 5, 6, 8, 10, 10, 10, 10]
+        max_attempts = len(delays) + 1  # 10 attempts total (~66s)
         last_resp_text = ""
 
         logger.info(
