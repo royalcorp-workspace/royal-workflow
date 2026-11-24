@@ -26,7 +26,15 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from .forms import DynamicForm
-from .models import ApprovalTask, AuditLog, FormDefinition, FormField, FormSubmission, TaskDelegation
+from .models import (
+    ApprovalTask,
+    AuditLog,
+    ContractSigningToken,
+    FormDefinition,
+    FormField,
+    FormSubmission,
+    TaskDelegation,
+)
 from .utils import (
     check_rate_limit,
     user_can_approve,
@@ -1472,21 +1480,92 @@ def form_submission_hub(request, slug):
             | models.Q(submitter__last_name__icontains=search_query)
         )
 
-    # Filter Bar: Dropdown filter status: [ Semua Status | Menunggu Review | Perlu Revisi | Disetujui | Ditolak | Draft ]
+    # Filter Bar: Dropdown filter stage alur statis lurus (SPK Kontrak Toko)
+    stage_filter = request.GET.get("stage_filter", "").strip().lower()
     status_filter = request.GET.get("status", "all").strip().lower()
-    if status_filter in ["menunggu", "pending", "pending_approval"]:
-        submissions_qs = submissions_qs.filter(status__in=["pending_approval", "submitted"])
-    elif status_filter in ["needs_revision", "revisi"]:
-        submissions_qs = submissions_qs.filter(status="needs_revision")
-    elif status_filter in ["disetujui", "approved"]:
+
+    has_joined_filter = False
+    if stage_filter == "stage_1_asm":
+        submissions_qs = submissions_qs.filter(
+            status__in=["pending_approval", "submitted"],
+            approval_tasks__status="pending",
+            approval_tasks__workflow_stage__order=1,
+        )
+        has_joined_filter = True
+    elif stage_filter == "stage_2_support":
+        submissions_qs = submissions_qs.filter(
+            status__in=["pending_approval", "submitted"],
+            approval_tasks__status="pending",
+            approval_tasks__workflow_stage__order=2,
+        )
+        has_joined_filter = True
+    elif stage_filter == "stage_3_rsom":
+        submissions_qs = submissions_qs.filter(
+            status__in=["pending_approval", "submitted"],
+            approval_tasks__status="pending",
+            approval_tasks__workflow_stage__order=3,
+        )
+        has_joined_filter = True
+    elif stage_filter == "waiting_toko":
+        submissions_qs = submissions_qs.filter(
+            status__in=["pending_approval", "submitted"],
+            approval_tasks__status="pending",
+            approval_tasks__workflow_stage__order=4,
+        ).exclude(signing_tokens__status="signed").exclude(form_data__ttd_toko_image__isnull=False)
+        has_joined_filter = True
+    elif stage_filter == "stage_4_direksi":
+        submissions_qs = submissions_qs.filter(
+            status__in=["pending_approval", "submitted"],
+            approval_tasks__status="pending",
+            approval_tasks__workflow_stage__order=4,
+        ).filter(
+            models.Q(signing_tokens__status="signed") | models.Q(form_data__ttd_toko_image__isnull=False)
+        )
+        has_joined_filter = True
+    elif stage_filter == "approved":
         submissions_qs = submissions_qs.filter(status="approved")
-    elif status_filter in ["ditolak", "rejected"]:
+    elif stage_filter == "rejected":
         submissions_qs = submissions_qs.filter(status="rejected")
-    elif status_filter in ["draft"]:
+    elif stage_filter == "needs_revision":
+        submissions_qs = submissions_qs.filter(status="needs_revision")
+    elif stage_filter == "draft":
         submissions_qs = submissions_qs.filter(status="draft")
+    elif status_filter and status_filter != "all":
+        # Fallback to status_filter if stage_filter is not explicitly set
+        if status_filter in ["menunggu", "pending", "pending_approval"]:
+            submissions_qs = submissions_qs.filter(status__in=["pending_approval", "submitted"])
+        elif status_filter in ["needs_revision", "revisi"]:
+            submissions_qs = submissions_qs.filter(status="needs_revision")
+        elif status_filter in ["disetujui", "approved"]:
+            submissions_qs = submissions_qs.filter(status="approved")
+        elif status_filter in ["ditolak", "rejected"]:
+            submissions_qs = submissions_qs.filter(status="rejected")
+        elif status_filter in ["draft"]:
+            submissions_qs = submissions_qs.filter(status="draft")
+
+    if has_joined_filter:
+        submissions_qs = submissions_qs.distinct()
+
+    # Eager loading anti N+1: Prefetch tasks with stage and assignees, and signing tokens
+    from django.db.models import Prefetch
+
+    tasks_prefetch = Prefetch(
+        "approval_tasks",
+        queryset=ApprovalTask.objects.select_related(
+            "workflow_stage", "assigned_to", "assigned_group", "completed_by"
+        ).order_by("-id"),
+    )
+    tokens_prefetch = Prefetch(
+        "signing_tokens",
+        queryset=ContractSigningToken.objects.order_by("-id"),
+    )
 
     # Order newest first
-    submissions_qs = submissions_qs.select_related("submitter").order_by("-created_at")
+    submissions_qs = (
+        submissions_qs.select_related("submitter")
+        .prefetch_related(tasks_prefetch, tokens_prefetch)
+        .order_by("-created_at")
+    )
 
     # Whitelist & parse per_page (default 25, options [10, 25, 50, 100])
     PER_PAGE_CHOICES = [10, 25, 50, 100]
@@ -1519,20 +1598,20 @@ def form_submission_hub(request, slug):
         del query_params["page"]
     query_params_no_page = query_params.urlencode()
 
-    # Pending approval tasks assigned to current user for submissions on active page only
-    pending_tasks_sub_ids = set(
-        ApprovalTask.objects.filter(
-            status="pending",
-            submission__in=page_obj.object_list,
-        )
-        .filter(models.Q(assigned_to=user) | models.Q(assigned_group__in=user_groups))
-        .values_list("submission_id", flat=True)
-    )
+    user_id = user.id
+    user_group_ids = set(user.groups.values_list("id", flat=True))
 
     # Transform to unified table rows (active page only)
     rows = []
     for sub in page_obj.object_list:
         fd = sub.form_data or {}
+        all_tasks = list(sub.approval_tasks.all())
+        pending_tasks = [t for t in all_tasks if t.status == "pending"]
+        active_task = pending_tasks[0] if pending_tasks else None
+
+        tokens = list(sub.signing_tokens.all())
+        latest_token = tokens[0] if tokens else None
+        is_token_signed = (latest_token and latest_token.status == "signed") or bool(fd.get("ttd_toko_image"))
 
         # 1. No. SPK (semi-bold)
         spk_no = fd.get("nomor_spk") or f"SPK-{sub.id:04d}"
@@ -1570,27 +1649,103 @@ def form_submission_hub(request, slug):
         # 4. Tanggal Diajukan
         tanggal = sub.submitted_at or sub.created_at
 
-        # 5. Status (Badge status halus: Menunggu, Perlu Revisi, Disetujui, Ditolak, Draft)
+        # 5. Status & PIC Aktif (Dinamis per Stage Tanpa Data Dummy)
         status_raw = sub.status
+        status_subtext = ""
         if status_raw in ["pending_approval", "submitted"]:
-            status_label = "Menunggu Review"
-            badge_class = "badge-status-menunggu"
+            if active_task and active_task.workflow_stage:
+                s_order = active_task.workflow_stage.order
+                pic_user = active_task.assigned_to
+                pic_user_name = (pic_user.get_full_name() or pic_user.username) if pic_user else ""
+                
+                if s_order == 1:
+                    stage_desc = "Review ASM"
+                    pic_name = pic_user_name or "-"
+                    status_subtext = f"PIC: {pic_user_name}" if pic_user_name else ""
+                    status_label = f"Menunggu Review ASM — {pic_user_name}" if pic_user_name else "Menunggu Review ASM"
+                    badge_class = "badge-status-menunggu"
+                elif s_order == 2:
+                    stage_desc = "Review Sales Support"
+                    pic_name = pic_user_name or "-"
+                    status_subtext = f"PIC: {pic_user_name}" if pic_user_name else ""
+                    status_label = f"Menunggu Review Sales Support — {pic_user_name}" if pic_user_name else "Menunggu Review Sales Support"
+                    badge_class = "badge-status-menunggu"
+                elif s_order == 3:
+                    stage_desc = "Review RSOM"
+                    pic_name = pic_user_name or "-"
+                    status_subtext = f"PIC: {pic_user_name}" if pic_user_name else ""
+                    status_label = f"Menunggu Review RSOM — {pic_user_name}" if pic_user_name else "Menunggu Review RSOM"
+                    badge_class = "badge-status-menunggu"
+                elif s_order == 4:
+                    if not is_token_signed:
+                        toko_name = fd.get("nama_toko") or fd.get("nama_pemilik") or ""
+                        stage_desc = "Menunggu TTD Toko"
+                        pic_name = toko_name or "-"
+                        status_subtext = f"Mitra: {toko_name}" if toko_name else ""
+                        status_label = f"Menunggu TTD Mitra Toko — {toko_name}" if toko_name else "Menunggu TTD Mitra Toko"
+                        badge_class = "badge-status-waiting-toko"
+                    else:
+                        stage_desc = "Approval Direksi"
+                        pic_name = pic_user_name or "-"
+                        status_subtext = f"PIC: {pic_user_name}" if pic_user_name else ""
+                        status_label = f"Menunggu Approval Direksi — {pic_user_name}" if pic_user_name else "Menunggu Approval Direksi"
+                        badge_class = "badge-status-direksi"
+                else:
+                    stage_desc = active_task.workflow_stage.name or "Menunggu Review"
+                    pic_name = pic_user_name or "-"
+                    status_subtext = f"PIC: {pic_user_name}" if pic_user_name else ""
+                    status_label = f"{stage_desc} — {pic_user_name}" if pic_user_name else stage_desc
+                    badge_class = "badge-status-menunggu"
+            else:
+                stage_desc = "Menunggu Review"
+                pic_name = "-"
+                status_subtext = ""
+                status_label = "Menunggu Review"
+                badge_class = "badge-status-menunggu"
+
         elif status_raw == "needs_revision":
-            status_label = "Perlu Revisi"
+            rev_tasks = [t for t in all_tasks if t.status in ("needs_revision", "rejected") and t.comments]
+            rev_by = rev_tasks[0].completed_by if rev_tasks and rev_tasks[0].completed_by else None
+            rev_by_name = (rev_by.get_full_name() or rev_by.username) if rev_by else ""
+            stage_desc = "Perlu Revisi"
+            pic_name = rev_by_name or "-"
+            status_subtext = f"Oleh: {rev_by_name}" if rev_by_name else ""
+            status_label = f"Perlu Revisi (oleh {rev_by_name})" if rev_by_name else "Perlu Revisi"
             badge_class = "badge-status-revisi"
+
         elif status_raw == "approved":
+            stage_desc = "Disetujui"
+            pic_name = "-"
+            status_subtext = ""
             status_label = "Disetujui"
             badge_class = "badge-status-disetujui"
+
         elif status_raw == "rejected":
+            stage_desc = "Ditolak"
+            pic_name = "-"
+            status_subtext = ""
             status_label = "Ditolak"
             badge_class = "badge-status-ditolak"
+
         elif status_raw == "draft":
+            stage_desc = "Draft"
+            sub_user = sub.submitter
+            pic_name = (sub_user.get_full_name() or sub_user.username) if sub_user else "-"
+            status_subtext = ""
             status_label = "Draft"
             badge_class = "badge-status-draft"
+
         elif status_raw == "withdrawn":
+            stage_desc = "Ditarik"
+            pic_name = "-"
+            status_subtext = ""
             status_label = "Ditarik"
             badge_class = "badge-status-draft"
+
         else:
+            stage_desc = sub.get_status_display()
+            pic_name = "-"
+            status_subtext = ""
             status_label = sub.get_status_display()
             badge_class = "badge-status-draft"
 
@@ -1605,7 +1760,10 @@ def form_submission_hub(request, slug):
             action_is_review = False
         else:
             action_url = reverse("forms_workflows:submission_detail", kwargs={"submission_id": sub.id})
-            action_is_review = sub.id in pending_tasks_sub_ids
+            action_is_review = False
+            if active_task:
+                if active_task.assigned_to_id == user_id or (active_task.assigned_group_id and active_task.assigned_group_id in user_group_ids):
+                    action_is_review = True
             action_label = "Review" if action_is_review else "Detail"
 
         rows.append({
@@ -1615,7 +1773,10 @@ def form_submission_hub(request, slug):
             "toko": toko,
             "jenis": jenis,
             "tanggal": tanggal,
+            "stage_desc": stage_desc,
             "status_label": status_label,
+            "status_subtext": status_subtext,
+            "pic_name": pic_name,
             "badge_class": badge_class,
             "action_url": action_url,
             "action_label": action_label,
@@ -1637,6 +1798,7 @@ def form_submission_hub(request, slug):
             "query_params_no_page": query_params_no_page,
             "search_query": search_query,
             "status_filter": status_filter,
+            "stage_filter": stage_filter,
             "submit_url": reverse("forms_workflows:form_submit", kwargs={"slug": form_def.slug}),
         },
     )
