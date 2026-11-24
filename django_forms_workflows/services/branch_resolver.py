@@ -344,7 +344,7 @@ def find_branch_manager_for_stage(
                 for k in ("ASM", "AREA SALES", "BRANCH", "KEPALA CABANG", "BOM", "MANAGER", "ATASAN")
             ):
                 return ep.user
-    elif stage_order == 2:
+    elif stage_order in (2, 3):
         for ep in candidate_eps:
             pos_upper = (ep.position or "").upper()
             groups = set(ep.user.groups.values_list("name", flat=True))

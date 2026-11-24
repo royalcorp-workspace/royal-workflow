@@ -1439,9 +1439,11 @@ class EMeteraiService:
     ) -> None:
         """
         Execute stamping in a background daemon thread so HTTP response is returned immediately.
+        Ensures all database connections opened in the thread are safely closed upon completion.
         """
         def _worker():
             from django.contrib.auth import get_user_model
+            from django.db import connections
             from django_forms_workflows.models import FormSubmission
 
             try:
@@ -1460,7 +1462,13 @@ class EMeteraiService:
                     user=user,
                 )
             except Exception as e:
-                logger.error("Error in async e-meterai worker for sub #%s: %s", submission_id, e)
+                logger.error("Error in async e-meterai worker for sub #%s: %s", submission_id, e, exc_info=True)
+            finally:
+                connections.close_all()
 
-        thread = threading.Thread(target=_worker, daemon=True)
+        thread = threading.Thread(
+            target=_worker,
+            name=f"ematerai-async-sub-{submission_id}",
+            daemon=True,
+        )
         thread.start()

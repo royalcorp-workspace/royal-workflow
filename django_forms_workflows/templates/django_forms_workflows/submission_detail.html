@@ -24,7 +24,11 @@
                         <i class="bi bi-patch-check-fill me-1" style="color: #059669;"></i>e-Meterai Terpasang
                       </span>
                     {% elif can_manage_ematerai and submission.form_definition.slug == 'permohonan-kontrak' %}
-                      {% if not submission.stamped_document or submission.stamped_document.status == 'failed' or submission.stamped_document.provider == 'MockMeteraiProvider' %}
+                      {% if submission.stamped_document and submission.stamped_document.status in 'pending,in_progress' %}
+                        <span class="badge d-inline-flex align-items-center" style="background-color: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 6px;">
+                          <span class="spinner-border spinner-border-sm me-1" role="status" style="width: 10px; height: 10px; border-width: 1.5px;"></span>Memproses e-Meterai
+                        </span>
+                      {% elif not submission.stamped_document or submission.stamped_document.status == 'failed' or submission.stamped_document.provider == 'MockMeteraiProvider' %}
                         <span style="font-size: 12px; color: #b45309; font-weight: 500;">&bull; Menunggu e-Meterai</span>
                       {% endif %}
                     {% endif %}
@@ -62,7 +66,31 @@
 
         {# ── Clean Enterprise Notice: e-Meterai Status & Action (Sales Support & Administrator Only) ── #}
         {% if can_manage_ematerai and submission.status == 'approved' and submission.form_definition.slug == 'permohonan-kontrak' %}
-          {% if not submission.stamped_document or submission.stamped_document.status == 'failed' or submission.stamped_document.provider == 'MockMeteraiProvider' %}
+          {% if submission.stamped_document and submission.stamped_document.status in 'pending,in_progress' %}
+            <div style="background: #f8fafc; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 16px; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: flex-start; gap: 12px; min-width: 0;">
+                <div class="spinner-border text-primary flex-shrink-0 mt-1" role="status" style="width: 15px; height: 15px; border-width: 2px;"></div>
+                <div style="min-width: 0;">
+                  <div style="font-size: 13px; font-weight: 600; color: #1e3a8a; line-height: 1.4;">
+                    Pembubuhan e-Meterai sedang diproses di latar belakang
+                  </div>
+                  <div style="font-size: 12.5px; color: #64748b; line-height: 1.4; margin-top: 2px;">
+                    Dokumen sedang dikirim dan diverifikasi oleh server Peruri (biasanya membutuhkan 15–60 detik). Anda dapat memuat ulang halaman secara berkala untuk memperbarui status.
+                  </div>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                <button type="button" disabled style="display: inline-flex; align-items: center; gap: 6px; background: #94a3b8; color: #ffffff; border: none; border-radius: 6px; padding: 6px 14px; font-size: 12.5px; font-weight: 500; cursor: not-allowed; opacity: 0.85;">
+                  <span class="spinner-border spinner-border-sm" role="status" style="width: 11px; height: 11px; border-width: 1.5px;"></span>
+                  <span>Memproses...</span>
+                </button>
+                <button type="button" onclick="location.reload()" style="display: inline-flex; align-items: center; gap: 5px; background: #ffffff; color: #334155; border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 11px; font-size: 12px; font-weight: 500; cursor: pointer;">
+                  <i class="bi bi-arrow-clockwise"></i>
+                  <span>Muat Ulang</span>
+                </button>
+              </div>
+            </div>
+          {% elif not submission.stamped_document or submission.stamped_document.status == 'failed' or submission.stamped_document.provider == 'MockMeteraiProvider' %}
             <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
               <div style="display: flex; align-items: flex-start; gap: 12px; min-width: 0;">
                 <i class="bi bi-info-circle" style="font-size: 15px; color: #d97706; margin-top: 2px; flex-shrink: 0;"></i>
@@ -199,6 +227,26 @@
                 </ul>
             </div>
         </div>
+        {% endif %}
+
+        {# ── Public Signing Link Panel for Store Partner (Sales Support & Admin Tracking) ── #}
+        {% if signing_token and signing_url and submission.form_definition.slug == 'permohonan-kontrak' %}
+          <div class="card mb-3 shadow-sm border-0">
+            <div class="card-header py-2.5 bg-white border-bottom d-flex align-items-center justify-content-between">
+              <span class="fw-bold text-dark"><i class="bi bi-pen-fill text-primary me-1"></i> Tautan Tanda Tangan Toko (Digital SPK)</span>
+              {% if signing_token.status == 'signed' %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle">Customer Telah Menandatangani</span>
+              {% else %}
+                <span class="badge bg-light text-secondary border">Menunggu Tanda Tangan</span>
+              {% endif %}
+            </div>
+            <div class="card-body p-3">
+              <div class="input-group input-group-sm mb-2">
+                <input type="text" class="form-control font-monospace" value="{{ signing_url }}" readonly>
+                <a href="{{ signing_url }}" target="_blank" class="btn btn-outline-secondary">Buka Portal</a>
+              </div>
+            </div>
+          </div>
         {% endif %}
 
         <!-- Approval History -->

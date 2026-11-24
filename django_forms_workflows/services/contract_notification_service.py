@@ -245,20 +245,24 @@ def send_store_signature_completed_notifications(submission, token) -> None:
     base_url = _resolve_base_url()
     doc_info = extract_document_info(submission)
 
-    # 1. Notify Sales Support Group
+    # 1. Notify Direksi & Sales Support Group
+    direksi_group = Group.objects.filter(name="Direksi").first()
     sales_support_group = Group.objects.filter(name="Sales Support").first()
-    sales_support_emails: list[str] = []
-    if sales_support_group:
-        sales_support_emails = list(
-            sales_support_group.user_set.filter(is_active=True)
-            .exclude(email="")
-            .values_list("email", flat=True)
+    internal_emails: list[str] = []
+    if direksi_group:
+        internal_emails.extend(
+            direksi_group.user_set.filter(is_active=True).exclude(email="").values_list("email", flat=True)
         )
+    if sales_support_group:
+        internal_emails.extend(
+            sales_support_group.user_set.filter(is_active=True).exclude(email="").values_list("email", flat=True)
+        )
+    internal_emails = list(dict.fromkeys(internal_emails))
 
     task = token.task
     if not task or task.status != "pending":
         task = submission.approval_tasks.filter(
-            status="pending", workflow_stage__order=3
+            status="pending", workflow_stage__order=4
         ).first()
 
     review_url = (
@@ -267,7 +271,7 @@ def send_store_signature_completed_notifications(submission, token) -> None:
         else f"{base_url}/forms/submissions/{submission.id}/"
     )
 
-    ss_subject = f"[TTD Toko Selesai] SPK {nomor_spk} - {nama_toko} Siap Diverifikasi Sales Support"
+    ss_subject = f"[TTD Toko Selesai] SPK {nomor_spk} - {nama_toko} Siap Disahkan Direksi"
     ss_ctx = {
         "submission": submission,
         "token": token,
@@ -276,23 +280,23 @@ def send_store_signature_completed_notifications(submission, token) -> None:
         "event_message": (
             f"Mitra toko {nama_toko} atas nama {signer_name} ({signer_title}) telah selesai "
             f"membubuhkan tanda tangan digital pada SPK {nomor_spk}. "
-            f"Dokumen kini siap diverifikasi administrasi dan di-approve oleh Sales Support untuk diteruskan ke Direksi."
+            f"Dokumen kini siap disahkan oleh Direksi (Final Review & e-Meterai)."
         ),
-        "status_label": "TTD Toko Selesai (Menunggu Review Sales Support)",
+        "status_label": "TTD Toko Selesai (Menunggu Approval Direksi)",
         "action_instruction": (
-            "Mohon periksa kelengkapan berkas dan keabsahan tanda tangan mitra toko, "
-            "kemudian berikan Approval pada task Stage 3 agar dokumen diproses ke tahap tanda tangan final Direksi."
+            "Mohon periksa kelengkapan berkas dan lakukan persetujuan final (Approve SPK) "
+            "untuk membubuhi sertifikat e-Meterai resmi Peruri."
         ),
         "action_url": review_url,
-        "action_title": "Verifikasi & Tindak Lanjut Task",
-        "action_button_label": "Review & Approve SPK",
+        "action_title": "Pengesahan Final SPK",
+        "action_button_label": "Review & Sahkan SPK",
         "site_name": getattr(settings, "SITE_NAME", "Royal Workflow"),
     }
     ss_html = render_to_string("emails/standard_notification.html", ss_ctx)
-    if sales_support_emails:
+    if internal_emails:
         _send_email_message(
             subject=ss_subject,
-            to_list=sales_support_emails,
+            to_list=internal_emails,
             html_content=ss_html,
             notification_type="toko_signed_notice",
             submission_id=submission.id,
@@ -312,8 +316,7 @@ def send_store_signature_completed_notifications(submission, token) -> None:
             ),
             "status_label": "Tanda Tangan Diterima (Proses Verifikasi Internal)",
             "action_instruction": (
-                "Dokumen saat ini dalam tahap verifikasi administrasi tim Sales Support sebelum "
-                "dilakukan pengesahan final dan pembubuhan sertifikat e-Meterai resmi oleh Direksi. "
+                "Dokumen saat ini dalam tahap pengesahan final dan pembubuhan sertifikat e-Meterai resmi oleh Direksi. "
                 "Salinan resmi SPK yang telah sah akan dikirimkan ke email ini setelah seluruh persetujuan selesai."
             ),
             "action_url": f"{base_url}/spk/sign/{token.token}/",

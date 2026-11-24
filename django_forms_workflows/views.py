@@ -1981,6 +1981,11 @@ def submission_detail(request, submission_id):
                     }
                 )
 
+    signing_token = getattr(submission, "signing_tokens", None)
+    if signing_token:
+        signing_token = signing_token.order_by("-created_at").first()
+    signing_url = signing_token.get_signing_url(request) if signing_token else None
+
     return render(
         request,
         "django_forms_workflows/submission_detail.html",
@@ -2002,6 +2007,8 @@ def submission_detail(request, submission_id):
             "approval_step_sections": approval_step_sections,
             "can_approve_pdf": can_approve_pdf,
             "can_manage_ematerai": user_can_manage_ematerai(request.user, submission),
+            "signing_token": signing_token,
+            "signing_url": signing_url,
             "hide_approval_history": hide_approval_history,
             "is_approver_user": is_approver_user,
             "workflow_mode": workflow_mode,
@@ -2540,21 +2547,22 @@ def approve_submission(request, task_id):
             )
             return redirect("forms_workflows:approve_submission", task_id=task_id)
 
-        # Guardrail: For SPK (permohonan-kontrak) at Stage 3 (Sales Support), manual approval is blocked
+        # Guardrail: For SPK (permohonan-kontrak) at Stage 4 (Direksi), manual approval is blocked
         # until the store partner has signed via the public portal.
         if decision == "approve" and task.workflow_stage and getattr(form_def, "slug", "") == "permohonan-kontrak":
             if (
-                task.workflow_stage.order == 3
-                or "sales support" in (task.workflow_stage.name or "").lower()
-                or "ttd toko" in (task.workflow_stage.name or "").lower()
+                task.workflow_stage.order == 4
+                or "direksi" in (task.workflow_stage.name or "").lower()
             ):
                 from .workflow_engine import ensure_signing_token_for_stage
                 token = ensure_signing_token_for_stage(submission, task.workflow_stage, task)
-                if not token or token.status != "signed":
+                token_signed = token and token.status == "signed"
+                form_has_sign = bool((submission.form_data or {}).get("ttd_toko_image"))
+                if not (token_signed or form_has_sign):
                     messages.warning(
                         request,
                         "Pihak mitra toko belum menandatangani draf SPK via portal publik. "
-                        "Tombol persetujuan akan aktif setelah mitra menyelesaikan tanda tangan digital."
+                        "Persetujuan Direksi hanya dapat dilakukan setelah mitra toko menyelesaikan tanda tangan digital."
                     )
                     return redirect("forms_workflows:approve_submission", task_id=task_id)
 
@@ -3031,11 +3039,11 @@ def approve_submission(request, task_id):
         else "null"
     )
 
-    # Signing token for Stage 3 (Sales Support) / External store signature portal
+    # Signing token for Stage 4 (Direksi) / External store signature portal
     signing_token = None
     if task.workflow_stage and (
-        task.workflow_stage.order == 3
-        or "sales support" in (task.workflow_stage.name or "").lower()
+        task.workflow_stage.order == 4
+        or "direksi" in (task.workflow_stage.name or "").lower()
         or "ttd toko" in (task.workflow_stage.name or "").lower()
     ):
         from .workflow_engine import ensure_signing_token_for_stage
@@ -6993,7 +7001,7 @@ from django.views.decorators.http import require_POST
 @login_required
 @require_POST
 def retry_ematerai_stamping(request, submission_id):
-    """Manually trigger or retry e-Meterai stamping for an approved SPK submission."""
+    """Manually trigger or retry e-Meterai stamping for an approved SPK submission (Non-blocking / Asynchronous)."""
     submission = get_object_or_404(FormSubmission, id=submission_id)
 
     if not user_can_manage_ematerai(request.user, submission):
@@ -7010,21 +7018,43 @@ def retry_ematerai_stamping(request, submission_id):
             return redirect(referer)
         return redirect("forms_workflows:submission_detail", submission_id=submission.id)
 
+    from .models import StampedContractDocument
     from .services.ematerai import EMeteraiService
 
-    stamped_doc = EMeteraiService.stamp_submission(
-        submission=submission,
+    # Cegah double submission jika proses latar belakang sedang berjalan
+    stamped_doc = getattr(submission, "stamped_document", None)
+    if stamped_doc and stamped_doc.status in ("pending", "in_progress"):
+        messages.warning(
+            request,
+            "Pembubuhan e-Meterai sedang diproses di latar belakang. Silakan tunggu beberapa saat dan muat ulang halaman."
+        )
+        referer = request.META.get("HTTP_REFERER")
+        if referer and ("approve" in referer or "submissions" in referer):
+            return redirect(referer)
+        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+    # Reset status ke "pending" dan bersihkan pesan error sebelumnya,
+    # sambil tetap mempertahankan provider_document_id agar fitur Direct Download Recovery (0 kuota) tetap bekerja
+    if not stamped_doc:
+        stamped_doc, _ = StampedContractDocument.objects.get_or_create(
+            submission=submission,
+            defaults={"status": "pending", "provider": getattr(settings, "EMATERAI_PROVIDER", "mock")},
+        )
+    stamped_doc.status = "pending"
+    stamped_doc.error_message = ""
+    stamped_doc.save(update_fields=["status", "error_message", "updated_at"])
+
+    # Jalankan proses pembubuhan & unduhan di background thread non-blocking
+    EMeteraiService.stamp_submission_async(
+        submission_id=submission.id,
         force_retry=True,
-        user=request.user,
+        user_id=request.user.id,
     )
 
-    if stamped_doc.status == "stamped":
-        messages.success(request, "e-Meterai resmi berhasil dibubuhkan ke dokumen SPK.")
-    else:
-        messages.error(
-            request,
-            "Pembubuhan e-Meterai belum berhasil. Silakan coba lagi setelah kendala teratasi."
-        )
+    messages.info(
+        request,
+        "Permintaan pembubuhan e-Meterai sedang diproses di latar belakang. Halaman akan memperbarui status secara otomatis saat selesai."
+    )
 
     referer = request.META.get("HTTP_REFERER")
     if referer and ("approve" in referer or "submissions" in referer):

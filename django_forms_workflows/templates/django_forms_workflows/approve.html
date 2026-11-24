@@ -156,7 +156,11 @@
                 <i class="bi bi-patch-check-fill me-1" style="color: #059669;"></i>e-Meterai Terpasang
               </span>
             {% elif can_manage_ematerai and submission.form_definition.slug == 'permohonan-kontrak' %}
-              {% if not submission.stamped_document or submission.stamped_document.status == 'failed' or submission.stamped_document.provider == 'MockMeteraiProvider' %}
+              {% if submission.stamped_document and submission.stamped_document.status in 'pending,in_progress' %}
+                <span class="badge d-inline-flex align-items-center" style="background-color: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 6px;">
+                  <span class="spinner-border spinner-border-sm me-1" role="status" style="width: 10px; height: 10px; border-width: 1.5px;"></span>Memproses e-Meterai
+                </span>
+              {% elif not submission.stamped_document or submission.stamped_document.status == 'failed' or submission.stamped_document.provider == 'MockMeteraiProvider' %}
                 <span style="font-size: 12px; color: #b45309; font-weight: 500;">&bull; Menunggu e-Meterai</span>
               {% endif %}
             {% endif %}
@@ -200,7 +204,31 @@
 
   {# ── Clean Enterprise Notice: e-Meterai Status & Action (Sales Support & Administrator Only) ── #}
   {% if can_manage_ematerai and submission.status == 'approved' and submission.form_definition.slug == 'permohonan-kontrak' %}
-    {% if not submission.stamped_document or submission.stamped_document.status == 'failed' or submission.stamped_document.provider == 'MockMeteraiProvider' %}
+    {% if submission.stamped_document and submission.stamped_document.status in 'pending,in_progress' %}
+      <div style="background: #f8fafc; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 16px; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+        <div style="display: flex; align-items: flex-start; gap: 12px; min-width: 0;">
+          <div class="spinner-border text-primary flex-shrink-0 mt-1" role="status" style="width: 15px; height: 15px; border-width: 2px;"></div>
+          <div style="min-width: 0;">
+            <div style="font-size: 13px; font-weight: 600; color: #1e3a8a; line-height: 1.4;">
+              Pembubuhan e-Meterai sedang diproses di latar belakang
+            </div>
+            <div style="font-size: 12.5px; color: #64748b; line-height: 1.4; margin-top: 2px;">
+              Dokumen sedang dikirim dan diverifikasi oleh server Peruri (biasanya membutuhkan 15–60 detik). Anda dapat memuat ulang halaman secara berkala untuk memperbarui status.
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+          <button type="button" disabled style="display: inline-flex; align-items: center; gap: 6px; background: #94a3b8; color: #ffffff; border: none; border-radius: 6px; padding: 6px 14px; font-size: 12.5px; font-weight: 500; cursor: not-allowed; opacity: 0.85;">
+            <span class="spinner-border spinner-border-sm" role="status" style="width: 11px; height: 11px; border-width: 1.5px;"></span>
+            <span>Memproses...</span>
+          </button>
+          <button type="button" onclick="location.reload()" style="display: inline-flex; align-items: center; gap: 5px; background: #ffffff; color: #334155; border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 11px; font-size: 12px; font-weight: 500; cursor: pointer;">
+            <i class="bi bi-arrow-clockwise"></i>
+            <span>Muat Ulang</span>
+          </button>
+        </div>
+      </div>
+    {% elif not submission.stamped_document or submission.stamped_document.status == 'failed' or submission.stamped_document.provider == 'MockMeteraiProvider' %}
       <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
         <div style="display: flex; align-items: flex-start; gap: 12px; min-width: 0;">
           <i class="bi bi-info-circle" style="font-size: 15px; color: #d97706; margin-top: 2px; flex-shrink: 0;"></i>
@@ -534,8 +562,8 @@
     </div>
   {% endif %}
 
-  {# ── Public Signing Link Panel for Stage 3 (Sales Support & TTD Toko) ── #}
-  {% if signing_token and signing_url %}
+  {# ── Public Signing Link Panel for Sales Support Monitoring (Hidden for Direksi Stage 4) ── #}
+  {% if signing_token and signing_url and task.workflow_stage.order != 4 %}
     <div class="signing-link-card mb-4">
       <div class="card-header py-2.5 bg-white border-bottom">
         <div class="d-flex align-items-center justify-content-between w-100 flex-wrap gap-2">
@@ -545,9 +573,9 @@
             </span>
             <div>
               <span class="doc-card-title text-dark fw-bold" style="font-size: 13px;">
-                Tautan Tanda Tangan Toko (Stage 3)
+                Tautan Tanda Tangan Toko (Digital SPK)
               </span>
-              <div class="text-muted" style="font-size: 11px;">Portal Penandatanganan Digital SPK Publik — Sales Support & Toko Mitra</div>
+              <div class="text-muted" style="font-size: 11px;">Portal Penandatanganan Digital SPK Publik — Pemantauan Sales Support & Toko Mitra</div>
             </div>
           </div>
           <div>
@@ -742,16 +770,16 @@
             </a>
           </div>
 
-          {# Stage 3 notice: Waiting for signature vs Signature verified #}
-          {% if task.workflow_stage and task.workflow_stage.order == 3 and signing_token %}
+          {# Sales Support monitoring notice: Waiting for signature vs Signature verified (Hidden for Direksi Stage 4) #}
+          {% if task.workflow_stage and task.workflow_stage.order == 2 and signing_token %}
             {% if signing_token.status != 'signed' %}
               <div class="alert alert-warning p-3 mb-3 d-flex align-items-start gap-3 rounded-2 border border-warning-subtle shadow-sm" style="font-size: 13px; line-height: 1.5; background-color: #fffbeb; color: #92400e;">
                 <div class="flex-shrink-0 mt-0.5">
                   <i class="bi bi-shield-lock-fill fs-5 text-warning"></i>
                 </div>
                 <div class="flex-grow-1">
-                  <strong class="d-block mb-1 text-warning-emphasis" style="font-size: 14px; font-weight: 600;">Menunggu Tanda Tangan Mitra Toko</strong>
-                  <span>Draf SPK belum ditandatangani oleh mitra toko. Silakan bagikan tautan portal publik di atas kepada mitra toko. Tombol <strong>Approve</strong> akan otomatis aktif setelah mitra menyelesaikan tanda tangan digital.</span>
+                  <strong class="d-block mb-1 text-warning-emphasis" style="font-size: 14px; font-weight: 600;">Pemantauan Tanda Tangan Mitra Toko</strong>
+                  <span>Tautan portal publik tersedia untuk pemantauan. Pada alur baru, penandatanganan toko akan otomatis dipicu setelah persetujuan RSOM.</span>
                 </div>
               </div>
             {% else %}
@@ -761,7 +789,7 @@
                 </div>
                 <div class="flex-grow-1">
                   <strong class="d-block mb-1 text-success-emphasis" style="font-size: 14px; font-weight: 600;">Tanda Tangan Mitra Toko Terverifikasi</strong>
-                  <span>Mitra toko telah menyelesaikan tanda tangan digital pada draf SPK. Silakan periksa kelengkapan dokumen pada pratinjau lembar SPK di bawah, lalu klik <strong>Approve</strong> untuk meneruskan ke Final Approval.</span>
+                  <span>Mitra toko telah menyelesaikan tanda tangan digital pada draf SPK.</span>
                 </div>
               </div>
             {% endif %}
@@ -786,19 +814,7 @@
                 <i class="bi bi-arrow-counterclockwise me-1"></i> {% if submission.form_definition.slug == 'permohonan-kontrak' %}Reject{% else %}Tolak / Minta Revisi{% endif %}
               </button>
 
-              {% if task.workflow_stage and task.workflow_stage.order == 3 and submission.form_definition.slug == 'permohonan-kontrak' %}
-                {% if signing_token and signing_token.status == 'signed' or submission.form_data.ttd_toko_image %}
-                  <button
-                    type="button"
-                    id="btnTriggerApproveModalStage3"
-                    class="btn btn-sm btn-success btn-decision-approve d-inline-flex align-items-center justify-content-center gap-1.5 flex-fill flex-md-grow-0 shadow-sm"
-                    style="padding: 0.45rem 1.25rem; font-weight: 600; font-size: 0.875rem; border-radius: 6px;"
-                    data-bs-toggle="modal"
-                    data-bs-target="#approveConfirmModal">
-                    <i class="bi bi-check2-circle me-1"></i> Approve
-                  </button>
-                {% endif %}
-              {% elif task.workflow_stage and task.workflow_stage.order == 4 and submission.form_definition.slug == 'permohonan-kontrak' %}
+              {% if task.workflow_stage and task.workflow_stage.order == 4 and submission.form_definition.slug == 'permohonan-kontrak' %}
                 <button
                   type="button"
                   class="btn btn-sm btn-primary btn-decision-approve d-inline-flex align-items-center justify-content-center gap-1.5 flex-fill flex-md-grow-0"

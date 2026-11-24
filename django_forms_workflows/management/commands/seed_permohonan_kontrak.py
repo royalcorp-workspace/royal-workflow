@@ -13,6 +13,7 @@ from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from django_forms_workflows.models import (
     FormCategory,
@@ -34,14 +35,35 @@ User = get_user_model()
 class Command(BaseCommand):
     help = "Seed the Permohonan Kontrak (Sales & Marketing) form and 4-stage workflow."
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--migrate-stages-only",
+            action="store_true",
+            help="Hanya migrasikan hierarki urutan stage ke alur statis lurus (ASM -> Sales Support -> RSOM -> Direksi)",
+        )
+
     @transaction.atomic
     def handle(self, *args, **options):
+        migrate_stages_only = options.get("migrate_stages_only", False)
+        groups = self._seed_groups()
+
+        if migrate_stages_only:
+            self.stdout.write("=================================================================")
+            self.stdout.write("Migrating SPK Workflow Stages to Static Linear Flow...")
+            self.stdout.write("=================================================================")
+            workflow = WorkflowDefinition.objects.filter(form_definition__slug="permohonan-kontrak").first()
+            if not workflow:
+                self.stderr.write("WorkflowDefinition for 'permohonan-kontrak' not found!")
+                return
+            self._migrate_to_static_linear_flow(workflow, groups)
+            self.stdout.write(self.style.SUCCESS("✓ Berhasil memigrasikan urutan stage ke alur statis lurus!"))
+            return
+
         self.stdout.write("=================================================================")
         self.stdout.write("Seeding 'Permohonan Kontrak' & 4-Stage Approval Workflow...")
         self.stdout.write("=================================================================")
 
         # 1. Groups & Users
-        groups = self._seed_groups()
         users = self._seed_users(groups)
 
         # 2. Shared Option Lists
@@ -207,8 +229,8 @@ class Command(BaseCommand):
             },
         )
 
-        # Run migration for legacy 5-stage workflow if present
-        self._migrate_existing_workflow_stages_and_tasks(workflow, groups)
+        # Run migration to static linear flow (ASM -> Sales Support -> RSOM -> Direksi)
+        self._migrate_to_static_linear_flow(workflow, groups)
 
         # Stage 1: Review SPK oleh ASM (Dinamis: supervisor_1) - Unconditional (Always Run)
         st1 = self._ensure_stage(
@@ -227,28 +249,11 @@ class Command(BaseCommand):
         )
         self._set_stage_groups(st1, [groups["Sales Area Manager"], groups["Branch Manager"]])
 
-        # Stage 2: Review SPK oleh RSOM (Dinamis: supervisor_2) - Unconditional (Always Run)
+        # Stage 2: Review & Penomoran SPK (Sales Support - Unconditional)
         st2 = self._ensure_stage(
             workflow,
-            name="Review SPK oleh RSOM",
+            name="Review & Penomoran SPK (Sales Support)",
             order=2,
-            defaults={
-                "approval_logic": "any",
-                "requires_manager_approval": True,
-                "allow_edit_form_data": False,
-                "allow_send_back": True,
-                "allow_reassign": True,
-                "approve_label": "Setujui (RSOM)",
-                "trigger_conditions": None,
-            },
-        )
-        self._set_stage_groups(st2, [groups["Sales Area Manager"], groups["General Manager Sales"]])
-
-        # Stage 3: Review, Penomoran & Koordinasi TTD Toko (Sales Support - Unconditional)
-        st3 = self._ensure_stage(
-            workflow,
-            name="Review, Penomoran & Koordinasi TTD Toko (Sales Support)",
-            order=3,
             defaults={
                 "approval_logic": "any",
                 "requires_manager_approval": False,
@@ -259,7 +264,24 @@ class Command(BaseCommand):
                 "trigger_conditions": None,
             },
         )
-        self._set_stage_groups(st3, [groups["Sales Support"]])
+        self._set_stage_groups(st2, [groups["Sales Support"]])
+
+        # Stage 3: Review SPK oleh RSOM (Dinamis: supervisor_2) - Unconditional (Always Run)
+        st3 = self._ensure_stage(
+            workflow,
+            name="Review SPK oleh RSOM",
+            order=3,
+            defaults={
+                "approval_logic": "any",
+                "requires_manager_approval": True,
+                "allow_edit_form_data": False,
+                "allow_send_back": True,
+                "allow_reassign": True,
+                "approve_label": "Setujui (RSOM)",
+                "trigger_conditions": None,
+            },
+        )
+        self._set_stage_groups(st3, [groups["Sales Area Manager"], groups["General Manager Sales"]])
 
         # Stage 4: Final Review & Approval (Final Stage)
         st4 = self._ensure_stage(
@@ -278,10 +300,10 @@ class Command(BaseCommand):
         )
         self._set_stage_groups(st4, [groups["Direksi"]])
 
-        # Ensure tokens exist for any active/pending Stage 3 tasks
+        # Ensure tokens exist for any active/pending Stage 4 tasks (Direksi)
         from django_forms_workflows.workflow_engine import ensure_signing_token_for_stage
-        for task in ApprovalTask.objects.filter(workflow_stage=st3, status="pending").select_related("submission"):
-            ensure_signing_token_for_stage(task.submission, st3, task)
+        for task in ApprovalTask.objects.filter(workflow_stage=st4, status="pending").select_related("submission"):
+            ensure_signing_token_for_stage(task.submission, st4, task)
 
         # 7. Document Template (Surat Perjanjian Kerjasama)
         self._ensure_document_template(form)
@@ -336,66 +358,114 @@ class Command(BaseCommand):
         self.stdout.write("  • Akun Pengujian (Password: Bandung*123#):")
         self.stdout.write("      - Submitter        : sales.staff")
         self.stdout.write("      - Stage 1 Approver : area.sales.manager (Sales Area Manager / Branch Manager)")
-        self.stdout.write("      - Stage 2 Approver : general.manager (General Manager Sales)")
-        self.stdout.write("      - Stage 3 Approver : Sales Support (Review, Penomoran & Koordinasi TTD Toko)")
-        self.stdout.write("      - Stage 4 Approver : aalvin / Direksi (Review & TTD Final Direksi)")
+        self.stdout.write("      - Stage 2 Approver : Sales Support (Review & Penomoran SPK)")
+        self.stdout.write("      - Stage 3 Approver : general.manager (RSOM / General Manager Sales)")
+        self.stdout.write("      - Stage 4 Approver : aalvin / Direksi (Final Review & e-Meterai)")
         self.stdout.write("  • Form Definition : 'permohonan-kontrak' (3 steps, 39 fields, 5 dynamic grids)")
         self.stdout.write("  • Mock JDE Lookup : /api/lookup/jde-customer/?code=150731")
         self.stdout.write("  • Document Template: 'Surat Perjanjian Kerjasama' (SPK)")
-        self.stdout.write("  • Workflow Stages : 4 stages (ASM -> RSOM -> Sales Support & TTD Toko -> Direksi Final)")
+        self.stdout.write("  • Workflow Stages : 4 stages (ASM -> Sales Support -> RSOM -> Direksi Final)")
 
     # -------------------------------------------------------------------------
     # Helper Methods
     # -------------------------------------------------------------------------
 
-    def _migrate_existing_workflow_stages_and_tasks(self, workflow, groups):
-        """Safely migrate legacy 5-stage pipeline to unified 4-stage pipeline.
-
-        Merges legacy Stage 4 ('Verifikasi TTD Toko') into Stage 3 ('Review, Penomoran &
-        Koordinasi TTD Toko'), and shifts legacy Stage 5 ('Review & TTD Final Direksi')
-        to Stage 4, preserving all ContractSigningToken associations and history.
+    def _migrate_to_static_linear_flow(self, workflow, groups):
+        """Safely migrate to static linear approval pipeline:
+        Stage 1: ASM (order 1)
+        Stage 2: Sales Support (order 2)
+        Stage 3: RSOM (order 3)
+        Stage 4: Direksi (order 4)
         """
-        st3 = workflow.stages.filter(order=3).first()
-        st4 = workflow.stages.filter(order=4).first()
+        # First, resolve any legacy 5-stage remnants
         st5 = workflow.stages.filter(order=5).first()
+        st4 = workflow.stages.filter(order=4).first()
+        st3 = workflow.stages.filter(order=3).first()
 
-        if st3:
-            st3.name = "Review, Penomoran & Koordinasi TTD Toko (Sales Support)"
-            st3.approve_label = "Approve"
-            st3.save()
-
-        # Handle legacy stage 5 & stage 4
         if st5:
-            # First, resolve any tasks in old stage 4 before moving stage 5 to order 4
             if st4 and st4.id != st5.id:
                 for task in ApprovalTask.objects.filter(workflow_stage=st4):
-                    # If this submission already has a task in st5, complete the redundant st4 task
                     sub = task.submission
                     if sub and sub.approval_tasks.filter(workflow_stage=st5).exists():
                         task.status = "approved"
                         task.decision = "approve"
-                        task.comments = task.comments or "Auto-approved during 4-stage migration (Direksi task active)"
+                        task.comments = task.comments or "Auto-approved during migration"
                         if not task.completed_at:
                             task.completed_at = timezone.now()
-                    task.workflow_stage = st3
-                    task.stage_number = 3
-                    task.step_name = "Stage 3"
+                    task.workflow_stage = st3 or st5
                     task.save()
                 st4.delete()
-
-            # Now update all tasks belonging to st5 to stage_number=4
             ApprovalTask.objects.filter(workflow_stage=st5).update(stage_number=4, step_name="Stage 4")
             st5.order = 4
             st5.name = "Final Review & Approval"
             st5.approve_label = "Approve SPK"
             st5.save()
-        elif st4:
-            # st4 is already order 4; verify if it was the old 'Verifikasi TTD Toko' without st5
-            if "toko" in (st4.name or "").lower():
-                ApprovalTask.objects.filter(workflow_stage=st4).update(workflow_stage=st3, stage_number=3, step_name="Stage 3")
-                st4.name = "Final Review & Approval"
-                st4.approve_label = "Approve SPK"
-                st4.save()
+
+        # Step 1: Identify existing stages by semantic name or current order
+        st_asm = workflow.stages.filter(Q(name__icontains="asm") | Q(order=1)).first()
+        st_ss = workflow.stages.filter(Q(name__icontains="sales support") | Q(name__icontains="penomoran")).first()
+        st_rsom = workflow.stages.filter(Q(name__icontains="rsom")).first()
+        st_direksi = workflow.stages.filter(Q(name__icontains="final") | Q(name__icontains="direksi") | Q(order=4)).first()
+
+        if not st_ss:
+            st_ss = workflow.stages.filter(order=3).first()
+        if not st_rsom:
+            st_rsom = workflow.stages.filter(order=2).first()
+
+        # Step 2: Safe order swap using temporary buffer (order 20)
+        if st_ss and st_rsom and (st_ss.order != 2 or st_rsom.order != 3):
+            # Move Sales Support to buffer
+            st_ss.order = 20
+            st_ss.save()
+
+            # Move RSOM to order 3
+            st_rsom.order = 3
+            st_rsom.name = "Review SPK oleh RSOM"
+            st_rsom.requires_manager_approval = True
+            st_rsom.approve_label = "Setujui (RSOM)"
+            st_rsom.save()
+
+            # Move Sales Support to order 2
+            st_ss.order = 2
+            st_ss.name = "Review & Penomoran SPK (Sales Support)"
+            st_ss.requires_manager_approval = False
+            st_ss.approve_label = "Approve"
+            st_ss.save()
+
+        # Step 3: Align labels, attributes, and approval groups for all 4 stages
+        if st_asm:
+            st_asm.order = 1
+            st_asm.name = "Review SPK oleh ASM"
+            st_asm.requires_manager_approval = True
+            st_asm.approve_label = "Setujui (ASM)"
+            st_asm.save()
+            self._set_stage_groups(st_asm, [groups["Sales Area Manager"], groups["Branch Manager"]])
+            ApprovalTask.objects.filter(workflow_stage=st_asm).update(stage_number=1, step_name="Stage 1")
+
+        if st_ss:
+            st_ss.name = "Review & Penomoran SPK (Sales Support)"
+            st_ss.requires_manager_approval = False
+            st_ss.approve_label = "Approve"
+            st_ss.save()
+            self._set_stage_groups(st_ss, [groups["Sales Support"]])
+            ApprovalTask.objects.filter(workflow_stage=st_ss).update(stage_number=2, step_name="Stage 2")
+
+        if st_rsom:
+            st_rsom.name = "Review SPK oleh RSOM"
+            st_rsom.requires_manager_approval = True
+            st_rsom.approve_label = "Setujui (RSOM)"
+            st_rsom.save()
+            self._set_stage_groups(st_rsom, [groups["Sales Area Manager"], groups["General Manager Sales"]])
+            ApprovalTask.objects.filter(workflow_stage=st_rsom).update(stage_number=3, step_name="Stage 3")
+
+        if st_direksi:
+            st_direksi.order = 4
+            st_direksi.name = "Final Review & Approval"
+            st_direksi.requires_manager_approval = False
+            st_direksi.approve_label = "Approve SPK"
+            st_direksi.save()
+            self._set_stage_groups(st_direksi, [groups["Direksi"]])
+            ApprovalTask.objects.filter(workflow_stage=st_direksi).update(stage_number=4, step_name="Stage 4")
 
     def _seed_groups(self):
         group_names = [
