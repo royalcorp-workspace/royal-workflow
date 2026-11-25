@@ -422,9 +422,6 @@
       </div>
     </div>
   </div>
-      </div>
-    </div>
-  </div>
 
   <!-- ==================== TOP HERO: RINGKASAN NOMINAL & URGENSI ==================== -->
   <div class="biaya-review-card border-primary-subtle mb-3">
@@ -477,7 +474,7 @@
         <span>1. Informasi Pengajuan</span>
       </h6>
       <span class="badge bg-light text-secondary border px-2 py-1 font-monospace" style="font-size: 11px;">
-        <i class="bi bi-tag-fill me-1 text-primary"></i>{{ form_data.kategori_barang|default:form_data.kategori_biaya|default:"ATK" }}
+        <i class="bi bi-tag-fill me-1 text-primary"></i>{{ form_data.kategori_barang|default:"ATK" }}
       </span>
     </div>
     <div class="biaya-card-body">
@@ -510,7 +507,7 @@
           <div class="biaya-kv-item">
             <span class="biaya-kv-label">Kategori Barang</span>
             <div class="biaya-kv-value fw-semibold text-dark">
-              <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">{{ form_data.kategori_barang|default:form_data.kategori_biaya|default:"ATK" }}</span>
+              <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">{{ form_data.kategori_barang|default:"ATK" }}</span>
             </div>
           </div>
         </div>
@@ -518,7 +515,7 @@
           <div class="biaya-kv-item">
             <span class="biaya-kv-label">PIC (Mapping Sistem)</span>
             <div class="biaya-kv-value fw-semibold text-dark">
-              <i class="bi bi-person-badge-fill text-success me-1"></i>{{ form_data.pic|default:form_data.nama_pic|default:"General Affair (GA)" }}
+              <i class="bi bi-person-badge-fill text-success me-1"></i>{{ form_data.pic|default:"General Affair (GA)" }}
             </div>
           </div>
         </div>
@@ -534,7 +531,7 @@
           <div class="biaya-kv-item">
             <span class="biaya-kv-label">Catatan Pengajuan</span>
             <div class="p-2.5 bg-light border rounded text-secondary small" style="white-space: pre-wrap; font-size: 13px;">
-              {{ form_data.catatan_pengajuan|default:form_data.catatan_justifikasi|default:"(Tidak ada catatan pengajuan tambahan)" }}
+              {{ form_data.catatan_pengajuan|default:"(Tidak ada catatan pengajuan tambahan)" }}
             </div>
           </div>
         </div>
@@ -613,10 +610,10 @@
               {% for it in form_data.items_list %}
                 <tr>
                   <td class="text-center">{{ forloop.counter }}</td>
-                  <td class="font-sans-serif fw-semibold text-dark" style="font-family: inherit;">{{ it.deskripsi|default:it.nama|default:"Item" }}</td>
+                  <td class="font-sans-serif fw-semibold text-dark" style="font-family: inherit;">{{ it.deskripsi|default:"Item" }}</td>
                   <td class="text-center">{{ it.qty|default:"1" }}</td>
                   <td class="text-center">{{ it.satuan|default:"Pcs" }}</td>
-                  <td class="text-end">{{ it.harga_satuan|default:it.harga|default:0|rupiah_format }}</td>
+                  <td class="text-end">{{ it.harga_satuan|default:0|rupiah_format }}</td>
                   <td class="text-end fw-bold text-dark">{{ it.subtotal|default:0|rupiah_format }}</td>
                 </tr>
               {% empty %}
@@ -653,7 +650,7 @@
           <div class="biaya-kv-item">
             <span class="biaya-kv-label">Metode Pembayaran</span>
             <div class="fw-bold text-dark mt-0.5">
-              <i class="bi bi-cash-stack text-success me-1"></i>{{ form_data.metode_pembayaran|default:form_data.metode_pencairan|default:"Transfer Rekening Bank" }}
+              <i class="bi bi-cash-stack text-success me-1"></i>{{ form_data.metode_pembayaran|default:"Transfer Rekening Bank" }}
             </div>
           </div>
         </div>
@@ -690,7 +687,7 @@
       </span>
     </div>
     <div class="biaya-card-body">
-      {% if form_data.lampiran_list %}
+      {% if form_data.lampiran_list and form_data.lampiran_list|length > 0 %}
         <div class="row g-2">
           {% for lamp in form_data.lampiran_list %}
             <div class="col-12 col-md-6">
@@ -699,7 +696,15 @@
                   <i class="bi bi-file-earmark-pdf-fill text-danger fs-4"></i>
                   <div class="text-truncate">
                     <div class="fw-bold text-dark text-truncate" style="font-size: 12.5px;">{{ lamp.nama|default:"Dokumen Lampiran" }}</div>
-                    <div class="text-muted text-truncate" style="font-size: 11px;">{{ lamp.filename|default:lamp.path|default:"File Berkas" }}</div>
+                    <div class="text-muted text-truncate" style="font-size: 11px;">
+                      {% if lamp.filename %}
+                        {{ lamp.filename }}
+                      {% elif lamp.path %}
+                        {{ lamp.path }}
+                      {% else %}
+                        <span class="text-secondary fst-italic">Tidak ada berkas file</span>
+                      {% endif %}
+                    </div>
                   </div>
                 </div>
                 {% if lamp.url %}
@@ -710,6 +715,8 @@
                   <a href="/media/{{ lamp.path }}" target="_blank" class="btn btn-sm btn-outline-primary text-nowrap px-2.5 py-1" style="font-size: 11.5px;">
                     <i class="bi bi-box-arrow-up-right me-1"></i>Buka
                   </a>
+                {% else %}
+                  <span class="badge bg-secondary-subtle text-secondary px-2 py-1" style="font-size: 10.5px;">Tanpa Berkas</span>
                 {% endif %}
               </div>
             </div>
@@ -802,7 +809,7 @@
               {% endif %}
             </div>
             <div class="small text-dark mt-0.5">
-              Total Realisasi Biaya: <strong>Rp {{ form_data.realisasi_nominal|default:form_data.total_nominal|default:"0" }}</strong>
+              Total Realisasi Biaya: <strong>Rp {{ form_data.realisasi_nominal|default:0 }}</strong>
             </div>
             {% if form_data.lampiran_realisasi %}
               <div class="mt-2 pt-2 border-top d-flex align-items-center justify-content-between">
@@ -842,7 +849,7 @@
                   <span class="badge bg-success text-white py-0.5 px-1" style="font-size: 7.5px;">SUBMITTED</span>
                 </div>
                 <div class="biaya-cursive-sign">
-                  {{ form_data.inisiator_nama|default:submission.submitter.get_full_name|default:submission.submitter.username }}
+                  {{ form_data.inisiator_nama|default:submission.submitter.username }}
                 </div>
                 <div class="biaya-seal-footer">[ DIAJUKAN PEMOHON ]</div>
               </div>
@@ -869,14 +876,14 @@
                     <img src="{{ submission.sig_stage_1.signature_image }}" alt="TTD ASM" style="max-height: 38px; max-width: 110px; object-fit: contain;">
                   {% else %}
                     <div class="biaya-cursive-sign">
-                      {{ submission.sig_stage_1.approver_name|default:form_data.nama_atasan|default:"Sales Area Manager" }}
+                      {{ submission.sig_stage_1.approver_name|default:"Sales Area Manager" }}
                     </div>
                   {% endif %}
                   <div class="biaya-seal-footer">[ PERSETUJUAN ASM SAH ]</div>
                 </div>
               </div>
               <div class="biaya-stamp-meta">
-                <div class="fw-bold text-dark text-truncate">{{ submission.sig_stage_1.approver_name|default:form_data.nama_atasan|default:"Sales Area Manager" }}</div>
+                <div class="fw-bold text-dark text-truncate">{{ submission.sig_stage_1.approver_name|default:"Sales Area Manager" }}</div>
                 <div class="text-muted" style="font-size: 9.5px;">{{ submission.sig_stage_1.stamped_at|default:"Terverifikasi Sistem" }}</div>
               </div>
             </div>
@@ -920,14 +927,14 @@
                     <img src="{{ submission.sig_stage_2.signature_image }}" alt="TTD PIC" style="max-height: 38px; max-width: 110px; object-fit: contain;">
                   {% else %}
                     <div class="biaya-cursive-sign">
-                      {{ submission.sig_stage_2.approver_name|default:form_data.nama_pic|default:"PIC Divisi Pusat" }}
+                      {{ submission.sig_stage_2.approver_name|default:"PIC Divisi Pusat" }}
                     </div>
                   {% endif %}
                   <div class="biaya-seal-footer">[ VERIFIKASI PIC SAH ]</div>
                 </div>
               </div>
               <div class="biaya-stamp-meta">
-                <div class="fw-bold text-dark text-truncate">{{ submission.sig_stage_2.approver_name|default:form_data.nama_pic|default:"PIC Divisi Pusat" }}</div>
+                <div class="fw-bold text-dark text-truncate">{{ submission.sig_stage_2.approver_name|default:"PIC Divisi Pusat" }}</div>
                 <div class="text-muted" style="font-size: 9.5px;">{{ submission.sig_stage_2.stamped_at|default:"Terverifikasi Sistem" }}</div>
               </div>
             </div>
@@ -1041,15 +1048,15 @@
                     <img src="{{ submission.sig_stage_4.signature_image }}" alt="TTD Finance" style="max-height: 38px; max-width: 110px; object-fit: contain;">
                   {% else %}
                     <div class="biaya-cursive-sign">
-                      {{ submission.sig_stage_6.approver_name|default:submission.sig_stage_4.approver_name|default:"Finance Dept" }}
+                      {% if submission.sig_stage_6.approver_name %}{{ submission.sig_stage_6.approver_name }}{% elif submission.sig_stage_4.approver_name %}{{ submission.sig_stage_4.approver_name }}{% else %}Finance Dept{% endif %}
                     </div>
                   {% endif %}
                   <div class="biaya-seal-footer">[ PPVM CLOSING SAH ]</div>
                 </div>
               </div>
               <div class="biaya-stamp-meta">
-                <div class="fw-bold text-dark text-truncate">{{ submission.sig_stage_6.approver_name|default:submission.sig_stage_4.approver_name|default:"Finance Dept" }}</div>
-                <div class="text-muted" style="font-size: 9.5px;">{{ submission.sig_stage_6.stamped_at|default:submission.sig_stage_4.stamped_at|default:"Terverifikasi Sistem" }}</div>
+                <div class="fw-bold text-dark text-truncate">{% if submission.sig_stage_6.approver_name %}{{ submission.sig_stage_6.approver_name }}{% elif submission.sig_stage_4.approver_name %}{{ submission.sig_stage_4.approver_name }}{% else %}Finance Dept{% endif %}</div>
+                <div class="text-muted" style="font-size: 9.5px;">{% if submission.sig_stage_6.stamped_at %}{{ submission.sig_stage_6.stamped_at }}{% elif submission.sig_stage_4.stamped_at %}{{ submission.sig_stage_4.stamped_at }}{% else %}Terverifikasi Sistem{% endif %}</div>
               </div>
             </div>
           {% else %}

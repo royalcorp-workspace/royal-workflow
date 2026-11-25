@@ -196,8 +196,8 @@
             el.style.display = 'none';
         });
 
-        // Hide data backing fields
-        [fLimitAnggaran, fLimitTerpakai, fSisaLimit, fTotalNominal, fItemsData, fRincianItem, fLampiranData].forEach(function (fw) {
+        // Hide data backing fields & redundant single upload
+        [fLimitAnggaran, fLimitTerpakai, fSisaLimit, fTotalNominal, fItemsData, fRincianItem, fLampiranData, fDokPendukung].forEach(function (fw) {
             if (fw) fw.style.display = 'none';
         });
 
@@ -225,6 +225,34 @@
             inputPic.style.cursor = 'not-allowed';
             inputPic.style.fontWeight = '600';
             inputPic.style.color = '#1e3a8a';
+        }
+
+        // Autofill Tanggal Transfer Dana with current date as default if field exists
+        var inputTransfer = form.querySelector('[name="tanggal_transfer_dana"]');
+        if (inputTransfer && !inputTransfer.value) {
+            var today = new Date();
+            var yyyy = today.getFullYear();
+            var mm = String(today.getMonth() + 1).padStart(2, '0');
+            var dd = String(today.getDate()).padStart(2, '0');
+            inputTransfer.value = yyyy + '-' + mm + '-' + dd;
+        }
+        var inputTanggal = form.querySelector('[name="tanggal_pengajuan"]');
+        if (inputTanggal) {
+            if (!inputTanggal.value) {
+                var today = new Date();
+                var yyyy = today.getFullYear();
+                var mm = String(today.getMonth() + 1).padStart(2, '0');
+                var dd = String(today.getDate()).padStart(2, '0');
+                inputTanggal.value = yyyy + '-' + mm + '-' + dd;
+            }
+            inputTanggal.readOnly = false;
+            inputTanggal.removeAttribute('readonly');
+            inputTanggal.removeAttribute('tabindex');
+            inputTanggal.classList.remove('field-readonly');
+            inputTanggal.style.backgroundColor = '#ffffff';
+            inputTanggal.style.cursor = 'pointer';
+            inputTanggal.style.fontWeight = '500';
+            inputTanggal.style.color = '#1e293b';
         }
 
         // =========================================================================
@@ -288,15 +316,23 @@
                         '</div>' +
                     '</div>' +
                     '<div class="col">' +
-                        '<div class="p-3 rounded border bg-primary-subtle border-primary-subtle h-100">' +
+                        '<div class="p-3 rounded border bg-primary-subtle border-primary-subtle h-100" id="box_val_estimasi">' +
                             '<div class="text-uppercase text-primary fw-bold" style="font-size: 11px; letter-spacing: 0.04em;">Nominal Pengajuan (Estimasi)</div>' +
                             '<div class="fs-4 fw-bolder text-primary mt-1 font-monospace" id="card_val_estimasi">Rp 0</div>' +
                             '<div class="text-primary-emphasis small mt-1" style="font-size: 11px;">Akumulasi Seluruh Item</div>' +
                         '</div>' +
                     '</div>' +
                 '</div>' +
-                '<div class="small text-muted mt-2 pt-1 fst-italic" style="font-size: 12px;">' +
-                    '<i class="bi bi-info-circle me-1 text-primary"></i>Informasi Limit bersifat informatif. Tidak terdapat aturan yang melarang pengajuan melebihi limit.' +
+                '<div class="mt-2.5 pt-2 border-top d-flex align-items-center justify-content-between flex-wrap gap-2" id="row_limit_flowchart">' +
+                    '<div class="d-flex align-items-center gap-2">' +
+                        '<span class="fw-semibold text-secondary small">Limit Pengajuan Mencukupi?</span>' +
+                        '<span class="badge bg-success-subtle text-success border border-success-subtle font-monospace px-2 py-1" id="badge_limit_status">' +
+                            '<i class="bi bi-check-circle-fill me-1"></i>Ya (Mencukupi)' +
+                        '</span>' +
+                    '</div>' +
+                    '<div id="limit_warning_text" class="text-danger small fw-semibold" style="display: none;">' +
+                        '<i class="bi bi-exclamation-triangle-fill me-1"></i>Informasi: Limit pengajuan saat ini tidak mencukupi (melebihi sisa plafon anggaran)!' +
+                    '</div>' +
                 '</div>' +
             '</div>';
         mainContainer.appendChild(sec2Card);
@@ -450,8 +486,6 @@
         if (inputKategori) {
             inputKategori.addEventListener('change', function () {
                 syncPicMapping();
-                // Refresh description dropdown items for rows that are not custom
-                refreshTableCategoryItems(inputKategori.value);
             });
             syncPicMapping();
         }
@@ -521,23 +555,13 @@
             var tr = document.createElement('tr');
             tr.className = 'item-pengajuan-row';
 
-            var currentCategory = inputKategori ? inputKategori.value : 'ATK';
-            var catItems = getCategoryItems(currentCategory);
-
-            var isCustom = Boolean(itemData.deskripsi && catItems.indexOf(itemData.deskripsi) === -1 && itemData.deskripsi !== 'Lainnya (Ketik Manual)');
-
-            var optionsHtml = '<option value="">-- Pilih Item --</option>';
-            catItems.forEach(function (it) {
-                var isSelected = (itemData.deskripsi === it) || (isCustom && it === 'Lainnya (Ketik Manual)');
-                optionsHtml += '<option value="' + it.replace(/"/g, '&quot;') + '"' + (isSelected ? ' selected' : '') + '>' + it + '</option>';
-            });
-
             var satuanOptionsHtml = '';
             SATUAN_OPTIONS.forEach(function (sat) {
                 var isSelected = (itemData.satuan === sat);
                 satuanOptionsHtml += '<option value="' + sat + '"' + (isSelected ? ' selected' : '') + '>' + sat + '</option>';
             });
 
+            var descVal = (itemData.deskripsi || itemData.nama || '').replace(/"/g, '&quot;');
             var qtyVal = parseInt(itemData.qty, 10) || 1;
             var hargaVal = parseInt(itemData.harga_satuan || itemData.harga, 10) || 0;
             var subtotalVal = qtyVal * hargaVal;
@@ -545,8 +569,7 @@
             tr.innerHTML = 
                 '<td class="text-center fw-bold row-index-cell">' + (index + 1) + '</td>' +
                 '<td>' +
-                    '<select class="form-select form-select-sm item-select-desc mb-1">' + optionsHtml + '</select>' +
-                    '<input type="text" class="form-control form-control-sm item-custom-desc" placeholder="Ketik nama item kebutuhan..." value="' + (isCustom ? (itemData.deskripsi || '').replace(/"/g, '&quot;') : '') + '" style="display: ' + (isCustom ? 'block' : 'none') + ';">' +
+                    '<input type="text" class="form-control form-control-sm item-input-desc" placeholder="Ketik deskripsi / nama item yang diajukan..." value="' + descVal + '" required>' +
                 '</td>' +
                 '<td>' +
                     '<input type="number" class="form-control form-control-sm text-center item-input-qty" min="1" value="' + qtyVal + '">' +
@@ -570,24 +593,17 @@
                 '</td>';
 
             // Event bindings
-            var selectDesc = tr.querySelector('.item-select-desc');
-            var inputCustom = tr.querySelector('.item-custom-desc');
+            var inputDesc = tr.querySelector('.item-input-desc');
             var inputQty = tr.querySelector('.item-input-qty');
+            var selectSatuan = tr.querySelector('.item-select-satuan');
             var inputHarga = tr.querySelector('.item-input-harga');
             var btnDelete = tr.querySelector('.btn-delete-item-row');
 
-            selectDesc.addEventListener('change', function () {
-                if (selectDesc.value === 'Lainnya (Ketik Manual)') {
-                    inputCustom.style.display = 'block';
-                    inputCustom.focus();
-                } else {
-                    inputCustom.style.display = 'none';
-                    inputCustom.value = '';
-                }
+            inputDesc.addEventListener('input', function () {
                 recalculateItemTable();
             });
 
-            inputCustom.addEventListener('input', function () {
+            selectSatuan.addEventListener('change', function () {
                 recalculateItemTable();
             });
 
@@ -611,9 +627,7 @@
                     tr.remove();
                 } else {
                     // Reset single row
-                    selectDesc.value = '';
-                    inputCustom.style.display = 'none';
-                    inputCustom.value = '';
+                    inputDesc.value = '';
                     inputQty.value = 1;
                     inputHarga.value = 0;
                 }
@@ -635,25 +649,6 @@
             }
         }
 
-        function refreshTableCategoryItems(categoryName) {
-            var catItems = getCategoryItems(categoryName);
-            var rows = tbodyItems.querySelectorAll('tr.item-pengajuan-row');
-            rows.forEach(function (row) {
-                var selectDesc = row.querySelector('.item-select-desc');
-                var inputCustom = row.querySelector('.item-custom-desc');
-                if (!selectDesc) return;
-                var currentVal = selectDesc.value;
-                var isCustom = (selectDesc.value === 'Lainnya (Ketik Manual)' || Boolean(inputCustom && inputCustom.style.display === 'block'));
-
-                var optionsHtml = '<option value="">-- Pilih Item --</option>';
-                catItems.forEach(function (it) {
-                    var isSelected = (currentVal === it) || (isCustom && it === 'Lainnya (Ketik Manual)');
-                    optionsHtml += '<option value="' + it.replace(/"/g, '&quot;') + '"' + (isSelected ? ' selected' : '') + '>' + it + '</option>';
-                });
-                selectDesc.innerHTML = optionsHtml;
-            });
-        }
-
         function recalculateItemTable() {
             var rows = tbodyItems.querySelectorAll('tr.item-pengajuan-row');
             var totalSum = 0;
@@ -661,17 +656,13 @@
             var rincianLines = [];
 
             rows.forEach(function (row, idx) {
-                var selectDesc = row.querySelector('.item-select-desc');
-                var inputCustom = row.querySelector('.item-custom-desc');
+                var inputDesc = row.querySelector('.item-input-desc');
                 var inputQty = row.querySelector('.item-input-qty');
                 var selectSatuan = row.querySelector('.item-select-satuan');
                 var inputHarga = row.querySelector('.item-input-harga');
                 var subtotalCell = row.querySelector('.item-val-subtotal');
 
-                var desc = selectDesc ? selectDesc.value : '';
-                if (desc === 'Lainnya (Ketik Manual)' && inputCustom) {
-                    desc = inputCustom.value.trim() || 'Item Kebutuhan Operasional';
-                }
+                var desc = inputDesc ? inputDesc.value.trim() : '';
                 if (!desc) {
                     desc = 'Item #' + (idx + 1);
                 }
@@ -704,6 +695,36 @@
             // Update UI
             if (lblTableTotal) lblTableTotal.textContent = formatRupiah(totalSum);
             if (cardValEstimasi) cardValEstimasi.textContent = formatRupiah(totalSum);
+
+            // Flowchart node validation: Limit pengajuan mencukupi?
+            var badgeLimit = document.getElementById('badge_limit_status');
+            var warnLimit = document.getElementById('limit_warning_text');
+            var boxEstimasi = document.getElementById('box_val_estimasi');
+            if (valSisaLimit > 0 && totalSum > valSisaLimit) {
+                if (badgeLimit) {
+                    badgeLimit.className = 'badge bg-danger-subtle text-danger border border-danger-subtle font-monospace px-2 py-1';
+                    badgeLimit.innerHTML = '<i class="bi bi-x-circle-fill me-1"></i>Tidak (Melebihi Limit)';
+                }
+                if (warnLimit) {
+                    var selisih = totalSum - valSisaLimit;
+                    warnLimit.style.display = 'block';
+                    warnLimit.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>Informasi limit tidak mencukupi: Total nominal melebihi sisa plafon sebesar ' + formatRupiah(selisih) + '.';
+                }
+                if (boxEstimasi) {
+                    boxEstimasi.className = 'p-3 rounded border bg-danger-subtle border-danger-subtle h-100';
+                }
+            } else {
+                if (badgeLimit) {
+                    badgeLimit.className = 'badge bg-success-subtle text-success border border-success-subtle font-monospace px-2 py-1';
+                    badgeLimit.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Ya (Mencukupi)';
+                }
+                if (warnLimit) {
+                    warnLimit.style.display = 'none';
+                }
+                if (boxEstimasi) {
+                    boxEstimasi.className = 'p-3 rounded border bg-primary-subtle border-primary-subtle h-100';
+                }
+            }
 
             // Sync hidden inputs
             if (inputTotalNominal) {
@@ -750,18 +771,16 @@
         var containerLampiran = document.getElementById('lampiran_rows_container');
         var btnAddLampiran = document.getElementById('btn_add_lampiran_row');
 
-        function createLampiranRow(docName, isFirstRow) {
+        function createLampiranRow(docName) {
             var row = document.createElement('div');
             row.className = 'row g-2 align-items-center lampiran-input-row mb-2';
-
-            var fileInputName = isFirstRow ? 'dokumen_pendukung' : 'lampiran_file';
 
             row.innerHTML = 
                 '<div class="col-12 col-md-5">' +
                     '<input type="text" name="lampiran_nama" class="form-control form-control-sm lampiran-name-input" placeholder="Nama Dokumen (misal: Bukti Nota, Penawaran, Kuitansi)" value="' + (docName || '').replace(/"/g, '&quot;') + '">' +
                 '</div>' +
                 '<div class="col-10 col-md-6">' +
-                    '<input type="file" name="' + fileInputName + '" class="form-control form-control-sm lampiran-file-input">' +
+                    '<input type="file" name="lampiran_file" class="form-control form-control-sm lampiran-file-input">' +
                 '</div>' +
                 '<div class="col-2 col-md-1 text-center">' +
                     '<button type="button" class="btn btn-outline-danger btn-sm p-1 btn-delete-lampiran" title="Hapus Lampiran">' +
@@ -809,13 +828,13 @@
             }
         }
 
-        // Initialize lampiran rows
+        // Initialize lampiran rows (empty by default, user fills document name freely)
         containerLampiran.innerHTML = '';
-        containerLampiran.appendChild(createLampiranRow('Dokumen Lampiran Utama', true));
+        containerLampiran.appendChild(createLampiranRow(''));
         syncLampiranData();
 
         btnAddLampiran.addEventListener('click', function () {
-            containerLampiran.appendChild(createLampiranRow('', false));
+            containerLampiran.appendChild(createLampiranRow(''));
             syncLampiranData();
         });
 

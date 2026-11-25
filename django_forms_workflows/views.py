@@ -365,6 +365,14 @@ def _process_pengajuan_biaya_data(form_data, submission_pk, request):
     if not form_data.get("tanggal_pengajuan"):
         form_data["tanggal_pengajuan"] = now.strftime("%Y-%m-%d")
 
+    if not form_data.get("tanggal_transfer_dana"):
+        form_data["tanggal_transfer_dana"] = now.strftime("%Y-%m-%d")
+
+    # Inisiator (Pemohon)
+    if request and hasattr(request, "user") and request.user.is_authenticated:
+        form_data["inisiator_username"] = request.user.username
+        form_data["inisiator_nama"] = request.user.get_full_name() or request.user.username
+
     # Mapping Kategori Barang -> PIC
     pic_map = {
         "ATK": "General Affair (GA)",
@@ -476,13 +484,19 @@ def _process_pengajuan_biaya_data(form_data, submission_pk, request):
         })
 
     if not lampiran_list and existing_lampiran:
-        lampiran_list = existing_lampiran
+        lampiran_list = [
+            it for it in existing_lampiran
+            if isinstance(it, dict) and (it.get("path") or it.get("url") or it.get("filename"))
+        ]
 
     if lampiran_list:
         form_data["lampiran_list"] = lampiran_list
         form_data["lampiran_data"] = json.dumps(lampiran_list)
         if not form_data.get("dokumen_pendukung") and lampiran_list[0].get("path"):
             form_data["dokumen_pendukung"] = lampiran_list[0]["path"]
+    else:
+        form_data["lampiran_list"] = []
+        form_data["lampiran_data"] = "[]"
 
     return form_data
 
@@ -979,6 +993,12 @@ def form_submit(request, slug):
                 signing_city = resolve_default_signing_city(user_or_none)
                 if signing_city:
                     initial_data.setdefault("kota_penandatanganan", signing_city)
+                if form_def.slug == "pengajuan-biaya":
+                    today_str = timezone.now().strftime("%Y-%m-%d")
+                    if not initial_data.get("tanggal_pengajuan"):
+                        initial_data["tanggal_pengajuan"] = today_str
+                    if not initial_data.get("tanggal_transfer_dana"):
+                        initial_data["tanggal_transfer_dana"] = today_str
                 if form_def.slug == "permohonan-kontrak":
                     initial_data["kota_penandatanganan"] = "Bandung"
                     from .company_profiles import (
@@ -1627,38 +1647,45 @@ def form_submission_hub(request, slug):
         latest_token = tokens[0] if tokens else None
         is_token_signed = (latest_token and latest_token.status == "signed") or bool(fd.get("ttd_toko_image"))
 
-        # 1. No. SPK (semi-bold)
-        spk_no = fd.get("nomor_spk") or f"SPK-{sub.id:04d}"
-        if sub.form_definition and sub.form_definition.slug == "permohonan-kontrak":
-            spk_str = str(spk_no).strip()
-            if not spk_str or "No." in spk_str or "/SK-" not in spk_str or spk_str.startswith("SPK-"):
-                try:
-                    from .company_profiles import format_official_spk_number, resolve_company_profile
-                    import re
-                    m_spk = re.search(r"(\d+)", spk_str)
-                    seq_val = int(m_spk.group(1)) if m_spk else sub.id
-                    c_prof = resolve_company_profile(form_data=fd, user=sub.user)
-                    spk_no = format_official_spk_number(
-                        nomor=seq_val,
-                        brand=fd.get("brand") or "LADY",
-                        cabang=fd.get("cabang") or "PUSAT",
-                        date_val=sub.submitted_at or sub.created_at,
-                        company_profile=c_prof,
-                        perusahaan=fd.get("perusahaan"),
-                    )
-                except Exception:
-                    pass
+        # 1. No. SPK / No. Pengajuan (semi-bold)
+        if sub.form_definition and sub.form_definition.slug == "pengajuan-biaya":
+            spk_no = fd.get("nomor_pengajuan") or f"PB-{sub.id:04d}"
+            toko = ""
+            jenis = fd.get("kategori_barang") or "Operasional"
+            cabang = fd.get("cabang") or ""
+        else:
+            spk_no = fd.get("nomor_spk") or f"SPK-{sub.id:04d}"
+            cabang = fd.get("cabang") or ""
+            if sub.form_definition and sub.form_definition.slug == "permohonan-kontrak":
+                spk_str = str(spk_no).strip()
+                if not spk_str or "No." in spk_str or "/SK-" not in spk_str or spk_str.startswith("SPK-"):
+                    try:
+                        from .company_profiles import format_official_spk_number, resolve_company_profile
+                        import re
+                        m_spk = re.search(r"(\d+)", spk_str)
+                        seq_val = int(m_spk.group(1)) if m_spk else sub.id
+                        c_prof = resolve_company_profile(form_data=fd, user=sub.user)
+                        spk_no = format_official_spk_number(
+                            nomor=seq_val,
+                            brand=fd.get("brand") or "LADY",
+                            cabang=fd.get("cabang") or "PUSAT",
+                            date_val=sub.submitted_at or sub.created_at,
+                            company_profile=c_prof,
+                            perusahaan=fd.get("perusahaan"),
+                        )
+                    except Exception:
+                        pass
 
-        # 2. Toko / Dealer
-        toko = fd.get("nama_toko") or fd.get("kode_customer_jde") or "—"
+            # 2. Toko / Dealer
+            toko = fd.get("nama_toko") or fd.get("kode_customer_jde") or "—"
 
-        # 3. Jenis (Baru / Perpanjangan)
-        jenis = fd.get("jenis_kontrak")
-        if not jenis:
-            if fd.get("chk_lampiran_spk_lalu") or "perpanjangan" in str(fd.get("info_kontrak_lama", "")).lower():
-                jenis = "Perpanjangan"
-            else:
-                jenis = "Baru"
+            # 3. Jenis (Baru / Perpanjangan)
+            jenis = fd.get("jenis_kontrak")
+            if not jenis:
+                if fd.get("chk_lampiran_spk_lalu") or "perpanjangan" in str(fd.get("info_kontrak_lama", "")).lower():
+                    jenis = "Perpanjangan"
+                else:
+                    jenis = "Baru"
 
         # 4. Tanggal Diajukan
         tanggal = sub.submitted_at or sub.created_at
@@ -1786,6 +1813,7 @@ def form_submission_hub(request, slug):
             "spk_no": spk_no,
             "toko": toko,
             "jenis": jenis,
+            "cabang": cabang,
             "tanggal": tanggal,
             "stage_desc": stage_desc,
             "status_label": status_label,
@@ -2753,6 +2781,8 @@ def approve_submission(request, task_id):
 
     is_assignee = task.assigned_to == request.user or (
         task.assigned_group and task.assigned_group in request.user.groups.all()
+    ) or (
+        task.workflow_stage and task.workflow_stage.order == 5 and submission.submitter == request.user
     )
     is_admin = request.user.groups.filter(id__in=form_def.admin_groups.all()).exists()
     is_reviewer = request.user.groups.filter(
@@ -6001,7 +6031,81 @@ def _resolve_form_data_urls(form_data):
         else:
             resolved["items_list"] = []
 
+    # Sanitize each item in items_list to guarantee keys exist
+    if "items_list" in resolved and isinstance(resolved["items_list"], list):
+        clean_items = []
+        for it in resolved["items_list"]:
+            if isinstance(it, dict):
+                c_it = dict(it)
+                d_val = str(c_it.get("deskripsi") or c_it.get("nama") or "Item").strip()
+                c_it["deskripsi"] = d_val
+                c_it["nama"] = d_val
+                c_it["qty"] = c_it.get("qty") or 1
+                c_it["satuan"] = c_it.get("satuan") or "Pcs"
+                h_val = c_it.get("harga_satuan") if c_it.get("harga_satuan") is not None else (c_it.get("harga") or 0)
+                c_it["harga_satuan"] = h_val
+                c_it["harga"] = h_val
+                try:
+                    c_it["subtotal"] = c_it.get("subtotal") if c_it.get("subtotal") is not None else (float(c_it["qty"]) * float(h_val))
+                except Exception:
+                    c_it["subtotal"] = 0
+                clean_items.append(c_it)
+            else:
+                clean_items.append(it)
+        resolved["items_list"] = clean_items
+
+    # Normalize and resolve multi-attachment lampiran_list safely to prevent VariableDoesNotExist
+    raw_lamp = form_data.get("lampiran_list")
+    if not raw_lamp and form_data.get("lampiran_data"):
+        raw_lamp = form_data.get("lampiran_data")
+    if isinstance(raw_lamp, str):
+        try:
+            raw_lamp = json.loads(raw_lamp) if raw_lamp.strip() not in ("", "[]") else []
+        except Exception:
+            raw_lamp = []
+    if isinstance(raw_lamp, list):
+        sanitized_lamp = []
+        for item in raw_lamp:
+            if isinstance(item, dict):
+                c = dict(item)
+                path_val = str(c.get("path") or "").strip()
+                filename_val = str(c.get("filename") or (path_val.rsplit("/", 1)[-1] if path_val else "")).strip()
+                url_val = get_file_url(path_val) if path_val else (c.get("url") or "")
+                nama_val = str(c.get("nama") or filename_val or "Dokumen Lampiran").strip()
+                c["nama"] = nama_val
+                c["filename"] = filename_val
+                c["path"] = path_val
+                c["url"] = url_val
+                sanitized_lamp.append(c)
+            elif isinstance(item, str) and item.strip():
+                p = item.strip()
+                fname = p.rsplit("/", 1)[-1]
+                sanitized_lamp.append({
+                    "nama": fname,
+                    "filename": fname,
+                    "path": p,
+                    "url": get_file_url(p) or f"/media/{p}",
+                })
+        resolved["lampiran_list"] = sanitized_lamp
+    else:
+        resolved.setdefault("lampiran_list", [])
+
     resolved.setdefault("e_signatures", resolved.get("e_signatures") or {})
+    resolved.setdefault("kategori_barang", resolved.get("kategori_biaya") or "ATK")
+    resolved.setdefault("kategori_biaya", resolved.get("kategori_barang") or "ATK")
+    resolved.setdefault("pic", resolved.get("nama_pic") or "General Affair (GA)")
+    resolved.setdefault("nama_pic", resolved.get("pic") or "General Affair (GA)")
+    resolved.setdefault("catatan_pengajuan", resolved.get("catatan_justifikasi") or "")
+    resolved.setdefault("catatan_justifikasi", resolved.get("catatan_pengajuan") or "")
+    resolved.setdefault("metode_pembayaran", resolved.get("metode_pencairan") or "Transfer Rekening Bank")
+    resolved.setdefault("metode_pencairan", resolved.get("metode_pembayaran") or "Transfer Rekening Bank")
+    resolved.setdefault("nama_bank", "")
+    resolved.setdefault("nomor_rekening", "")
+    resolved.setdefault("cabang", "Kantor Pusat / Holding")
+    resolved.setdefault("nomor_pengajuan", "")
+    resolved.setdefault("tanggal_pengajuan", "")
+    resolved.setdefault("tanggal_transfer_dana", timezone.now().strftime("%Y-%m-%d"))
+    resolved.setdefault("realisasi_nominal", 0)
     return resolved
 
 
