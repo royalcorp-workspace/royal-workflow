@@ -6,7 +6,7 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
-<link rel="stylesheet" href="{% static 'css/enterprise-tables.css' %}">
+<link rel="stylesheet" href="{% static 'css/enterprise-tables.css' %}?v=2.3">
 {% endblock %}
 
 {% block content %}
@@ -71,19 +71,19 @@
         <thead>
           <tr>
             {% if any_exportable or any_pdf_exportable or can_push_notifications %}
-            <th class="text-center" style="width: 44px;">
+            <th class="text-center" style="width: 38px;">
               <input type="checkbox" id="selectAll" class="form-check-input" title="Select all on page">
             </th>
             {% endif %}
-            <th style="min-width: 220px;">NO. SPK</th>
-            <th style="min-width: 170px;">Submitter</th>
-            <th style="min-width: 220px;">Current Step</th>
-            <th style="min-width: 160px;">Assigned Group / Role</th>
-            <th style="min-width: 150px;">Submitted Date</th>
+            <th style="width: 26%;">DOKUMEN / NO. PENGAJUAN</th>
+            <th style="width: 17%;">SUBMITTER</th>
+            <th style="width: 19%;">CURRENT STEP</th>
+            <th style="width: 15%;">ASSIGNED ROLE</th>
+            <th style="width: 13%;">SUBMITTED DATE</th>
             {% for field in form_fields %}
             <th class="extra-form-col" data-field="{{ field.field_name }}">{{ field.field_label }}</th>
             {% endfor %}
-            <th class="text-end" style="min-width: 160px; width: 170px;">Actions</th>
+            <th class="text-end" style="width: 10%; min-width: 90px;">ACTIONS</th>
           </tr>
         </thead>
         <tbody></tbody>

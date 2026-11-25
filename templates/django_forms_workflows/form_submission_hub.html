@@ -549,12 +549,24 @@
   <div class="hub-page-header d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3">
     <div>
       <div class="hub-category-meta">
+        {% if form_def.slug == 'pengajuan-biaya' %}
+        <span class="meta-badge">Operasional</span>
+        <span>•</span>
+        <span>Biaya &amp; Anggaran Cabang</span>
+        {% else %}
         <span class="meta-badge">Formulir SPK</span>
         <span>•</span>
         <span>Sales &amp; Marketing</span>
+        {% endif %}
       </div>
       <h1 class="hub-page-title">{{ form_def.name }}</h1>
-      <p class="hub-page-subtitle">Kelola dan pantau riwayat serta status pengajuan kontrak kerjasama toko/dealer ritel.</p>
+      <p class="hub-page-subtitle">
+        {% if form_def.slug == 'pengajuan-biaya' %}
+        Kelola dan pantau riwayat serta status pengajuan biaya dan anggaran operasional cabang.
+        {% else %}
+        Kelola dan pantau riwayat serta status pengajuan kontrak kerjasama toko/dealer ritel.
+        {% endif %}
+      </p>
     </div>
     {% if can_submit %}
     <div class="align-self-stretch align-self-md-auto">
@@ -579,9 +591,9 @@
                  name="q"
                  id="hubSearchInput"
                  class="form-control filter-search-input"
-                 placeholder="Cari no. SPK, brand, toko, diajukan oleh..."
+                 placeholder="{% if form_def.slug == 'pengajuan-biaya' %}Cari no. pengajuan, kategori, cabang, diajukan oleh...{% else %}Cari no. SPK, brand, toko, diajukan oleh...{% endif %}"
                  value="{{ search_query }}"
-                 aria-label="Cari no. SPK, brand, toko, atau pemohon"
+                 aria-label="Cari pengajuan"
                  autocomplete="off">
           <button type="button" class="btn-search-clear" id="hubSearchClear" style="display: {% if search_query %}inline-flex{% else %}none{% endif %};" title="Hapus kata kunci pencarian" aria-label="Hapus kata kunci pencarian">
             <i class="bi bi-x-circle-fill"></i>
@@ -622,18 +634,78 @@
       <table class="table enterprise-table" id="submissionsUnifiedTable">
         <thead>
           <tr>
+            {% if form_def.slug == 'pengajuan-biaya' %}
+            <th scope="col" style="width: 32%;">NO. PENGAJUAN</th>
+            <th scope="col" style="width: 18%;">KATEGORI</th>
+            <th scope="col" style="width: 20%;">TANGGAL DIAJUKAN</th>
+            <th scope="col" style="width: 18%;">STATUS</th>
+            <th scope="col" style="width: 12%; text-align: right;">AKSI</th>
+            {% else %}
             <th scope="col" style="width: 20%;">NO. SPK</th>
             <th scope="col" style="width: 26%;">TOKO / DEALER</th>
             <th scope="col" style="width: 10%;">JENIS</th>
             <th scope="col" style="width: 16%;">TANGGAL DIAJUKAN</th>
             <th scope="col" style="width: 20%;">STATUS</th>
             <th scope="col" style="width: 8%; text-align: right;">AKSI</th>
+            {% endif %}
           </tr>
         </thead>
         <tbody>
           {% if rows %}
             {% for r in rows %}
             <tr>
+              {% if form_def.slug == 'pengajuan-biaya' %}
+              <td>
+                <span class="spk-number-cell">{{ r.spk_no }}</span>
+                {% if r.submission.submitter %}
+                <div class="store-submitter-meta">Diajukan oleh: {{ r.submission.submitter.get_full_name|default:r.submission.submitter.username }}</div>
+                {% endif %}
+              </td>
+              <td>
+                <span class="badge bg-light text-dark border px-2 py-1 font-monospace" style="font-size: 11.5px;">
+                  {{ r.jenis|default:"Operasional" }}
+                </span>
+                {% if r.cabang %}
+                <div class="text-muted small mt-1" style="font-size: 11px;">Cabang {{ r.cabang }}</div>
+                {% endif %}
+              </td>
+              <td>
+                <div class="text-dark fw-medium">{{ r.tanggal|date:"d M Y" }}</div>
+                <div class="text-muted small" style="font-size: 11px;">{{ r.tanggal|date:"H:i" }} WIB</div>
+              </td>
+              <td>
+                <span class="badge-status {{ r.badge_class }}">
+                  <span class="badge-status-dot"></span>
+                  <span>{{ r.status_label }}</span>
+                </span>
+              </td>
+              <td style="text-align: right;">
+                <div class="d-inline-flex align-items-center justify-content-end gap-1">
+                  <a href="{{ r.action_url }}" 
+                     class="btn-action-view {% if r.action_is_review %}action-review{% elif r.status_raw == 'draft' %}action-draft{% else %}action-detail{% endif %}"
+                     title="{{ r.action_label }}">
+                    {% if r.action_is_review %}
+                      <i class="bi bi-check2-circle"></i>
+                    {% elif r.status_raw == 'draft' %}
+                      <i class="bi bi-pencil-square"></i>
+                    {% else %}
+                      <i class="bi bi-eye"></i>
+                    {% endif %}
+                    <span>{{ r.action_label }}</span>
+                  </a>
+                  {% if r.status_raw == 'draft' and r.submission.submitter_id == request.user.id %}
+                  <button type="button" 
+                          class="btn-action-discard js-btn-discard-draft" 
+                          data-submission-id="{{ r.submission.id }}" 
+                          data-spk-no="{{ r.spk_no }}" 
+                          data-toko="{{ r.toko }}"
+                          title="Hapus Draf">
+                    <i class="bi bi-trash3"></i>
+                  </button>
+                  {% endif %}
+                </div>
+              </td>
+              {% else %}
               <td>
                 <span class="spk-number-cell">{{ r.spk_no }}</span>
               </td>
@@ -687,11 +759,12 @@
                   {% endif %}
                 </div>
               </td>
+              {% endif %}
             </tr>
             {% endfor %}
           {% else %}
             <tr>
-              <td colspan="6" class="p-0">
+              <td colspan="{% if form_def.slug == 'pengajuan-biaya' %}5{% else %}6{% endif %}" class="p-0">
                 <div class="enterprise-empty-state">
                   <div class="empty-icon-minimal">
                     <i class="bi bi-file-earmark-text"></i>
@@ -807,10 +880,12 @@
           Apakah Anda yakin ingin menghapus draf pengajuan ini secara permanen? Tindakan ini tidak dapat dibatalkan.
         </p>
         <div class="p-3 bg-light rounded border mb-1">
-          <div class="text-muted small" style="font-size: 11px;">NOMOR DRAF / SPK</div>
+          <div class="text-muted small" style="font-size: 11px;">{% if form_def.slug == 'pengajuan-biaya' %}NOMOR DRAF / PENGAJUAN{% else %}NOMOR DRAF / SPK{% endif %}</div>
           <div class="fw-bold text-dark font-monospace small" id="hubModalSpkNo">—</div>
+          {% if form_def.slug != 'pengajuan-biaya' %}
           <div class="text-muted small mt-2" style="font-size: 11px;">TOKO / DEALER</div>
           <div class="fw-semibold text-dark small" id="hubModalToko">—</div>
+          {% endif %}
         </div>
       </div>
       <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-end gap-2" style="border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">

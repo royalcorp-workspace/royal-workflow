@@ -233,6 +233,28 @@ table.dataTable.no-footer,
   border-bottom: none !important;
 }
 
+/* Approvals Inbox: fit full width without horizontal scrolling on desktop */
+.approvals-container .table-card {
+  width: 100%;
+  overflow: hidden;
+}
+
+#approvalsTable,
+#completedTable {
+  width: 100% !important;
+  table-layout: auto;
+}
+
+@media (min-width: 992px) {
+  .approvals-container .table-responsive {
+    overflow-x: hidden !important;
+  }
+  #approvalsTable,
+  #completedTable {
+    width: 100% !important;
+  }
+}
+
 #approvalsTable thead th,
 #submissionsTable thead th,
 #completedTable thead th,
