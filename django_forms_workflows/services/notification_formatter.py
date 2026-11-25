@@ -12,9 +12,11 @@ Standardizes email and Telegram notifications according to the enterprise templa
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 from django.conf import settings
 from django.urls import reverse
+from django.utils import timezone
 
 
 def _resolve_base_url() -> str:
@@ -243,3 +245,149 @@ def build_standard_notification_context(submission, event: str, task=None, appro
         "judul_notifikasi": wording["judul_notifikasi"],
         "emoji": wording["emoji"],
     }
+
+
+_STYLE_BLOCK_RE = re.compile(r"(<style\b[^>]*>.*?</style>)", re.DOTALL | re.IGNORECASE)
+_SINGLE_BRACE_RE = re.compile(r"(?<!\{)\{([a-zA-Z_][a-zA-Z0-9_]*)\}(?!\})")
+
+
+def _stringify_placeholder_value(val: Any) -> str:
+    """Safely convert a form_data or system value to a string for email templates."""
+    if val is None:
+        return ""
+    if isinstance(val, list):
+        return ", ".join(str(item) for item in val if item is not None)
+    if isinstance(val, dict):
+        return str(val.get("label") or val.get("name") or val.get("value") or "")
+    return str(val)
+
+
+def build_notification_placeholders(
+    submission,
+    task=None,
+    approver=None,
+    comments: str = "",
+    action_url: str = "",
+    site_name: str = "",
+) -> dict[str, str]:
+    """
+    Build a unified flat dictionary of string placeholders from submission.form_data,
+    workflow/task metadata, and system attributes for safe interpolation into
+    both email subject_template and body_template strings.
+    """
+    form_data = getattr(submission, "form_data", None) or {}
+    if not isinstance(form_data, dict):
+        form_data = {}
+
+    placeholders: dict[str, str] = {}
+    for k, v in form_data.items():
+        placeholders[str(k)] = _stringify_placeholder_value(v)
+
+    # Smart aliases & fallbacks for common contract & workflow fields
+    nama_toko = (
+        placeholders.get("nama_toko")
+        or placeholders.get("nama_pemilik")
+        or placeholders.get("kode_customer_jde")
+        or "Mitra Toko"
+    )
+    placeholders["nama_toko"] = nama_toko
+    placeholders.setdefault("nama_pemilik", placeholders.get("nama_pemilik") or nama_toko)
+
+    sub_id_str = str(getattr(submission, "id", "") or "")
+    nomor_spk = (
+        placeholders.get("nomor_spk")
+        or placeholders.get("nomor_pengajuan")
+        or (f"#{sub_id_str}" if sub_id_str else "")
+    )
+    placeholders["nomor_spk"] = nomor_spk
+    placeholders.setdefault("nomor_pengajuan", nomor_spk)
+
+    # Date formatting
+    dt_val = getattr(submission, "submitted_at", None) or getattr(submission, "created_at", None)
+    if dt_val:
+        try:
+            dt_local = timezone.localtime(dt_val)
+            tanggal_str = dt_local.strftime("%d %b %Y %H:%M")
+        except Exception:
+            tanggal_str = str(dt_val)
+    else:
+        tanggal_str = ""
+    placeholders.setdefault("tanggal_pengajuan", tanggal_str)
+    placeholders.setdefault("submitted_at", tanggal_str)
+
+    # Form & submission system attributes
+    fdef = getattr(submission, "form_definition", None)
+    placeholders["form_name"] = str(getattr(fdef, "name", "") or "")
+    placeholders["form_slug"] = str(getattr(fdef, "slug", "") or "")
+    placeholders["submission_id"] = sub_id_str
+    placeholders["status"] = str(getattr(submission, "status", "") or "")
+    try:
+        placeholders["status_display"] = str(submission.get_status_display())
+    except Exception:
+        placeholders["status_display"] = placeholders["status"]
+
+    # Submitter info
+    submitter = getattr(submission, "submitter", None)
+    if submitter:
+        sub_name = getattr(submitter, "get_full_name", lambda: "")() or getattr(submitter, "username", "")
+        sub_email = getattr(submitter, "email", "") or ""
+    else:
+        sub_name = placeholders.get("inisiator_nama") or "Inisiator"
+        sub_email = ""
+    placeholders["submitter"] = sub_name
+    placeholders["submitter_name"] = sub_name
+    placeholders["submitter_email"] = sub_email
+
+    # Stage & task info
+    stage_name = ""
+    task_comments = ""
+    if task:
+        ws = getattr(task, "workflow_stage", None)
+        stage_name = (getattr(ws, "name", None) or getattr(task, "step_name", "") or "")
+        task_comments = getattr(task, "comments", "") or ""
+    placeholders["stage_name"] = str(stage_name)
+    placeholders["comments"] = str(comments or task_comments or "")
+
+    # Approver info
+    if approver:
+        app_name = getattr(approver, "get_full_name", lambda: "")() or getattr(approver, "username", "")
+    else:
+        app_name = ""
+    placeholders["approver"] = str(app_name)
+    placeholders["approver_name"] = str(app_name)
+
+    # URLs & site name
+    resolved_url = action_url or get_notification_action_url(submission, task=task)
+    placeholders["action_url"] = resolved_url
+    placeholders["approval_url"] = resolved_url
+    placeholders["submission_url"] = resolved_url
+    if site_name:
+        placeholders["site_name"] = site_name
+    else:
+        fw_settings = getattr(settings, "FORMS_WORKFLOWS", {})
+        placeholders["site_name"] = fw_settings.get("SITE_NAME", "Royal Workflow")
+
+    return placeholders
+
+
+def interpolate_single_brace_placeholders(text: str, placeholders: dict[str, str]) -> str:
+    """
+    Safely replace single-brace ``{identifier}`` placeholders in ``text`` using
+    ``placeholders``, while:
+    1. Leaving ``<style>...</style>`` CSS blocks untouched.
+    2. Leaving double-brace ``{{ ... }}`` Django template tags untouched.
+    3. Replacing any missing/unknown ``{identifier}`` with ``""`` so no raw
+       placeholder ever leaks to an email recipient.
+    """
+    if not text:
+        return ""
+
+    def _replace_match(match: re.Match) -> str:
+        key = match.group(1)
+        return str(placeholders.get(key, ""))
+
+    parts = _STYLE_BLOCK_RE.split(text)
+    for i in range(0, len(parts), 2):
+        parts[i] = _SINGLE_BRACE_RE.sub(_replace_match, parts[i])
+    return "".join(parts)
+

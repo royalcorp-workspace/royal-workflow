@@ -1449,13 +1449,30 @@ def form_submission_hub(request, slug):
     user = request.user
     user_groups = user.groups.all()
 
-    # Determine access scope: Staff/superusers/reviewers see all, regular users see their own
+    # Determine access scope: Staff/superusers/reviewers/workflow approvers see all, regular users see their own
+    is_contract_role = form_def.slug == "permohonan-kontrak" and user_groups.filter(
+        name__in=[
+            "Sales Support",
+            "Area Sales Manager (L1)",
+            "Regional Sales Operation Manager (L2)",
+            "Direksi",
+        ]
+    ).exists()
+    is_stage_approver = form_def.workflows.filter(stages__approval_groups__in=user_groups).exists()
+    has_assigned_tasks = ApprovalTask.objects.filter(
+        submission__form_definition=form_def
+    ).filter(
+        models.Q(assigned_to=user) | models.Q(assigned_group__in=user_groups)
+    ).exists()
+
     is_privileged = (
         user.is_superuser
         or user.is_staff
         or form_def.reviewer_groups.filter(id__in=user_groups).exists()
         or form_def.admin_groups.filter(id__in=user_groups).exists()
-        or (form_def.slug == "permohonan-kontrak" and user_groups.filter(name="Sales Support").exists())
+        or is_contract_role
+        or is_stage_approver
+        or has_assigned_tasks
     )
 
     if is_privileged:
@@ -1474,12 +1491,8 @@ def form_submission_hub(request, slug):
     search_query = request.GET.get("q", "").strip()
     if search_query:
         submissions_qs = submissions_qs.filter(
-            models.Q(form_data__icontains=search_query)
-            | models.Q(id__icontains=search_query)
-            | models.Q(submitter__username__icontains=search_query)
-            | models.Q(submitter__first_name__icontains=search_query)
-            | models.Q(submitter__last_name__icontains=search_query)
-        )
+            _build_submission_search_q(search_query, form_def.slug)
+        ).distinct()
 
     # Filter Bar: Dropdown filter stage alur statis lurus (SPK Kontrak Toko)
     stage_filter = request.GET.get("stage_filter", "").strip().lower()
@@ -2215,60 +2228,218 @@ def submission_detail(request, submission_id):
     )
 
 
-@login_required
-@require_http_methods(["POST"])
-def push_stage_notification(request, submission_id):
-    """
-    Manual push notification trigger for Sales Support to remind the currently active stage approver / store.
-    Strictly restricted to users in Sales Support group or Superusers.
-    """
-    submission = get_object_or_404(FormSubmission, id=submission_id)
+def _user_can_push_notifications(user) -> bool:
+    """Return True if user is Superuser, Staff, or belongs to Sales Support."""
+    if not user or not user.is_authenticated:
+        return False
+    return (
+        user.is_superuser
+        or user.is_staff
+        or user.groups.filter(name="Sales Support").exists()
+    )
+
+
+def _is_ajax_request(request) -> bool:
+    return (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or "application/json" in (request.headers.get("Accept") or "")
+    )
+
+
+def _execute_single_push_notification(submission, user, client_ip: str, custom_note: str = "") -> dict:
+    """Shared helper to validate, enforce 60s cooldown, send reminder, and record AuditLog."""
+    from django.core.cache import cache
+    from .services.contract_notification_service import send_manual_stage_reminder
+
     form_def = submission.form_definition
-
     if not form_def or form_def.slug != "permohonan-kontrak":
-        return HttpResponseForbidden("Fitur ini hanya tersedia untuk formulir Kontrak Toko.")
-
-    is_sales_support = request.user.is_superuser or request.user.groups.filter(name="Sales Support").exists()
-    if not is_sales_support:
-        return HttpResponseForbidden("Hanya Sales Support atau Administrator yang berhak mengirimkan push notifikasi pengingat.")
+        return {"success": False, "status_code": 400, "message": "Fitur ini hanya tersedia untuk formulir Kontrak Toko."}
 
     if submission.status not in ["pending_approval", "submitted"]:
-        messages.error(request, "Push notifikasi hanya dapat dikirimkan untuk pengajuan yang sedang aktif berjalan.")
-        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+        return {"success": False, "status_code": 400, "message": "Push notifikasi hanya dapat dikirimkan untuk pengajuan yang sedang aktif berjalan."}
 
-    # Rate limiting cooldown check (60 seconds)
-    from django.core.cache import cache
     cooldown_key = f"push_notif_cooldown_{submission.id}"
     if cache.get(cooldown_key):
-        messages.warning(
-            request,
-            "Pengingat baru saja dikirimkan. Mohon tunggu 60 detik sebelum mengirimkan push notifikasi berikutnya.",
-        )
-        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+        return {
+            "success": False,
+            "cooldown": True,
+            "status_code": 429,
+            "message": "Pengingat baru saja dikirimkan. Mohon tunggu 60 detik sebelum mengirimkan push notifikasi berikutnya.",
+        }
 
-    from .services.contract_notification_service import send_manual_stage_reminder
-    result = send_manual_stage_reminder(submission, request.user)
-
+    result = send_manual_stage_reminder(submission, user, custom_note=custom_note)
     if result.get("success"):
         cache.set(cooldown_key, timezone.now().isoformat(), timeout=60)
         AuditLog.objects.create(
             action="comment",
             object_type="FormSubmission",
             object_id=submission.id,
-            user=request.user,
-            user_ip=get_client_ip(request),
+            user=user,
+            user_ip=client_ip,
             comments=(
-                f"Sales Support ({request.user.get_full_name() or request.user.username}) "
+                f"Sales Support ({user.get_full_name() or user.username}) "
                 f"mengirimkan pengingat manual ke {result.get('stage_label', 'Stage Aktif')} "
                 f"({result.get('recipient_summary', '-')})."
             ),
-            changes={"notification_pushed": True, "target": result.get("stage_label")},
+            changes={
+                "notification_pushed": True,
+                "target": result.get("stage_label"),
+                "custom_note": custom_note or "",
+            },
         )
-        messages.success(request, result["message"])
+        return {
+            "success": True,
+            "status_code": 200,
+            "message": result["message"],
+            "stage_label": result.get("stage_label", ""),
+            "recipient_summary": result.get("recipient_summary", ""),
+            "recipient_emails": result.get("recipient_emails", []),
+        }
+
+    return {
+        "success": False,
+        "status_code": 400,
+        "message": result.get("message", "Gagal mengirimkan push notifikasi pengingat."),
+    }
+
+
+@login_required
+@require_http_methods(["POST"])
+def push_stage_notification(request, submission_id):
+    """
+    Manual push notification trigger for Sales Support to remind the currently active stage approver / store.
+    Supports both traditional form redirect (detail page) and AJAX JSON response (Approvals Inbox).
+    """
+    submission = get_object_or_404(FormSubmission, id=submission_id)
+    is_ajax = _is_ajax_request(request)
+
+    if not _user_can_push_notifications(request.user):
+        msg = "Hanya Sales Support atau Administrator yang berhak mengirimkan push notifikasi pengingat."
+        return JsonResponse({"success": False, "message": msg}, status=403) if is_ajax else HttpResponseForbidden(msg)
+
+    custom_note = ""
+    if request.content_type == "application/json":
+        try:
+            body_data = json.loads(request.body.decode("utf-8") or "{}")
+            custom_note = (body_data.get("note") or "").strip()
+        except Exception:
+            custom_note = ""
     else:
-        messages.error(request, result.get("message", "Gagal mengirimkan push notifikasi pengingat."))
+        custom_note = (request.POST.get("note") or "").strip()
+
+    res = _execute_single_push_notification(
+        submission, request.user, get_client_ip(request), custom_note=custom_note
+    )
+
+    if is_ajax:
+        return JsonResponse(res, status=res.get("status_code", 200))
+
+    if res.get("success"):
+        messages.success(request, res["message"])
+    elif res.get("cooldown"):
+        messages.warning(request, res["message"])
+    else:
+        messages.error(request, res.get("message", "Gagal mengirimkan push notifikasi pengingat."))
 
     return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+
+@login_required
+@require_http_methods(["POST"])
+def bulk_push_stage_notifications(request):
+    """
+    Bulk manual push notification trigger from Approvals Inbox floating selection bar.
+    Processes multiple submission_ids safely, skipping invalid/completed/cooldown items.
+    """
+    if not _user_can_push_notifications(request.user):
+        return JsonResponse(
+            {"success": False, "message": "Hanya Sales Support atau Administrator yang berhak mengirimkan push notifikasi."},
+            status=403,
+        )
+
+    raw_ids = []
+    custom_note = ""
+    if request.content_type == "application/json":
+        try:
+            body_data = json.loads(request.body.decode("utf-8") or "{}")
+            raw_ids = body_data.get("submission_ids") or []
+            custom_note = (body_data.get("note") or "").strip()
+        except Exception:
+            raw_ids = []
+    else:
+        raw_ids = request.POST.getlist("submission_ids")
+        custom_note = (request.POST.get("note") or "").strip()
+
+    # Deduplicate while preserving order
+    unique_ids = []
+    seen = set()
+    for val in raw_ids:
+        try:
+            sid = int(val)
+            if sid not in seen:
+                seen.add(sid)
+                unique_ids.append(sid)
+        except (TypeError, ValueError):
+            continue
+
+    if not unique_ids:
+        return JsonResponse(
+            {"success": False, "message": "Pilih minimal 1 pengajuan untuk dikirimkan push notifikasi."},
+            status=400,
+        )
+
+    submissions_map = {
+        s.id: s
+        for s in FormSubmission.objects.select_related("form_definition", "submitter")
+        .prefetch_related("approval_tasks", "signing_tokens")
+        .filter(id__in=unique_ids)
+    }
+
+    client_ip = get_client_ip(request)
+    sent_count = 0
+    skipped_count = 0
+    details = []
+
+    for sid in unique_ids:
+        sub = submissions_map.get(sid)
+        if not sub:
+            skipped_count += 1
+            details.append({"submission_id": sid, "success": False, "reason": "Pengajuan tidak ditemukan."})
+            continue
+
+        res = _execute_single_push_notification(sub, request.user, client_ip, custom_note=custom_note)
+        if res.get("success"):
+            sent_count += 1
+            details.append({
+                "submission_id": sid,
+                "success": True,
+                "stage_label": res.get("stage_label", ""),
+                "recipient_summary": res.get("recipient_summary", ""),
+            })
+        else:
+            skipped_count += 1
+            details.append({
+                "submission_id": sid,
+                "success": False,
+                "reason": res.get("message", "Dilewati."),
+            })
+
+    total_selected = len(unique_ids)
+    if sent_count > 0:
+        summary_msg = f"Berhasil mengirim pengingat untuk {sent_count} dari {total_selected} pengajuan terpilih."
+        if skipped_count > 0:
+            summary_msg += f" ({skipped_count} item dilewati karena tidak aktif/cooldown)."
+    else:
+        summary_msg = f"Tidak ada pengingat yang terkirim ({skipped_count} dari {total_selected} item dilewati karena tidak aktif/cooldown)."
+
+    return JsonResponse({
+        "success": sent_count > 0,
+        "sent_count": sent_count,
+        "skipped_count": skipped_count,
+        "total_selected": total_selected,
+        "message": summary_msg,
+        "details": details,
+    })
 
 
 @login_required
@@ -2520,6 +2691,7 @@ def approval_inbox(request):
             "form_fields": form_fields,
             "any_exportable": any_exportable,
             "any_pdf_exportable": any_pdf_exportable,
+            "can_push_notifications": _user_can_push_notifications(request.user),
             "default_sort_col": default_sort_col,
             # Role-scope filter (None or "reviewing" or "overseeing");
             # available_role_filters is the set the user has access to so
@@ -3818,6 +3990,7 @@ def completed_approvals(request):
             "status_filter": status_filter,
             "any_exportable": any_exportable,
             "any_pdf_exportable": any_pdf_exportable,
+            "can_push_notifications": _user_can_push_notifications(request.user),
             "form_fields": form_fields,
             "default_sort_col": default_sort_col,
         },
@@ -4684,6 +4857,167 @@ def _form_data_search_q(form_slug, search, field_prefix="form_data"):
     q = models.Q()
     for fn in field_names:
         q |= models.Q(**{f"{field_prefix}__{fn}__icontains": search})
+    return q
+
+
+_SEARCH_FORM_DATA_KEYS = (
+    "nomor_spk",
+    "brand",
+    "kota",
+    "cabang",
+    "area",
+    "perusahaan",
+    "nama_toko",
+    "nama_dealer",
+    "nama_pemilik",
+    "kode_customer_jde",
+    "jenis_pengajuan",
+    "jenis_kontrak",
+    "nomor_pengajuan",
+    "nama_kegiatan",
+)
+
+
+def _resolve_search_user_and_group_ids(search: str) -> tuple[list[int], list[int]]:
+    """Pre-resolve matching User IDs (including Concat full name) and Group IDs
+    (matching group name or containing any matched PIC user) to avoid expensive
+    M2M joins on FormSubmission/ApprovalTask querysets."""
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.models import Group
+    from django.db.models import Value
+    from django.db.models.functions import Concat
+
+    user_model = get_user_model()
+    matching_user_ids = list(
+        user_model.objects.annotate(
+            full_name=Concat("first_name", Value(" "), "last_name")
+        )
+        .filter(
+            models.Q(username__icontains=search)
+            | models.Q(first_name__icontains=search)
+            | models.Q(last_name__icontains=search)
+            | models.Q(full_name__icontains=search)
+        )
+        .values_list("id", flat=True)
+    )
+    group_q = models.Q(name__icontains=search)
+    if matching_user_ids:
+        group_q |= models.Q(user__id__in=matching_user_ids)
+    matching_group_ids = list(
+        Group.objects.filter(group_q).values_list("id", flat=True).distinct()
+    )
+    return matching_user_ids, matching_group_ids
+
+
+def _build_form_data_keys_q(search: str, field_prefix: str = "form_data") -> models.Q:
+    """Build Q across standard SPK/toko/pengajuan JSON keys plus generic fallback."""
+    q = models.Q()
+    for key in _SEARCH_FORM_DATA_KEYS:
+        q |= models.Q(**{f"{field_prefix}__{key}__icontains": search})
+    try:
+        q |= models.Q(**{f"{field_prefix}__icontains": search})
+    except Exception:
+        pass
+    return q
+
+
+def _build_stage_keyword_q(
+    search: str, task_prefix: str = "", submission_prefix: str = ""
+) -> models.Q:
+    """Map display status/stage labels (e.g. 'asm', 'rsom', 'ttd', 'direksi') to ORM filters."""
+    s_low = search.strip().lower()
+    q = models.Q()
+    stage_order_field = f"{task_prefix}workflow_stage__order"
+    status_field = f"{submission_prefix}status"
+
+    def _stage_q(order_val: int) -> models.Q:
+        if task_prefix:
+            return models.Q(**{f"{task_prefix}status": "pending", stage_order_field: order_val})
+        return models.Q(**{stage_order_field: order_val})
+
+    if "asm" in s_low:
+        q |= _stage_q(1)
+    if "sales support" in s_low or "support" in s_low:
+        q |= _stage_q(2)
+    if "rsom" in s_low:
+        q |= _stage_q(3)
+    if any(kw in s_low for kw in ("ttd", "mitra", "toko")):
+        q |= _stage_q(4) & ~(
+            models.Q(**{f"{submission_prefix}signing_tokens__status": "signed"})
+            | models.Q(**{f"{submission_prefix}form_data__ttd_toko_image__isnull": False})
+        )
+    if "direksi" in s_low:
+        q |= _stage_q(4) & (
+            models.Q(**{f"{submission_prefix}signing_tokens__status": "signed"})
+            | models.Q(**{f"{submission_prefix}form_data__ttd_toko_image__isnull": False})
+        )
+    if "disetujui" in s_low or "approved" in s_low:
+        q |= models.Q(**{status_field: "approved"})
+    if "ditolak" in s_low or "rejected" in s_low:
+        q |= models.Q(**{status_field: "rejected"})
+    if "revisi" in s_low:
+        q |= models.Q(**{status_field: "needs_revision"})
+    if "draft" in s_low:
+        q |= models.Q(**{status_field: "draft"})
+    return q
+
+
+def _build_submission_search_q(search: str, form_slug: str = "") -> models.Q:
+    """Build 4-dimension search Q for FormSubmission querysets (hub & history)."""
+    matching_user_ids, matching_group_ids = _resolve_search_user_and_group_ids(search)
+    q = (
+        models.Q(form_definition__name__icontains=search)
+        | models.Q(status__icontains=search)
+        | models.Q(approval_tasks__step_name__icontains=search)
+        | models.Q(approval_tasks__workflow_stage__name__icontains=search)
+        | _build_form_data_keys_q(search, field_prefix="form_data")
+        | _build_stage_keyword_q(search, task_prefix="approval_tasks__", submission_prefix="")
+    )
+    if search.isdigit():
+        q |= models.Q(id=int(search))
+    if matching_user_ids:
+        q |= (
+            models.Q(submitter_id__in=matching_user_ids)
+            | models.Q(approval_tasks__assigned_to_id__in=matching_user_ids)
+            | models.Q(approval_tasks__completed_by_id__in=matching_user_ids)
+        )
+    if matching_group_ids:
+        q |= (
+            models.Q(approval_tasks__assigned_group_id__in=matching_group_ids)
+            | models.Q(approval_tasks__workflow_stage__approval_groups__id__in=matching_group_ids)
+        )
+    if form_slug:
+        q |= _form_data_search_q(form_slug, search, field_prefix="form_data")
+    return q
+
+
+def _build_task_search_q(search: str, form_slug: str = "") -> models.Q:
+    """Build 4-dimension search Q for ApprovalTask querysets (pending inbox)."""
+    matching_user_ids, matching_group_ids = _resolve_search_user_and_group_ids(search)
+    q = (
+        models.Q(submission__form_definition__name__icontains=search)
+        | models.Q(step_name__icontains=search)
+        | models.Q(workflow_stage__name__icontains=search)
+        | _build_form_data_keys_q(search, field_prefix="submission__form_data")
+        | _build_stage_keyword_q(search, task_prefix="", submission_prefix="submission__")
+    )
+    if search.isdigit():
+        q |= models.Q(submission__id=int(search))
+    if matching_user_ids:
+        q |= (
+            models.Q(submission__submitter_id__in=matching_user_ids)
+            | models.Q(assigned_to_id__in=matching_user_ids)
+            | models.Q(completed_by_id__in=matching_user_ids)
+        )
+    if matching_group_ids:
+        q |= (
+            models.Q(assigned_group_id__in=matching_group_ids)
+            | models.Q(workflow_stage__approval_groups__id__in=matching_group_ids)
+        )
+    if form_slug:
+        q |= _form_data_search_q(
+            form_slug, search, field_prefix="submission__form_data"
+        )
     return q
 
 
@@ -6116,6 +6450,7 @@ def completed_approvals_ajax(request):
     category_slug = params.get("category", "").strip()
     form_slug = params.get("form", "").strip()
     status_filter = params.get("status", "").strip()
+    stage_filter = params.get("stage_filter", "").strip().lower()
 
     # --- Base queryset (mirrors permission logic of completed_approvals view) ---
     _history_statuses = ["approved", "pending_approval", "rejected", "withdrawn"]
@@ -6150,7 +6485,7 @@ def completed_approvals_ajax(request):
 
     records_total = qs.count()
 
-    # --- URL-level filters ---
+    # --- URL-level & Stage filters ---
     if category_slug:
         qs = qs.filter(form_definition__category__slug=category_slug)
     if form_slug:
@@ -6158,17 +6493,32 @@ def completed_approvals_ajax(request):
     if status_filter in ("pending_approval", "approved", "rejected", "withdrawn"):
         qs = qs.filter(status=status_filter)
 
+    if stage_filter:
+        if stage_filter == "stage_1_asm":
+            qs = qs.filter(approval_tasks__workflow_stage__order=1)
+        elif stage_filter == "stage_2_support":
+            qs = qs.filter(approval_tasks__workflow_stage__order=2)
+        elif stage_filter == "stage_3_rsom":
+            qs = qs.filter(approval_tasks__workflow_stage__order=3)
+        elif stage_filter == "waiting_toko":
+            qs = qs.filter(approval_tasks__workflow_stage__order=4).exclude(
+                models.Q(signing_tokens__status="signed")
+                | models.Q(form_data__ttd_toko_image__isnull=False)
+            )
+        elif stage_filter == "stage_4_direksi":
+            qs = qs.filter(approval_tasks__workflow_stage__order=4).filter(
+                models.Q(signing_tokens__status="signed")
+                | models.Q(form_data__ttd_toko_image__isnull=False)
+            )
+        elif stage_filter == "approved":
+            qs = qs.filter(status="approved")
+        elif stage_filter == "rejected":
+            qs = qs.filter(status="rejected")
+        qs = qs.distinct()
+
     # --- Search ---
     if search:
-        qs = qs.filter(
-            models.Q(form_definition__name__icontains=search)
-            | models.Q(submitter__first_name__icontains=search)
-            | models.Q(submitter__last_name__icontains=search)
-            | models.Q(submitter__username__icontains=search)
-            | models.Q(status__icontains=search)
-            | models.Q(form_data__icontains=search)
-            | _form_data_search_q(form_slug, search, field_prefix="form_data")
-        )
+        qs = qs.filter(_build_submission_search_q(search, form_slug)).distinct()
 
     records_filtered = qs.count()
 
@@ -6277,6 +6627,7 @@ def approval_inbox_ajax(request):
     category_slug = params.get("category", "").strip()
     form_slug = params.get("form", "").strip()
     requested_role = params.get("role", "").strip().lower()
+    stage_filter = params.get("stage_filter", "").strip().lower()
 
     # --- Base queryset ---
     # Mirrors the role-scope logic in approval_inbox(): the same `?role=`
@@ -6333,25 +6684,33 @@ def approval_inbox_ajax(request):
     qs = qs.exclude(submission__status="draft")
     records_total = qs.count()
 
-    # --- URL filters ---
+    # --- URL & Stage filters ---
     if category_slug:
         qs = qs.filter(submission__form_definition__category__slug=category_slug)
     if form_slug:
         qs = qs.filter(submission__form_definition__slug=form_slug)
 
+    if stage_filter:
+        if stage_filter == "stage_1_asm":
+            qs = qs.filter(workflow_stage__order=1)
+        elif stage_filter == "stage_2_support":
+            qs = qs.filter(workflow_stage__order=2)
+        elif stage_filter == "stage_3_rsom":
+            qs = qs.filter(workflow_stage__order=3)
+        elif stage_filter == "waiting_toko":
+            qs = qs.filter(workflow_stage__order=4).exclude(
+                models.Q(submission__signing_tokens__status="signed")
+                | models.Q(submission__form_data__ttd_toko_image__isnull=False)
+            )
+        elif stage_filter == "stage_4_direksi":
+            qs = qs.filter(workflow_stage__order=4).filter(
+                models.Q(submission__signing_tokens__status="signed")
+                | models.Q(submission__form_data__ttd_toko_image__isnull=False)
+            ).distinct()
+
     # --- Search ---
     if search:
-        qs = qs.filter(
-            models.Q(submission__form_definition__name__icontains=search)
-            | models.Q(submission__submitter__first_name__icontains=search)
-            | models.Q(submission__submitter__last_name__icontains=search)
-            | models.Q(submission__submitter__username__icontains=search)
-            | models.Q(step_name__icontains=search)
-            | models.Q(submission__form_data__icontains=search)
-            | _form_data_search_q(
-                form_slug, search, field_prefix="submission__form_data"
-            )
-        )
+        qs = qs.filter(_build_task_search_q(search, form_slug)).distinct()
 
     records_filtered = qs.count()
 
@@ -6401,11 +6760,14 @@ def approval_inbox_ajax(request):
     )[start : start + length]
 
     # --- Serialise ---
+    can_push_user = _user_can_push_notifications(request.user)
     data = []
     for task in page_qs:
         sub = task.submission
         wf = getattr(sub.form_definition, "workflow", None)
         can_exp = wf and (wf.allow_bulk_export or wf.allow_bulk_pdf_export)
+        is_kontrak_toko = bool(sub.form_definition and sub.form_definition.slug == "permohonan-kontrak")
+        can_push_row = can_push_user and is_kontrak_toko and sub.status in ("pending_approval", "submitted")
         approve_url = reverse("forms_workflows:approve_submission", args=[task.id])
         det_url = reverse("forms_workflows:submission_detail", args=[sub.id])
 
@@ -6545,11 +6907,24 @@ def approval_inbox_ajax(request):
                 else (task.assigned_group.name if task.assigned_group else "—")
             )
 
+        if can_push_row:
+            push_url = reverse("forms_workflows:push_stage_notification", args=[sub.id])
+            spk_label = escape((sub.form_data or {}).get("nomor_spk") or f"SPK #{sub.id}")
+            toko_label = escape((sub.form_data or {}).get("nama_toko") or "Mitra Toko")
+            push_btn = (
+                f'<button type="button" class="btn btn-sm btn-outline-warning text-dark fw-semibold ms-1 js-btn-push-notif" '
+                f'data-submission-id="{sub.id}" data-push-url="{push_url}" '
+                f'data-spk="{spk_label}" data-toko="{toko_label}" '
+                f'title="Push Notifikasi pengingat ke PIC stage aktif">'
+                f'<i class="bi bi-bell-fill"></i> Push</button>'
+            )
+            action_btn = f"{action_btn}{push_btn}"
+
         row = {
             "DT_RowId": f"row_{task.id}",
             "checkbox": (
                 f'<input type="checkbox" name="submission_ids" value="{sub.id}" class="export-check">'
-                if can_exp
+                if (can_exp or can_push_row)
                 else ""
             ),
             "category": _cat_html(getattr(sub.form_definition, "category", None)),

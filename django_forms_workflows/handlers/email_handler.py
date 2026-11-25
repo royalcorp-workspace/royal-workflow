@@ -203,14 +203,18 @@ class EmailHandler(BaseActionHandler):
             # Default subject
             return f"Form Submission: {self.submission.form_definition.name}"
 
-        placeholders = self._get_placeholders()
-        template = self.action.email_subject_template
+        from ..services.notification_formatter import (
+            build_notification_placeholders,
+            interpolate_single_brace_placeholders,
+        )
 
-        try:
-            return template.format(**placeholders)
-        except KeyError as e:
-            self.log_warning(f"Missing placeholder in subject template: {e}")
-            return f"Form Submission: {self.submission.form_definition.name}"
+        placeholders = {
+            **build_notification_placeholders(self.submission),
+            **{k: str(v or "") for k, v in self._get_placeholders().items()},
+        }
+        return interpolate_single_brace_placeholders(
+            self.action.email_subject_template, placeholders
+        ).strip()
 
     def _build_body(self) -> str:
         """
@@ -223,14 +227,18 @@ class EmailHandler(BaseActionHandler):
             # Default body with form data
             return self._build_default_body()
 
-        placeholders = self._get_placeholders()
-        template = self.action.email_body_template
+        from ..services.notification_formatter import (
+            build_notification_placeholders,
+            interpolate_single_brace_placeholders,
+        )
 
-        try:
-            return template.format(**placeholders)
-        except KeyError as e:
-            self.log_warning(f"Missing placeholder in body template: {e}")
-            return self._build_default_body()
+        placeholders = {
+            **build_notification_placeholders(self.submission),
+            **{k: str(v or "") for k, v in self._get_placeholders().items()},
+        }
+        return interpolate_single_brace_placeholders(
+            self.action.email_body_template, placeholders
+        )
 
     def _build_default_body(self) -> str:
         """

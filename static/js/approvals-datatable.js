@@ -39,6 +39,125 @@
         };
     }
 
+    // Anti-Race Condition DataTables AJAX transport (aborts stale XHR & guards sequence ID)
+    function createAntiRaceAjax(ajaxUrl, buildExtraParams) {
+        var activeXhr = null;
+        var latestReqSeq = 0;
+        return function(data, callback, settings) {
+            if (buildExtraParams) {
+                buildExtraParams(data);
+            }
+            if (activeXhr && activeXhr.readyState !== 4) {
+                activeXhr.abort();
+            }
+            var reqSeq = ++latestReqSeq;
+            activeXhr = $.ajax({
+                url: ajaxUrl,
+                type: 'POST',
+                data: data,
+                dataType: 'json',
+                success: function(json) {
+                    if (reqSeq !== latestReqSeq) return;
+                    callback(json);
+                },
+                error: function(xhr, status) {
+                    if (status === 'abort' || reqSeq !== latestReqSeq) return;
+                    callback({
+                        draw: data.draw,
+                        recordsTotal: 0,
+                        recordsFiltered: 0,
+                        data: []
+                    });
+                }
+            });
+        };
+    }
+
+    // Live Search Controller: Min. 3 chars, 300ms debounce, clear button, & stage filter
+    function bindLiveSearchControls(table) {
+        var $input = $('#customSearchInput');
+        var $clearBtn = $('#customSearchClear');
+        var $hint = $('#inboxSearchHint');
+        var $stageSelect = $('#stageFilterSelect');
+        var lastDispatchedSearch = '';
+        var debounceTimer = null;
+
+        function updateUi(rawVal) {
+            var trimmed = $.trim(rawVal || '');
+            if ($clearBtn.length) {
+                $clearBtn.css('display', rawVal ? 'inline-block' : 'none');
+            }
+            if ($hint.length) {
+                $hint.css('display', (trimmed.length > 0 && trimmed.length < 3) ? 'block' : 'none');
+            }
+        }
+
+        if ($input.length) {
+            updateUi($input.val());
+
+            $input.on('input', function() {
+                var rawVal = this.value;
+                var trimmed = $.trim(rawVal);
+                updateUi(rawVal);
+
+                clearTimeout(debounceTimer);
+
+                if (trimmed.length === 0) {
+                    if (lastDispatchedSearch !== '') {
+                        debounceTimer = setTimeout(function() {
+                            lastDispatchedSearch = '';
+                            table.search('').draw();
+                        }, 150);
+                    }
+                    return;
+                }
+
+                if (trimmed.length < 3) {
+                    return;
+                }
+
+                debounceTimer = setTimeout(function() {
+                    if (trimmed !== lastDispatchedSearch) {
+                        lastDispatchedSearch = trimmed;
+                        table.search(trimmed).draw();
+                    }
+                }, 300);
+            });
+
+            $input.on('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    clearTimeout(debounceTimer);
+                    var trimmed = $.trim(this.value);
+                    if (trimmed.length === 0 || trimmed.length >= 3) {
+                        if (trimmed !== lastDispatchedSearch) {
+                            lastDispatchedSearch = trimmed;
+                            table.search(trimmed).draw();
+                        }
+                    }
+                }
+            });
+        }
+
+        if ($clearBtn.length) {
+            $clearBtn.on('click', function() {
+                $input.val('').focus();
+                updateUi('');
+                clearTimeout(debounceTimer);
+                if (lastDispatchedSearch !== '') {
+                    lastDispatchedSearch = '';
+                    table.search('').draw();
+                }
+            });
+        }
+
+        if ($stageSelect.length) {
+            $stageSelect.on('change', function() {
+                table.draw();
+            });
+        }
+    }
+
     // Custom Pagination Renderer
     function renderCustomPagination(table, pageLenKey) {
         var info = table.page.info();
@@ -190,16 +309,12 @@
             var checked = $('.export-check:checked').length;
             $('#exportBtn').prop('disabled', checked === 0);
             $('#pdfExportBtn').prop('disabled', checked === 0);
-            $('#selectedCount').text(checked > 0 ? '(' + checked + ' selected)' : '');
-            var $drawer = $('#bulkDrawer');
-            if ($drawer.length) {
-                if (checked > 0) {
-                    $drawer.addClass('visible');
-                    $('#drawerSelectedBadge').text(checked);
-                } else {
-                    $drawer.removeClass('visible');
-                }
+            var $headerPushBtn = $('#headerPushNotifBtn');
+            if ($headerPushBtn.length) {
+                $headerPushBtn.prop('disabled', checked === 0);
+                $headerPushBtn.find('span').text(checked > 0 ? 'Push Notifikasi (' + checked + ')' : 'Push Notifikasi');
             }
+            $('#selectedCount').text(checked > 0 ? '(' + checked + ' selected)' : '');
         }
 
         $('#selectAll').on('change', function() {
@@ -365,17 +480,15 @@
         var table = $table.DataTable({
             serverSide: true,
             processing: true,
-            searchDelay: 400,
-            ajax: {
-                url: ajaxUrl,
-                type: 'POST',
-                data: function(d) {
-                    d.csrfmiddlewaretoken = csrfToken;
-                    if (categorySlug) d.category = categorySlug;
-                    if (formSlug) d.form = formSlug;
-                    if (activeRole && activeRole !== 'mine') d.role = activeRole;
-                }
-            },
+            searchDelay: 0,
+            ajax: createAntiRaceAjax(ajaxUrl, function(d) {
+                d.csrfmiddlewaretoken = csrfToken;
+                if (categorySlug) d.category = categorySlug;
+                if (formSlug) d.form = formSlug;
+                if (activeRole && activeRole !== 'mine') d.role = activeRole;
+                var stageFilter = $('#stageFilterSelect').val();
+                if (stageFilter) d.stage_filter = stageFilter;
+            }),
             columns: columnsConfig,
             order: [[hasExport ? 5 : 4, 'desc']],
             columnDefs: colDefs,
@@ -402,13 +515,149 @@
             }
         });
 
-        // Search Input listener with debounce
-        $('#customSearchInput').on('keyup change', debounce(function() {
-            table.search(this.value).draw();
-        }, 400));
+        bindLiveSearchControls(table);
 
         setupColumnPicker(table, colIndexMap, colPrefsKey);
         setupBatchSelection(table);
+        setupPushNotifications($table, csrfToken);
+    }
+
+    // ── Push Notifications (Single Row & Bulk Selection) ──
+    function showInboxToast(message, variant) {
+        var container = document.getElementById('inboxToastContainer');
+        if (!container || typeof bootstrap === 'undefined') {
+            alert(message);
+            return;
+        }
+        var bgClass = variant === 'success' ? 'text-bg-success' : (variant === 'warning' ? 'text-bg-warning' : 'text-bg-danger');
+        var iconClass = variant === 'success' ? 'bi-check-circle-fill' : (variant === 'warning' ? 'bi-exclamation-triangle-fill' : 'bi-x-circle-fill');
+        var toastEl = document.createElement('div');
+        toastEl.className = 'toast align-items-center border-0 shadow ' + bgClass;
+        toastEl.setAttribute('role', 'alert');
+        toastEl.setAttribute('aria-live', 'assertive');
+        toastEl.setAttribute('aria-atomic', 'true');
+        toastEl.innerHTML =
+            '<div class="d-flex">' +
+            '<div class="toast-body d-flex align-items-start gap-2 small">' +
+            '<i class="bi ' + iconClass + ' mt-0.5"></i>' +
+            '<span>' + $('<div>').text(message).html() + '</span>' +
+            '</div>' +
+            '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>' +
+            '</div>';
+        container.appendChild(toastEl);
+        var toast = new bootstrap.Toast(toastEl, { delay: 6000 });
+        toastEl.addEventListener('hidden.bs.toast', function() { toastEl.remove(); });
+        toast.show();
+    }
+
+    function setupPushNotifications($table, csrfToken) {
+        var modalEl = document.getElementById('pushNotifConfirmModal');
+        if (!modalEl || typeof bootstrap === 'undefined') return;
+        var modal = new bootstrap.Modal(modalEl);
+        var $title = $('#pushNotifModalTitle');
+        var $summary = $('#pushNotifTargetSummary');
+        var $noteInput = $('#pushNotifNoteInput');
+        var $confirmBtn = $('#btnConfirmPushNotif');
+        var pendingRequest = null;
+
+        // Single Row Push Click
+        $(document).on('click', '.js-btn-push-notif', function(e) {
+            e.preventDefault();
+            var $btn = $(this);
+            var spk = $btn.data('spk') || 'SPK';
+            var toko = $btn.data('toko') || 'Mitra Toko';
+            pendingRequest = {
+                mode: 'single',
+                url: $btn.data('push-url'),
+                submissionIds: [$btn.data('submission-id')]
+            };
+            $title.text('Push Notifikasi Pengingat');
+            $summary.html(
+                '<div><strong>No. SPK:</strong> <span class="font-monospace">' + $('<div>').text(spk).html() + '</span></div>' +
+                '<div><strong>Toko / Mitra:</strong> ' + $('<div>').text(toko).html() + '</div>'
+            );
+            $noteInput.val('');
+            modal.show();
+        });
+
+        // Header Bulk Push Click
+        $('#headerPushNotifBtn').on('click', function() {
+            var bulkUrl = $table.data('bulk-push-url');
+            if (!bulkUrl) return;
+            var seen = {};
+            var ids = [];
+            $('.export-check:checked').each(function() {
+                var v = $(this).val();
+                if (v && !seen[v]) {
+                    seen[v] = true;
+                    ids.push(v);
+                }
+            });
+            if (!ids.length) {
+                showInboxToast('Pilih minimal 1 pengajuan terlebih dahulu.', 'warning');
+                return;
+            }
+            pendingRequest = {
+                mode: 'bulk',
+                url: bulkUrl,
+                submissionIds: ids
+            };
+            $title.text('Bulk Push Notifikasi (' + ids.length + ' Pengajuan)');
+            $summary.html(
+                '<div><strong>Jumlah Dipilih:</strong> ' + ids.length + ' pengajuan kontrak</div>' +
+                '<div class="text-muted mt-1" style="font-size: 11.5px;">Pengingat akan dikirim ke PIC sesuai stage aktif masing-masing (ASM, Sales Support, RSOM, TTD Toko, atau Direksi).</div>'
+            );
+            $noteInput.val('');
+            modal.show();
+        });
+
+        // Confirm Push Submit
+        $confirmBtn.on('click', async function() {
+            if (!pendingRequest || !pendingRequest.url) return;
+            var origHtml = $confirmBtn.html();
+            $confirmBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span> Mengirim...');
+
+            var payload = {
+                note: $.trim($noteInput.val() || ''),
+                submission_ids: pendingRequest.submissionIds
+            };
+
+            try {
+                var resp = await fetch(pendingRequest.url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                var data = await resp.json().catch(function() { return {}; });
+                modal.hide();
+
+                if (resp.ok && data.success) {
+                    var msg = data.message || 'Push notifikasi berhasil dikirim.';
+                    if (pendingRequest.mode === 'single' && data.recipient_summary) {
+                        msg += ' Penerima: ' + data.recipient_summary;
+                    }
+                    showInboxToast(msg, 'success');
+                    if (pendingRequest.mode === 'bulk') {
+                        $('#selectAll').prop('checked', false);
+                        $('.export-check:checked').prop('checked', false).trigger('change');
+                    }
+                } else {
+                    var variant = (resp.status === 429 || data.cooldown) ? 'warning' : 'danger';
+                    showInboxToast(data.message || 'Gagal mengirimkan push notifikasi.', variant);
+                }
+            } catch (err) {
+                modal.hide();
+                showInboxToast('Terjadi kesalahan jaringan saat menghubungi server.', 'danger');
+            } finally {
+                $confirmBtn.prop('disabled', false).html(origHtml);
+                pendingRequest = null;
+            }
+        });
     }
 
     // ── Table 2: Completed Approvals Table (#completedTable) ──
@@ -546,17 +795,15 @@
         var table = $table.DataTable({
             serverSide: true,
             processing: true,
-            searchDelay: 400,
-            ajax: {
-                url: ajaxUrl,
-                type: 'POST',
-                data: function(d) {
-                    d.csrfmiddlewaretoken = csrfToken;
-                    if (categorySlug) d.category = categorySlug;
-                    if (formSlug) d.form = formSlug;
-                    if (statusFilter) d.status = statusFilter;
-                }
-            },
+            searchDelay: 0,
+            ajax: createAntiRaceAjax(ajaxUrl, function(d) {
+                d.csrfmiddlewaretoken = csrfToken;
+                if (categorySlug) d.category = categorySlug;
+                if (formSlug) d.form = formSlug;
+                if (statusFilter) d.status = statusFilter;
+                var stageFilter = $('#stageFilterSelect').val();
+                if (stageFilter) d.stage_filter = stageFilter;
+            }),
             columns: columnsConfig,
             order: [[completedColIdx, 'desc']],
             columnDefs: colDefs,
@@ -583,10 +830,7 @@
             }
         });
 
-        // Search Input listener with debounce
-        $('#customSearchInput').on('keyup change', debounce(function() {
-            table.search(this.value).draw();
-        }, 400));
+        bindLiveSearchControls(table);
 
         setupColumnPicker(table, colIndexMap, colPrefsKey);
         setupBatchSelection(table);
