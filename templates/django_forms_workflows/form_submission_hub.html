@@ -612,6 +612,9 @@
         </select>
         {% endif %}
       </form>
+      <div id="hubSearchHint" class="text-muted mt-1" style="display: none; font-size: 11.5px; padding-left: 2px;">
+        <i class="bi bi-info-circle me-1"></i>Ketik minimal 3 huruf untuk mencari...
+      </div>
     </div>
 
     {# ── Unified Table ── #}
@@ -828,102 +831,181 @@
 document.addEventListener('DOMContentLoaded', function() {
     const filterForm = document.getElementById('filterForm');
     const searchInput = document.getElementById('hubSearchInput');
+    const searchClearBtn = document.getElementById('hubSearchClear');
+    const searchHintEl = document.getElementById('hubSearchHint');
     const statusSelect = document.getElementById('hubStatusSelect');
     const stageSelect = document.getElementById('hubStageFilterSelect');
     const table = document.getElementById('submissionsUnifiedTable');
-    if (!filterForm) return;
+    const enterpriseCard = document.querySelector('.enterprise-card');
+    if (!filterForm || !table) return;
+
+    let debounceTimer = null;
+    let activeAbortController = null;
+    let latestRequestId = 0;
+    let activeSearchQuery = (searchInput ? searchInput.value.trim() : '');
+
+    function updateSearchUiState(rawVal) {
+        const trimmed = (rawVal || '').trim();
+        if (searchClearBtn) {
+            searchClearBtn.style.display = rawVal ? 'inline-flex' : 'none';
+        }
+        if (searchHintEl) {
+            searchHintEl.style.display = (trimmed.length > 0 && trimmed.length < 3) ? 'block' : 'none';
+        }
+    }
+
+    function buildHubUrl(pageNum) {
+        const params = new URLSearchParams();
+        const qVal = searchInput ? searchInput.value.trim() : '';
+        if (qVal.length >= 3) {
+            params.set('q', qVal);
+        }
+        if (stageSelect && stageSelect.value) {
+            params.set('stage_filter', stageSelect.value);
+        }
+        if (statusSelect && statusSelect.value) {
+            params.set('status', statusSelect.value);
+        }
+        const perPageInput = document.getElementById('hubFilterPerPage');
+        if (perPageInput && perPageInput.value) {
+            params.set('per_page', perPageInput.value);
+        }
+        if (pageNum && String(pageNum) !== '1') {
+            params.set('page', String(pageNum));
+        }
+        const qs = params.toString();
+        return window.location.pathname + (qs ? ('?' + qs) : '');
+    }
+
+    async function executeLiveSearch(pageNum = 1) {
+        const qVal = searchInput ? searchInput.value.trim() : '';
+        const effectiveQ = qVal.length >= 3 ? qVal : '';
+        const targetUrl = buildHubUrl(pageNum);
+
+        if (activeAbortController) {
+            activeAbortController.abort();
+        }
+        activeAbortController = new AbortController();
+        const reqId = ++latestRequestId;
+
+        table.style.opacity = '0.65';
+        table.style.transition = 'opacity 0.15s ease';
+
+        try {
+            const resp = await fetch(targetUrl, {
+                method: 'GET',
+                signal: activeAbortController.signal,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const html = await resp.text();
+
+            // Anti-race condition guard: abaikan response lama jika ada ketikan lebih baru
+            if (reqId !== latestRequestId) return;
+
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            const newTbody = doc.querySelector('#submissionsUnifiedTable tbody');
+            const curTbody = table.querySelector('tbody');
+            if (newTbody && curTbody) {
+                curTbody.replaceWith(newTbody);
+            }
+
+            const newFooter = doc.querySelector('.card-table-footer');
+            const curFooter = enterpriseCard ? enterpriseCard.querySelector('.card-table-footer') : null;
+            if (curFooter && newFooter) {
+                curFooter.replaceWith(newFooter);
+            } else if (curFooter && !newFooter) {
+                curFooter.remove();
+            } else if (!curFooter && newFooter && enterpriseCard) {
+                enterpriseCard.appendChild(newFooter);
+            }
+
+            activeSearchQuery = effectiveQ;
+            window.history.replaceState(null, '', targetUrl);
+            bindDynamicEvents();
+        } catch (err) {
+            if (err && err.name === 'AbortError') {
+                return;
+            }
+            console.error('Live search error:', err);
+        } finally {
+            if (reqId === latestRequestId) {
+                table.style.opacity = '1';
+            }
+        }
+    }
 
     // 1. Auto-filter saat status / stage dropdown berubah
     if (statusSelect) {
         statusSelect.addEventListener('change', function() {
-            filterForm.submit();
+            executeLiveSearch(1);
         });
     }
     if (stageSelect) {
         stageSelect.addEventListener('change', function() {
-            filterForm.submit();
+            executeLiveSearch(1);
         });
     }
 
-    // 2. Auto-search saat mengetik (Live DOM filter + debounced server query)
-    if (searchInput && table) {
-        let debounceTimer = null;
-
-        // Restore focus to search input if query exists
-        if (searchInput.value) {
-            const val = searchInput.value;
-            searchInput.focus();
-            searchInput.setSelectionRange(val.length, val.length);
-        }
-
-        const searchClearBtn = document.getElementById('hubSearchClear');
+    // 2. Live Search (Min. 3 Karakter, Debounce 300ms, Anti-Race Condition)
+    if (searchInput) {
+        updateSearchUiState(searchInput.value);
 
         searchInput.addEventListener('input', function() {
-            const query = this.value.trim().toLowerCase();
-            if (searchClearBtn) {
-                searchClearBtn.style.display = this.value ? 'inline-flex' : 'none';
+            const rawVal = this.value;
+            const trimmed = rawVal.trim();
+            updateSearchUiState(rawVal);
+
+            clearTimeout(debounceTimer);
+
+            if (trimmed.length === 0) {
+                // Hanya muat ulang data normal jika sebelumnya sudah memfilter >= 3 karakter
+                if (activeSearchQuery.length >= 3) {
+                    debounceTimer = setTimeout(function() {
+                        executeLiveSearch(1);
+                    }, 150);
+                }
+                return;
             }
 
-            // A. Live Instant DOM Filter (0ms delay)
-            const rows = table.querySelectorAll('tbody tr');
-            let visibleCount = 0;
-            rows.forEach(function(row) {
-                // Jangan filter jika row adalah empty-state
-                if (row.querySelector('.enterprise-empty-state')) return;
-                const rowText = row.innerText.toLowerCase();
-                const matches = !query || rowText.includes(query);
-                row.style.display = matches ? '' : 'none';
-                if (matches) visibleCount++;
-            });
+            if (trimmed.length < 3) {
+                // 1-2 karakter: jangan panggil server agar tabel stabil tanpa berkedip
+                return;
+            }
 
-            // B. Debounce Server Query (450ms) to ensure full DB search coverage
-            clearTimeout(debounceTimer);
+            // >= 3 karakter: jalankan live search dengan debounce 300ms
             debounceTimer = setTimeout(function() {
-                filterForm.submit();
-            }, 450);
+                executeLiveSearch(1);
+            }, 300);
         });
 
         searchInput.addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 clearTimeout(debounceTimer);
-                filterForm.submit();
+                const trimmed = this.value.trim();
+                if (trimmed.length === 0 || trimmed.length >= 3) {
+                    executeLiveSearch(1);
+                }
             }
         });
 
         if (searchClearBtn) {
             searchClearBtn.addEventListener('click', function() {
                 searchInput.value = '';
-                searchClearBtn.style.display = 'none';
+                updateSearchUiState('');
+                searchInput.focus();
                 clearTimeout(debounceTimer);
-                filterForm.submit();
+                if (activeSearchQuery.length >= 3) {
+                    executeLiveSearch(1);
+                }
             });
         }
     }
 
-    // 3. Handle Sinkronisasi Dropdown perPageSelect dengan filterForm
-    const perPageSelect = document.getElementById('perPageSelect');
-    if (perPageSelect && filterForm) {
-        perPageSelect.addEventListener('change', function() {
-            let perPageInput = filterForm.querySelector('input[name="per_page"]');
-            if (!perPageInput) {
-                perPageInput = document.createElement('input');
-                perPageInput.type = 'hidden';
-                perPageInput.name = 'per_page';
-                filterForm.appendChild(perPageInput);
-            }
-            perPageInput.value = this.value;
-
-            // Reset page ke 1 saat per_page diubah
-            let pageInput = filterForm.querySelector('input[name="page"]');
-            if (pageInput) {
-                pageInput.value = '1';
-            }
-            filterForm.submit();
-        });
-    }
-
-    // 4. Handle Hapus Draf via AJAX Modal
+    // 3. Dynamic Event Binding (Pagination, Per-Page, & Discard Draft)
     let targetDraftId = null;
     let targetRow = null;
     const discardModalEl = document.getElementById('hubDiscardDraftModal');
@@ -932,17 +1014,47 @@ document.addEventListener('DOMContentLoaded', function() {
     const modalSpkEl = document.getElementById('hubModalSpkNo');
     const modalTokoEl = document.getElementById('hubModalToko');
 
-    document.querySelectorAll('.js-btn-discard-draft').forEach(function(btn) {
-        btn.addEventListener('click', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            targetDraftId = this.dataset.submissionId;
-            targetRow = this.closest('tr');
-            if (modalSpkEl) modalSpkEl.textContent = this.dataset.spkNo || 'Draf Otomatis';
-            if (modalTokoEl) modalTokoEl.textContent = this.dataset.toko || 'Toko Belum Diisi';
-            if (discardModal) discardModal.show();
+    function bindDynamicEvents() {
+        const perPageSelect = document.getElementById('perPageSelect');
+        if (perPageSelect) {
+            perPageSelect.addEventListener('change', function() {
+                let perPageInput = document.getElementById('hubFilterPerPage');
+                if (perPageInput) {
+                    perPageInput.value = this.value;
+                }
+                executeLiveSearch(1);
+            });
+        }
+
+        document.querySelectorAll('.card-table-footer .pagination a.page-link').forEach(function(link) {
+            link.addEventListener('click', function(e) {
+                const href = this.getAttribute('href');
+                if (!href || href === '#') return;
+                e.preventDefault();
+                try {
+                    const u = new URL(href, window.location.origin);
+                    const p = u.searchParams.get('page') || 1;
+                    executeLiveSearch(p);
+                } catch (_) {
+                    window.location.href = href;
+                }
+            });
         });
-    });
+
+        document.querySelectorAll('.js-btn-discard-draft').forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                targetDraftId = this.dataset.submissionId;
+                targetRow = this.closest('tr');
+                if (modalSpkEl) modalSpkEl.textContent = this.dataset.spkNo || 'Draf Otomatis';
+                if (modalTokoEl) modalTokoEl.textContent = this.dataset.toko || 'Toko Belum Diisi';
+                if (discardModal) discardModal.show();
+            });
+        });
+    }
+
+    bindDynamicEvents();
 
     if (confirmDiscardBtn) {
         confirmDiscardBtn.addEventListener('click', async function() {
@@ -977,11 +1089,11 @@ document.addEventListener('DOMContentLoaded', function() {
                             targetRow.remove();
                             const remainingRows = table.querySelectorAll('tbody tr:not(.empty-row)');
                             if (remainingRows.length === 0) {
-                                window.location.reload();
+                                executeLiveSearch(1);
                             }
                         }, 250);
                     } else {
-                        window.location.reload();
+                        executeLiveSearch(1);
                     }
                 } else {
                     alert('Gagal menghapus draf: ' + (resData.message || 'Terjadi kesalahan sistem.'));

@@ -269,14 +269,20 @@ def run_tests():
             assert other_id not in row_ids, f"Task {other_id} should NOT be in results for {stage_val}"
         print(f"  ✓ stage_filter='{stage_val}': Returned {len(row_ids)} task(s), correctly matched {expected_ids}")
 
-    # 6. Test AJAX Multi-Field Search
-    print("\n[TEST 5] Testing approval_inbox_ajax search multi-field...")
+    # 6. Test AJAX Multi-Field Search (All 4 Dimensions + Anti-Duplication)
+    print("\n[TEST 5] Testing approval_inbox_ajax 4-dimension search...")
     search_cases = [
         ("SPK/TEST/ASM/001", [t1.id], "by SPK Number"),
         ("Toko Sentosa Abadi", [t2.id], "by Store Name"),
         ("JDE-3333", [t3.id], "by JDE Code"),
         ("SERENITY", [t4.id], "by Brand"),
-        ("test_sales_sf", [t1.id, t2.id, t3.id, t4.id, t5.id], "by Submitter Username"),
+        ("Ferry Sales", [t1.id, t2.id, t3.id, t4.id, t5.id], "by Submitter Full Name (Concat)"),
+        ("rsom", [t3.id], "by Step/Status Label Keyword 'rsom'"),
+        ("ttd", [t4.id], "by Step/Status Label Keyword 'ttd'"),
+        ("direksi", [t5.id], "by Step/Status Label Keyword 'direksi'"),
+        ("Buddy ASM", [t1.id], "by PIC Full Name 'Buddy ASM'"),
+        ("Chandra Support", [t2.id], "by PIC Full Name 'Chandra Support'"),
+        ("Area Sales Manager", [t1.id], "by Assigned Group Name"),
     ]
 
     for search_term, expected_ids, desc in search_cases:
@@ -296,9 +302,25 @@ def run_tests():
         assert resp.status_code == 200, f"AJAX returned {resp.status_code}"
         res_data = json.loads(resp.content.decode("utf-8"))
         row_ids = [int(r["DT_RowId"].replace("row_", "")) for r in res_data["data"]]
+        assert len(row_ids) == len(set(row_ids)), f"Duplicate rows detected for '{search_term}': {row_ids}"
         for exp_id in expected_ids:
             assert exp_id in row_ids, f"Expected task {exp_id} in results for search '{search_term}' ({desc})"
-        print(f"  ✓ Search '{search_term}' ({desc}): Correctly matched tasks {expected_ids}")
+        print(f"  ✓ Search '{search_term}' ({desc}): Matched {expected_ids}, 0 duplicates.")
+
+    # Test form_submission_hub search across 4 dimensions
+    print("\n[TEST 5b] Testing form_submission_hub 4-dimension search...")
+    for hub_q, expected_spk in [
+        ("Ferry Sales", "SPK/TEST/ASM/001"),
+        ("Buddy ASM", "SPK/TEST/ASM/001"),
+        ("rsom", "SPK/TEST/RSOM/003"),
+    ]:
+        req_hub = rf.get(f"/forms/permohonan-kontrak/?q={hub_q}")
+        setup_request(req_hub, u_admin)
+        resp_hub = form_submission_hub(req_hub, "permohonan-kontrak")
+        assert resp_hub.status_code == 200, f"Hub returned {resp_hub.status_code}"
+        body_html = resp_hub.content.decode("utf-8")
+        assert expected_spk in body_html, f"Expected '{expected_spk}' in hub HTML for q='{hub_q}'"
+        print(f"  ✓ Hub search q='{hub_q}': Found '{expected_spk}'.")
 
     # 7. Test Completed Approvals AJAX (History tab)
     print("\n[TEST 6] Testing completed_approvals_ajax search & stage_filter...")

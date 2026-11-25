@@ -39,6 +39,125 @@
         };
     }
 
+    // Anti-Race Condition DataTables AJAX transport (aborts stale XHR & guards sequence ID)
+    function createAntiRaceAjax(ajaxUrl, buildExtraParams) {
+        var activeXhr = null;
+        var latestReqSeq = 0;
+        return function(data, callback, settings) {
+            if (buildExtraParams) {
+                buildExtraParams(data);
+            }
+            if (activeXhr && activeXhr.readyState !== 4) {
+                activeXhr.abort();
+            }
+            var reqSeq = ++latestReqSeq;
+            activeXhr = $.ajax({
+                url: ajaxUrl,
+                type: 'POST',
+                data: data,
+                dataType: 'json',
+                success: function(json) {
+                    if (reqSeq !== latestReqSeq) return;
+                    callback(json);
+                },
+                error: function(xhr, status) {
+                    if (status === 'abort' || reqSeq !== latestReqSeq) return;
+                    callback({
+                        draw: data.draw,
+                        recordsTotal: 0,
+                        recordsFiltered: 0,
+                        data: []
+                    });
+                }
+            });
+        };
+    }
+
+    // Live Search Controller: Min. 3 chars, 300ms debounce, clear button, & stage filter
+    function bindLiveSearchControls(table) {
+        var $input = $('#customSearchInput');
+        var $clearBtn = $('#customSearchClear');
+        var $hint = $('#inboxSearchHint');
+        var $stageSelect = $('#stageFilterSelect');
+        var lastDispatchedSearch = '';
+        var debounceTimer = null;
+
+        function updateUi(rawVal) {
+            var trimmed = $.trim(rawVal || '');
+            if ($clearBtn.length) {
+                $clearBtn.css('display', rawVal ? 'inline-block' : 'none');
+            }
+            if ($hint.length) {
+                $hint.css('display', (trimmed.length > 0 && trimmed.length < 3) ? 'block' : 'none');
+            }
+        }
+
+        if ($input.length) {
+            updateUi($input.val());
+
+            $input.on('input', function() {
+                var rawVal = this.value;
+                var trimmed = $.trim(rawVal);
+                updateUi(rawVal);
+
+                clearTimeout(debounceTimer);
+
+                if (trimmed.length === 0) {
+                    if (lastDispatchedSearch !== '') {
+                        debounceTimer = setTimeout(function() {
+                            lastDispatchedSearch = '';
+                            table.search('').draw();
+                        }, 150);
+                    }
+                    return;
+                }
+
+                if (trimmed.length < 3) {
+                    return;
+                }
+
+                debounceTimer = setTimeout(function() {
+                    if (trimmed !== lastDispatchedSearch) {
+                        lastDispatchedSearch = trimmed;
+                        table.search(trimmed).draw();
+                    }
+                }, 300);
+            });
+
+            $input.on('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    clearTimeout(debounceTimer);
+                    var trimmed = $.trim(this.value);
+                    if (trimmed.length === 0 || trimmed.length >= 3) {
+                        if (trimmed !== lastDispatchedSearch) {
+                            lastDispatchedSearch = trimmed;
+                            table.search(trimmed).draw();
+                        }
+                    }
+                }
+            });
+        }
+
+        if ($clearBtn.length) {
+            $clearBtn.on('click', function() {
+                $input.val('').focus();
+                updateUi('');
+                clearTimeout(debounceTimer);
+                if (lastDispatchedSearch !== '') {
+                    lastDispatchedSearch = '';
+                    table.search('').draw();
+                }
+            });
+        }
+
+        if ($stageSelect.length) {
+            $stageSelect.on('change', function() {
+                table.draw();
+            });
+        }
+    }
+
     // Custom Pagination Renderer
     function renderCustomPagination(table, pageLenKey) {
         var info = table.page.info();
@@ -365,19 +484,15 @@
         var table = $table.DataTable({
             serverSide: true,
             processing: true,
-            searchDelay: 400,
-            ajax: {
-                url: ajaxUrl,
-                type: 'POST',
-                data: function(d) {
-                    d.csrfmiddlewaretoken = csrfToken;
-                    if (categorySlug) d.category = categorySlug;
-                    if (formSlug) d.form = formSlug;
-                    if (activeRole && activeRole !== 'mine') d.role = activeRole;
-                    var stageFilter = $('#stageFilterSelect').val();
-                    if (stageFilter) d.stage_filter = stageFilter;
-                }
-            },
+            searchDelay: 0,
+            ajax: createAntiRaceAjax(ajaxUrl, function(d) {
+                d.csrfmiddlewaretoken = csrfToken;
+                if (categorySlug) d.category = categorySlug;
+                if (formSlug) d.form = formSlug;
+                if (activeRole && activeRole !== 'mine') d.role = activeRole;
+                var stageFilter = $('#stageFilterSelect').val();
+                if (stageFilter) d.stage_filter = stageFilter;
+            }),
             columns: columnsConfig,
             order: [[hasExport ? 5 : 4, 'desc']],
             columnDefs: colDefs,
@@ -404,15 +519,7 @@
             }
         });
 
-        // Search Input listener with debounce
-        $('#customSearchInput').on('keyup change', debounce(function() {
-            table.search(this.value).draw();
-        }, 400));
-
-        // Stage Filter listener
-        $('#stageFilterSelect').on('change', function() {
-            table.draw();
-        });
+        bindLiveSearchControls(table);
 
         setupColumnPicker(table, colIndexMap, colPrefsKey);
         setupBatchSelection(table);
@@ -553,19 +660,15 @@
         var table = $table.DataTable({
             serverSide: true,
             processing: true,
-            searchDelay: 400,
-            ajax: {
-                url: ajaxUrl,
-                type: 'POST',
-                data: function(d) {
-                    d.csrfmiddlewaretoken = csrfToken;
-                    if (categorySlug) d.category = categorySlug;
-                    if (formSlug) d.form = formSlug;
-                    if (statusFilter) d.status = statusFilter;
-                    var stageFilter = $('#stageFilterSelect').val();
-                    if (stageFilter) d.stage_filter = stageFilter;
-                }
-            },
+            searchDelay: 0,
+            ajax: createAntiRaceAjax(ajaxUrl, function(d) {
+                d.csrfmiddlewaretoken = csrfToken;
+                if (categorySlug) d.category = categorySlug;
+                if (formSlug) d.form = formSlug;
+                if (statusFilter) d.status = statusFilter;
+                var stageFilter = $('#stageFilterSelect').val();
+                if (stageFilter) d.stage_filter = stageFilter;
+            }),
             columns: columnsConfig,
             order: [[completedColIdx, 'desc']],
             columnDefs: colDefs,
@@ -592,15 +695,7 @@
             }
         });
 
-        // Search Input listener with debounce
-        $('#customSearchInput').on('keyup change', debounce(function() {
-            table.search(this.value).draw();
-        }, 400));
-
-        // Stage Filter listener
-        $('#stageFilterSelect').on('change', function() {
-            table.draw();
-        });
+        bindLiveSearchControls(table);
 
         setupColumnPicker(table, colIndexMap, colPrefsKey);
         setupBatchSelection(table);

@@ -1491,12 +1491,8 @@ def form_submission_hub(request, slug):
     search_query = request.GET.get("q", "").strip()
     if search_query:
         submissions_qs = submissions_qs.filter(
-            models.Q(form_data__icontains=search_query)
-            | models.Q(id__icontains=search_query)
-            | models.Q(submitter__username__icontains=search_query)
-            | models.Q(submitter__first_name__icontains=search_query)
-            | models.Q(submitter__last_name__icontains=search_query)
-        )
+            _build_submission_search_q(search_query, form_def.slug)
+        ).distinct()
 
     # Filter Bar: Dropdown filter stage alur statis lurus (SPK Kontrak Toko)
     stage_filter = request.GET.get("stage_filter", "").strip().lower()
@@ -4704,6 +4700,167 @@ def _form_data_search_q(form_slug, search, field_prefix="form_data"):
     return q
 
 
+_SEARCH_FORM_DATA_KEYS = (
+    "nomor_spk",
+    "brand",
+    "kota",
+    "cabang",
+    "area",
+    "perusahaan",
+    "nama_toko",
+    "nama_dealer",
+    "nama_pemilik",
+    "kode_customer_jde",
+    "jenis_pengajuan",
+    "jenis_kontrak",
+    "nomor_pengajuan",
+    "nama_kegiatan",
+)
+
+
+def _resolve_search_user_and_group_ids(search: str) -> tuple[list[int], list[int]]:
+    """Pre-resolve matching User IDs (including Concat full name) and Group IDs
+    (matching group name or containing any matched PIC user) to avoid expensive
+    M2M joins on FormSubmission/ApprovalTask querysets."""
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.models import Group
+    from django.db.models import Value
+    from django.db.models.functions import Concat
+
+    user_model = get_user_model()
+    matching_user_ids = list(
+        user_model.objects.annotate(
+            full_name=Concat("first_name", Value(" "), "last_name")
+        )
+        .filter(
+            models.Q(username__icontains=search)
+            | models.Q(first_name__icontains=search)
+            | models.Q(last_name__icontains=search)
+            | models.Q(full_name__icontains=search)
+        )
+        .values_list("id", flat=True)
+    )
+    group_q = models.Q(name__icontains=search)
+    if matching_user_ids:
+        group_q |= models.Q(user__id__in=matching_user_ids)
+    matching_group_ids = list(
+        Group.objects.filter(group_q).values_list("id", flat=True).distinct()
+    )
+    return matching_user_ids, matching_group_ids
+
+
+def _build_form_data_keys_q(search: str, field_prefix: str = "form_data") -> models.Q:
+    """Build Q across standard SPK/toko/pengajuan JSON keys plus generic fallback."""
+    q = models.Q()
+    for key in _SEARCH_FORM_DATA_KEYS:
+        q |= models.Q(**{f"{field_prefix}__{key}__icontains": search})
+    try:
+        q |= models.Q(**{f"{field_prefix}__icontains": search})
+    except Exception:
+        pass
+    return q
+
+
+def _build_stage_keyword_q(
+    search: str, task_prefix: str = "", submission_prefix: str = ""
+) -> models.Q:
+    """Map display status/stage labels (e.g. 'asm', 'rsom', 'ttd', 'direksi') to ORM filters."""
+    s_low = search.strip().lower()
+    q = models.Q()
+    stage_order_field = f"{task_prefix}workflow_stage__order"
+    status_field = f"{submission_prefix}status"
+
+    def _stage_q(order_val: int) -> models.Q:
+        if task_prefix:
+            return models.Q(**{f"{task_prefix}status": "pending", stage_order_field: order_val})
+        return models.Q(**{stage_order_field: order_val})
+
+    if "asm" in s_low:
+        q |= _stage_q(1)
+    if "sales support" in s_low or "support" in s_low:
+        q |= _stage_q(2)
+    if "rsom" in s_low:
+        q |= _stage_q(3)
+    if any(kw in s_low for kw in ("ttd", "mitra", "toko")):
+        q |= _stage_q(4) & ~(
+            models.Q(**{f"{submission_prefix}signing_tokens__status": "signed"})
+            | models.Q(**{f"{submission_prefix}form_data__ttd_toko_image__isnull": False})
+        )
+    if "direksi" in s_low:
+        q |= _stage_q(4) & (
+            models.Q(**{f"{submission_prefix}signing_tokens__status": "signed"})
+            | models.Q(**{f"{submission_prefix}form_data__ttd_toko_image__isnull": False})
+        )
+    if "disetujui" in s_low or "approved" in s_low:
+        q |= models.Q(**{status_field: "approved"})
+    if "ditolak" in s_low or "rejected" in s_low:
+        q |= models.Q(**{status_field: "rejected"})
+    if "revisi" in s_low:
+        q |= models.Q(**{status_field: "needs_revision"})
+    if "draft" in s_low:
+        q |= models.Q(**{status_field: "draft"})
+    return q
+
+
+def _build_submission_search_q(search: str, form_slug: str = "") -> models.Q:
+    """Build 4-dimension search Q for FormSubmission querysets (hub & history)."""
+    matching_user_ids, matching_group_ids = _resolve_search_user_and_group_ids(search)
+    q = (
+        models.Q(form_definition__name__icontains=search)
+        | models.Q(status__icontains=search)
+        | models.Q(approval_tasks__step_name__icontains=search)
+        | models.Q(approval_tasks__workflow_stage__name__icontains=search)
+        | _build_form_data_keys_q(search, field_prefix="form_data")
+        | _build_stage_keyword_q(search, task_prefix="approval_tasks__", submission_prefix="")
+    )
+    if search.isdigit():
+        q |= models.Q(id=int(search))
+    if matching_user_ids:
+        q |= (
+            models.Q(submitter_id__in=matching_user_ids)
+            | models.Q(approval_tasks__assigned_to_id__in=matching_user_ids)
+            | models.Q(approval_tasks__completed_by_id__in=matching_user_ids)
+        )
+    if matching_group_ids:
+        q |= (
+            models.Q(approval_tasks__assigned_group_id__in=matching_group_ids)
+            | models.Q(approval_tasks__workflow_stage__approval_groups__id__in=matching_group_ids)
+        )
+    if form_slug:
+        q |= _form_data_search_q(form_slug, search, field_prefix="form_data")
+    return q
+
+
+def _build_task_search_q(search: str, form_slug: str = "") -> models.Q:
+    """Build 4-dimension search Q for ApprovalTask querysets (pending inbox)."""
+    matching_user_ids, matching_group_ids = _resolve_search_user_and_group_ids(search)
+    q = (
+        models.Q(submission__form_definition__name__icontains=search)
+        | models.Q(step_name__icontains=search)
+        | models.Q(workflow_stage__name__icontains=search)
+        | _build_form_data_keys_q(search, field_prefix="submission__form_data")
+        | _build_stage_keyword_q(search, task_prefix="", submission_prefix="submission__")
+    )
+    if search.isdigit():
+        q |= models.Q(submission__id=int(search))
+    if matching_user_ids:
+        q |= (
+            models.Q(submission__submitter_id__in=matching_user_ids)
+            | models.Q(assigned_to_id__in=matching_user_ids)
+            | models.Q(completed_by_id__in=matching_user_ids)
+        )
+    if matching_group_ids:
+        q |= (
+            models.Q(assigned_group_id__in=matching_group_ids)
+            | models.Q(workflow_stage__approval_groups__id__in=matching_group_ids)
+        )
+    if form_slug:
+        q |= _form_data_search_q(
+            form_slug, search, field_prefix="submission__form_data"
+        )
+    return q
+
+
 def _serialize_single_file(file_obj, key, submission_id):
     """Serialize a single file upload to a storable dict."""
     file_path = save_uploaded_file(file_obj, key, submission_id)
@@ -6201,28 +6358,7 @@ def completed_approvals_ajax(request):
 
     # --- Search ---
     if search:
-        search_q = (
-            models.Q(form_definition__name__icontains=search)
-            | models.Q(submitter__first_name__icontains=search)
-            | models.Q(submitter__last_name__icontains=search)
-            | models.Q(submitter__username__icontains=search)
-            | models.Q(status__icontains=search)
-            | models.Q(form_data__nomor_spk__icontains=search)
-            | models.Q(form_data__nama_toko__icontains=search)
-            | models.Q(form_data__nama_dealer__icontains=search)
-            | models.Q(form_data__kode_customer_jde__icontains=search)
-            | models.Q(form_data__brand__icontains=search)
-            | models.Q(form_data__perusahaan__icontains=search)
-        )
-        if search.isdigit():
-            search_q |= models.Q(id=int(search))
-        try:
-            search_q |= models.Q(form_data__icontains=search)
-        except Exception:
-            pass
-        if form_slug:
-            search_q |= _form_data_search_q(form_slug, search, field_prefix="form_data")
-        qs = qs.filter(search_q).distinct()
+        qs = qs.filter(_build_submission_search_q(search, form_slug)).distinct()
 
     records_filtered = qs.count()
 
@@ -6414,30 +6550,7 @@ def approval_inbox_ajax(request):
 
     # --- Search ---
     if search:
-        search_q = (
-            models.Q(submission__form_definition__name__icontains=search)
-            | models.Q(submission__submitter__first_name__icontains=search)
-            | models.Q(submission__submitter__last_name__icontains=search)
-            | models.Q(submission__submitter__username__icontains=search)
-            | models.Q(step_name__icontains=search)
-            | models.Q(submission__form_data__nomor_spk__icontains=search)
-            | models.Q(submission__form_data__nama_toko__icontains=search)
-            | models.Q(submission__form_data__nama_dealer__icontains=search)
-            | models.Q(submission__form_data__kode_customer_jde__icontains=search)
-            | models.Q(submission__form_data__brand__icontains=search)
-            | models.Q(submission__form_data__perusahaan__icontains=search)
-        )
-        if search.isdigit():
-            search_q |= models.Q(submission__id=int(search))
-        try:
-            search_q |= models.Q(submission__form_data__icontains=search)
-        except Exception:
-            pass
-        if form_slug:
-            search_q |= _form_data_search_q(
-                form_slug, search, field_prefix="submission__form_data"
-            )
-        qs = qs.filter(search_q).distinct()
+        qs = qs.filter(_build_task_search_q(search, form_slug)).distinct()
 
     records_filtered = qs.count()
 
