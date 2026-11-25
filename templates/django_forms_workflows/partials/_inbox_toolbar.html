@@ -20,14 +20,26 @@
       </a>
     </div>
 
-    {# Search Container #}
-    <div class="d-flex align-items-center gap-2" id="toolbarRightSlot">
+    {# Search & Stage Filter Container #}
+    <div class="d-flex flex-wrap flex-md-nowrap align-items-center gap-2" id="toolbarRightSlot">
       <div class="input-group inbox-search-group" id="searchContainer">
         <span class="input-group-text"><i class="bi bi-search"></i></span>
         <input type="search" class="form-control" id="customSearchInput"
                placeholder="{% if active_tab == 'history' %}Search history...{% else %}Search approvals...{% endif %}"
                aria-label="Search">
       </div>
+      <select id="stageFilterSelect" class="form-select filter-status-select" style="min-width: 175px; max-width: 220px; font-size: 13px; height: 38px; border-radius: 6px; border: 1px solid #cbd5e1; color: #334155; background-color: #ffffff; flex-shrink: 0;" aria-label="Filter tahapan workflow">
+        <option value="">Semua Tahapan</option>
+        <option value="stage_1_asm">1. Review ASM</option>
+        <option value="stage_2_support">2. Review Sales Support</option>
+        <option value="stage_3_rsom">3. Review RSOM</option>
+        <option value="waiting_toko">Menunggu TTD Mitra Toko</option>
+        <option value="stage_4_direksi">4. Approval Direksi</option>
+        {% if active_tab == 'history' %}
+        <option value="approved">Disetujui (Approved)</option>
+        <option value="rejected">Ditolak (Rejected)</option>
+        {% endif %}
+      </select>
       {# Column picker gear button placeholder if form fields present #}
       <div id="colPickerSlot"></div>
     </div>

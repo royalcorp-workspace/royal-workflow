@@ -1449,13 +1449,30 @@ def form_submission_hub(request, slug):
     user = request.user
     user_groups = user.groups.all()
 
-    # Determine access scope: Staff/superusers/reviewers see all, regular users see their own
+    # Determine access scope: Staff/superusers/reviewers/workflow approvers see all, regular users see their own
+    is_contract_role = form_def.slug == "permohonan-kontrak" and user_groups.filter(
+        name__in=[
+            "Sales Support",
+            "Area Sales Manager (L1)",
+            "Regional Sales Operation Manager (L2)",
+            "Direksi",
+        ]
+    ).exists()
+    is_stage_approver = form_def.workflows.filter(stages__approval_groups__in=user_groups).exists()
+    has_assigned_tasks = ApprovalTask.objects.filter(
+        submission__form_definition=form_def
+    ).filter(
+        models.Q(assigned_to=user) | models.Q(assigned_group__in=user_groups)
+    ).exists()
+
     is_privileged = (
         user.is_superuser
         or user.is_staff
         or form_def.reviewer_groups.filter(id__in=user_groups).exists()
         or form_def.admin_groups.filter(id__in=user_groups).exists()
-        or (form_def.slug == "permohonan-kontrak" and user_groups.filter(name="Sales Support").exists())
+        or is_contract_role
+        or is_stage_approver
+        or has_assigned_tasks
     )
 
     if is_privileged:
@@ -6116,6 +6133,7 @@ def completed_approvals_ajax(request):
     category_slug = params.get("category", "").strip()
     form_slug = params.get("form", "").strip()
     status_filter = params.get("status", "").strip()
+    stage_filter = params.get("stage_filter", "").strip().lower()
 
     # --- Base queryset (mirrors permission logic of completed_approvals view) ---
     _history_statuses = ["approved", "pending_approval", "rejected", "withdrawn"]
@@ -6150,7 +6168,7 @@ def completed_approvals_ajax(request):
 
     records_total = qs.count()
 
-    # --- URL-level filters ---
+    # --- URL-level & Stage filters ---
     if category_slug:
         qs = qs.filter(form_definition__category__slug=category_slug)
     if form_slug:
@@ -6158,17 +6176,53 @@ def completed_approvals_ajax(request):
     if status_filter in ("pending_approval", "approved", "rejected", "withdrawn"):
         qs = qs.filter(status=status_filter)
 
+    if stage_filter:
+        if stage_filter == "stage_1_asm":
+            qs = qs.filter(approval_tasks__workflow_stage__order=1)
+        elif stage_filter == "stage_2_support":
+            qs = qs.filter(approval_tasks__workflow_stage__order=2)
+        elif stage_filter == "stage_3_rsom":
+            qs = qs.filter(approval_tasks__workflow_stage__order=3)
+        elif stage_filter == "waiting_toko":
+            qs = qs.filter(approval_tasks__workflow_stage__order=4).exclude(
+                models.Q(signing_tokens__status="signed")
+                | models.Q(form_data__ttd_toko_image__isnull=False)
+            )
+        elif stage_filter == "stage_4_direksi":
+            qs = qs.filter(approval_tasks__workflow_stage__order=4).filter(
+                models.Q(signing_tokens__status="signed")
+                | models.Q(form_data__ttd_toko_image__isnull=False)
+            )
+        elif stage_filter == "approved":
+            qs = qs.filter(status="approved")
+        elif stage_filter == "rejected":
+            qs = qs.filter(status="rejected")
+        qs = qs.distinct()
+
     # --- Search ---
     if search:
-        qs = qs.filter(
+        search_q = (
             models.Q(form_definition__name__icontains=search)
             | models.Q(submitter__first_name__icontains=search)
             | models.Q(submitter__last_name__icontains=search)
             | models.Q(submitter__username__icontains=search)
             | models.Q(status__icontains=search)
-            | models.Q(form_data__icontains=search)
-            | _form_data_search_q(form_slug, search, field_prefix="form_data")
+            | models.Q(form_data__nomor_spk__icontains=search)
+            | models.Q(form_data__nama_toko__icontains=search)
+            | models.Q(form_data__nama_dealer__icontains=search)
+            | models.Q(form_data__kode_customer_jde__icontains=search)
+            | models.Q(form_data__brand__icontains=search)
+            | models.Q(form_data__perusahaan__icontains=search)
         )
+        if search.isdigit():
+            search_q |= models.Q(id=int(search))
+        try:
+            search_q |= models.Q(form_data__icontains=search)
+        except Exception:
+            pass
+        if form_slug:
+            search_q |= _form_data_search_q(form_slug, search, field_prefix="form_data")
+        qs = qs.filter(search_q).distinct()
 
     records_filtered = qs.count()
 
@@ -6277,6 +6331,7 @@ def approval_inbox_ajax(request):
     category_slug = params.get("category", "").strip()
     form_slug = params.get("form", "").strip()
     requested_role = params.get("role", "").strip().lower()
+    stage_filter = params.get("stage_filter", "").strip().lower()
 
     # --- Base queryset ---
     # Mirrors the role-scope logic in approval_inbox(): the same `?role=`
@@ -6333,25 +6388,56 @@ def approval_inbox_ajax(request):
     qs = qs.exclude(submission__status="draft")
     records_total = qs.count()
 
-    # --- URL filters ---
+    # --- URL & Stage filters ---
     if category_slug:
         qs = qs.filter(submission__form_definition__category__slug=category_slug)
     if form_slug:
         qs = qs.filter(submission__form_definition__slug=form_slug)
 
+    if stage_filter:
+        if stage_filter == "stage_1_asm":
+            qs = qs.filter(workflow_stage__order=1)
+        elif stage_filter == "stage_2_support":
+            qs = qs.filter(workflow_stage__order=2)
+        elif stage_filter == "stage_3_rsom":
+            qs = qs.filter(workflow_stage__order=3)
+        elif stage_filter == "waiting_toko":
+            qs = qs.filter(workflow_stage__order=4).exclude(
+                models.Q(submission__signing_tokens__status="signed")
+                | models.Q(submission__form_data__ttd_toko_image__isnull=False)
+            )
+        elif stage_filter == "stage_4_direksi":
+            qs = qs.filter(workflow_stage__order=4).filter(
+                models.Q(submission__signing_tokens__status="signed")
+                | models.Q(submission__form_data__ttd_toko_image__isnull=False)
+            ).distinct()
+
     # --- Search ---
     if search:
-        qs = qs.filter(
+        search_q = (
             models.Q(submission__form_definition__name__icontains=search)
             | models.Q(submission__submitter__first_name__icontains=search)
             | models.Q(submission__submitter__last_name__icontains=search)
             | models.Q(submission__submitter__username__icontains=search)
             | models.Q(step_name__icontains=search)
-            | models.Q(submission__form_data__icontains=search)
-            | _form_data_search_q(
+            | models.Q(submission__form_data__nomor_spk__icontains=search)
+            | models.Q(submission__form_data__nama_toko__icontains=search)
+            | models.Q(submission__form_data__nama_dealer__icontains=search)
+            | models.Q(submission__form_data__kode_customer_jde__icontains=search)
+            | models.Q(submission__form_data__brand__icontains=search)
+            | models.Q(submission__form_data__perusahaan__icontains=search)
+        )
+        if search.isdigit():
+            search_q |= models.Q(submission__id=int(search))
+        try:
+            search_q |= models.Q(submission__form_data__icontains=search)
+        except Exception:
+            pass
+        if form_slug:
+            search_q |= _form_data_search_q(
                 form_slug, search, field_prefix="submission__form_data"
             )
-        )
+        qs = qs.filter(search_q).distinct()
 
     records_filtered = qs.count()
 

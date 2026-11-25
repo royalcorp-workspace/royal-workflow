@@ -58,12 +58,42 @@ def forms_workflows(request):
                 )
             else:
                 user_groups = user.groups.all()
+                user_group_names = set(user_groups.values_list("name", flat=True))
+
+                is_contract_role = bool(
+                    user_group_names.intersection({
+                        "Sales Support",
+                        "Area Sales Manager (L1)",
+                        "Regional Sales Operation Manager (L2)",
+                        "Direksi",
+                        "Sales Staff",
+                        "Promotor",
+                    })
+                )
+
+                access_filter = (
+                    # 1. Standard submit or view access
+                    Q(submit_groups__in=user_groups)
+                    | Q(view_groups__in=user_groups)
+                    # 2. Reviewer or Admin groups access
+                    | Q(reviewer_groups__in=user_groups)
+                    | Q(admin_groups__in=user_groups)
+                    # 3. Workflow stage approver group access
+                    | Q(workflows__stages__approval_groups__in=user_groups)
+                    # 4. User has submitted or has pending/historical approval tasks
+                    | Q(submissions__submitter=user)
+                    | Q(submissions__approval_tasks__assigned_to=user)
+                    | Q(submissions__approval_tasks__assigned_group__in=user_groups)
+                    # 5. Publicly open form (both view and submit are unrestricted)
+                    | (Q(view_groups__isnull=True) & Q(submit_groups__isnull=True))
+                )
+
+                if is_contract_role:
+                    access_filter |= Q(slug="permohonan-kontrak")
+
                 forms_qs = (
                     FormDefinition.objects.filter(is_active=True)
-                    .filter(
-                        Q(view_groups__in=user_groups) | Q(view_groups__isnull=True),
-                        Q(submit_groups__in=user_groups) | Q(submit_groups__isnull=True),
-                    )
+                    .filter(access_filter)
                     .select_related("category")
                     .distinct()
                     .order_by("category__order", "category__name", "name")

@@ -256,8 +256,13 @@ def _send_html_email_from_string(
         except Exception:
             pass
 
+    from .services.notification_formatter import (
+        build_notification_placeholders,
+        build_standard_notification_context,
+        interpolate_single_brace_placeholders,
+    )
+
     if submission_obj and "doc_info" not in context:
-        from .services.notification_formatter import build_standard_notification_context
         std_ctx = build_standard_notification_context(
             submission=submission_obj,
             event=notification_type,
@@ -270,8 +275,28 @@ def _send_html_email_from_string(
 
     context.setdefault("site_name", _site_name())
 
+    # Build unified flat placeholders and inject into context (setdefault preserves objects)
+    placeholders: dict[str, str] = {}
+    if submission_obj:
+        placeholders = build_notification_placeholders(
+            submission=submission_obj,
+            task=context.get("task"),
+            approver=context.get("approver"),
+            comments=str(context.get("comments", "") or ""),
+            action_url=str(
+                context.get("action_url")
+                or context.get("approval_url")
+                or context.get("submission_url")
+                or ""
+            ),
+            site_name=str(context.get("site_name", "") or ""),
+        )
+        for pk, pv in placeholders.items():
+            context.setdefault(pk, pv)
+
     tpl = Template(body_template_string)
     html_body = tpl.render(Context(context))
+    html_body = interpolate_single_brace_placeholders(html_body, placeholders)
     text_body = strip_tags(re.sub(r"<style.*?>.*?</style>", "", html_body, flags=re.DOTALL | re.IGNORECASE)).strip()
     from_addr = from_email or getattr(
         settings, "DEFAULT_FROM_EMAIL", "no-reply@localhost"
@@ -1757,18 +1782,24 @@ def send_notification_rules(
         # Build subject with answer piping — {field_name} tokens are
         # resolved from form_data alongside the built-in {form_name} and
         # {submission_id} placeholders.
-        _pipe_vars = {
-            "form_name": form_name,
-            "submission_id": submission.id,
-            **{k: _pipe_value(v) for k, v in form_data.items()},
-        }
+        # Resolve subject placeholders safely across form_data and system/workflow metadata
+        from .services.notification_formatter import (
+            build_notification_placeholders,
+            interpolate_single_brace_placeholders,
+        )
+        _rule_placeholders = build_notification_placeholders(
+            submission=submission,
+            task=task,
+            action_url=approval_url or submission_url,
+            site_name=_site_name(),
+        )
+        for k, v in form_data.items():
+            if not _rule_placeholders.get(str(k)):
+                _rule_placeholders[str(k)] = _pipe_value(v)
+
         subject_tpl = rule.subject_template or default_subject_tpl
-        try:
-            subject = subject_tpl.format_map(defaultdict(str, _pipe_vars))
-        except Exception:
-            subject = subject_tpl.format(
-                form_name=form_name, submission_id=submission.id
-            )
+        subject = interpolate_single_brace_placeholders(subject_tpl, _rule_placeholders).strip()
+        subject = re.sub(r"\s{2,}", " ", subject)
 
         base_context = {
             "submission": submission,

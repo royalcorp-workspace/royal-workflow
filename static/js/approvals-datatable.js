@@ -374,6 +374,8 @@
                     if (categorySlug) d.category = categorySlug;
                     if (formSlug) d.form = formSlug;
                     if (activeRole && activeRole !== 'mine') d.role = activeRole;
+                    var stageFilter = $('#stageFilterSelect').val();
+                    if (stageFilter) d.stage_filter = stageFilter;
                 }
             },
             columns: columnsConfig,
@@ -406,6 +408,11 @@
         $('#customSearchInput').on('keyup change', debounce(function() {
             table.search(this.value).draw();
         }, 400));
+
+        // Stage Filter listener
+        $('#stageFilterSelect').on('change', function() {
+            table.draw();
+        });
 
         setupColumnPicker(table, colIndexMap, colPrefsKey);
         setupBatchSelection(table);
@@ -555,6 +562,8 @@
                     if (categorySlug) d.category = categorySlug;
                     if (formSlug) d.form = formSlug;
                     if (statusFilter) d.status = statusFilter;
+                    var stageFilter = $('#stageFilterSelect').val();
+                    if (stageFilter) d.stage_filter = stageFilter;
                 }
             },
             columns: columnsConfig,
@@ -587,6 +596,11 @@
         $('#customSearchInput').on('keyup change', debounce(function() {
             table.search(this.value).draw();
         }, 400));
+
+        // Stage Filter listener
+        $('#stageFilterSelect').on('change', function() {
+            table.draw();
+        });
 
         setupColumnPicker(table, colIndexMap, colPrefsKey);
         setupBatchSelection(table);
