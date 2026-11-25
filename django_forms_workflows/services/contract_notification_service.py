@@ -630,7 +630,7 @@ def resolve_active_stage_push_target(submission) -> dict:
     return {"valid": False, "reason": f"Tahap urutan ke-{stage_order} tidak terdefinisi"}
 
 
-def send_manual_stage_reminder(submission, sender_user) -> dict:
+def send_manual_stage_reminder(submission, sender_user, custom_note: str = "") -> dict:
     """Send manual push reminder to the current active stage PIC or store partner."""
     target = resolve_active_stage_push_target(submission)
     if not target.get("valid"):
@@ -677,6 +677,10 @@ def send_manual_stage_reminder(submission, sender_user) -> dict:
         action_instruction = "Mohon tinjau berkas dan berikan persetujuan untuk meneruskan pengajuan ke tahap selanjutnya."
         action_button_label = "Review & Berikan Persetujuan"
         notification_type = "manual_reminder"
+
+    cleaned_note = (custom_note or "").strip()
+    if cleaned_note:
+        event_message = f"{event_message} Catatan tambahan dari {sender_name}: \"{cleaned_note}\""
 
     ctx = {
         "submission": submission,

@@ -2228,60 +2228,218 @@ def submission_detail(request, submission_id):
     )
 
 
-@login_required
-@require_http_methods(["POST"])
-def push_stage_notification(request, submission_id):
-    """
-    Manual push notification trigger for Sales Support to remind the currently active stage approver / store.
-    Strictly restricted to users in Sales Support group or Superusers.
-    """
-    submission = get_object_or_404(FormSubmission, id=submission_id)
+def _user_can_push_notifications(user) -> bool:
+    """Return True if user is Superuser, Staff, or belongs to Sales Support."""
+    if not user or not user.is_authenticated:
+        return False
+    return (
+        user.is_superuser
+        or user.is_staff
+        or user.groups.filter(name="Sales Support").exists()
+    )
+
+
+def _is_ajax_request(request) -> bool:
+    return (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or "application/json" in (request.headers.get("Accept") or "")
+    )
+
+
+def _execute_single_push_notification(submission, user, client_ip: str, custom_note: str = "") -> dict:
+    """Shared helper to validate, enforce 60s cooldown, send reminder, and record AuditLog."""
+    from django.core.cache import cache
+    from .services.contract_notification_service import send_manual_stage_reminder
+
     form_def = submission.form_definition
-
     if not form_def or form_def.slug != "permohonan-kontrak":
-        return HttpResponseForbidden("Fitur ini hanya tersedia untuk formulir Kontrak Toko.")
-
-    is_sales_support = request.user.is_superuser or request.user.groups.filter(name="Sales Support").exists()
-    if not is_sales_support:
-        return HttpResponseForbidden("Hanya Sales Support atau Administrator yang berhak mengirimkan push notifikasi pengingat.")
+        return {"success": False, "status_code": 400, "message": "Fitur ini hanya tersedia untuk formulir Kontrak Toko."}
 
     if submission.status not in ["pending_approval", "submitted"]:
-        messages.error(request, "Push notifikasi hanya dapat dikirimkan untuk pengajuan yang sedang aktif berjalan.")
-        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+        return {"success": False, "status_code": 400, "message": "Push notifikasi hanya dapat dikirimkan untuk pengajuan yang sedang aktif berjalan."}
 
-    # Rate limiting cooldown check (60 seconds)
-    from django.core.cache import cache
     cooldown_key = f"push_notif_cooldown_{submission.id}"
     if cache.get(cooldown_key):
-        messages.warning(
-            request,
-            "Pengingat baru saja dikirimkan. Mohon tunggu 60 detik sebelum mengirimkan push notifikasi berikutnya.",
-        )
-        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+        return {
+            "success": False,
+            "cooldown": True,
+            "status_code": 429,
+            "message": "Pengingat baru saja dikirimkan. Mohon tunggu 60 detik sebelum mengirimkan push notifikasi berikutnya.",
+        }
 
-    from .services.contract_notification_service import send_manual_stage_reminder
-    result = send_manual_stage_reminder(submission, request.user)
-
+    result = send_manual_stage_reminder(submission, user, custom_note=custom_note)
     if result.get("success"):
         cache.set(cooldown_key, timezone.now().isoformat(), timeout=60)
         AuditLog.objects.create(
             action="comment",
             object_type="FormSubmission",
             object_id=submission.id,
-            user=request.user,
-            user_ip=get_client_ip(request),
+            user=user,
+            user_ip=client_ip,
             comments=(
-                f"Sales Support ({request.user.get_full_name() or request.user.username}) "
+                f"Sales Support ({user.get_full_name() or user.username}) "
                 f"mengirimkan pengingat manual ke {result.get('stage_label', 'Stage Aktif')} "
                 f"({result.get('recipient_summary', '-')})."
             ),
-            changes={"notification_pushed": True, "target": result.get("stage_label")},
+            changes={
+                "notification_pushed": True,
+                "target": result.get("stage_label"),
+                "custom_note": custom_note or "",
+            },
         )
-        messages.success(request, result["message"])
+        return {
+            "success": True,
+            "status_code": 200,
+            "message": result["message"],
+            "stage_label": result.get("stage_label", ""),
+            "recipient_summary": result.get("recipient_summary", ""),
+            "recipient_emails": result.get("recipient_emails", []),
+        }
+
+    return {
+        "success": False,
+        "status_code": 400,
+        "message": result.get("message", "Gagal mengirimkan push notifikasi pengingat."),
+    }
+
+
+@login_required
+@require_http_methods(["POST"])
+def push_stage_notification(request, submission_id):
+    """
+    Manual push notification trigger for Sales Support to remind the currently active stage approver / store.
+    Supports both traditional form redirect (detail page) and AJAX JSON response (Approvals Inbox).
+    """
+    submission = get_object_or_404(FormSubmission, id=submission_id)
+    is_ajax = _is_ajax_request(request)
+
+    if not _user_can_push_notifications(request.user):
+        msg = "Hanya Sales Support atau Administrator yang berhak mengirimkan push notifikasi pengingat."
+        return JsonResponse({"success": False, "message": msg}, status=403) if is_ajax else HttpResponseForbidden(msg)
+
+    custom_note = ""
+    if request.content_type == "application/json":
+        try:
+            body_data = json.loads(request.body.decode("utf-8") or "{}")
+            custom_note = (body_data.get("note") or "").strip()
+        except Exception:
+            custom_note = ""
     else:
-        messages.error(request, result.get("message", "Gagal mengirimkan push notifikasi pengingat."))
+        custom_note = (request.POST.get("note") or "").strip()
+
+    res = _execute_single_push_notification(
+        submission, request.user, get_client_ip(request), custom_note=custom_note
+    )
+
+    if is_ajax:
+        return JsonResponse(res, status=res.get("status_code", 200))
+
+    if res.get("success"):
+        messages.success(request, res["message"])
+    elif res.get("cooldown"):
+        messages.warning(request, res["message"])
+    else:
+        messages.error(request, res.get("message", "Gagal mengirimkan push notifikasi pengingat."))
 
     return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+
+@login_required
+@require_http_methods(["POST"])
+def bulk_push_stage_notifications(request):
+    """
+    Bulk manual push notification trigger from Approvals Inbox floating selection bar.
+    Processes multiple submission_ids safely, skipping invalid/completed/cooldown items.
+    """
+    if not _user_can_push_notifications(request.user):
+        return JsonResponse(
+            {"success": False, "message": "Hanya Sales Support atau Administrator yang berhak mengirimkan push notifikasi."},
+            status=403,
+        )
+
+    raw_ids = []
+    custom_note = ""
+    if request.content_type == "application/json":
+        try:
+            body_data = json.loads(request.body.decode("utf-8") or "{}")
+            raw_ids = body_data.get("submission_ids") or []
+            custom_note = (body_data.get("note") or "").strip()
+        except Exception:
+            raw_ids = []
+    else:
+        raw_ids = request.POST.getlist("submission_ids")
+        custom_note = (request.POST.get("note") or "").strip()
+
+    # Deduplicate while preserving order
+    unique_ids = []
+    seen = set()
+    for val in raw_ids:
+        try:
+            sid = int(val)
+            if sid not in seen:
+                seen.add(sid)
+                unique_ids.append(sid)
+        except (TypeError, ValueError):
+            continue
+
+    if not unique_ids:
+        return JsonResponse(
+            {"success": False, "message": "Pilih minimal 1 pengajuan untuk dikirimkan push notifikasi."},
+            status=400,
+        )
+
+    submissions_map = {
+        s.id: s
+        for s in FormSubmission.objects.select_related("form_definition", "submitter")
+        .prefetch_related("approval_tasks", "signing_tokens")
+        .filter(id__in=unique_ids)
+    }
+
+    client_ip = get_client_ip(request)
+    sent_count = 0
+    skipped_count = 0
+    details = []
+
+    for sid in unique_ids:
+        sub = submissions_map.get(sid)
+        if not sub:
+            skipped_count += 1
+            details.append({"submission_id": sid, "success": False, "reason": "Pengajuan tidak ditemukan."})
+            continue
+
+        res = _execute_single_push_notification(sub, request.user, client_ip, custom_note=custom_note)
+        if res.get("success"):
+            sent_count += 1
+            details.append({
+                "submission_id": sid,
+                "success": True,
+                "stage_label": res.get("stage_label", ""),
+                "recipient_summary": res.get("recipient_summary", ""),
+            })
+        else:
+            skipped_count += 1
+            details.append({
+                "submission_id": sid,
+                "success": False,
+                "reason": res.get("message", "Dilewati."),
+            })
+
+    total_selected = len(unique_ids)
+    if sent_count > 0:
+        summary_msg = f"Berhasil mengirim pengingat untuk {sent_count} dari {total_selected} pengajuan terpilih."
+        if skipped_count > 0:
+            summary_msg += f" ({skipped_count} item dilewati karena tidak aktif/cooldown)."
+    else:
+        summary_msg = f"Tidak ada pengingat yang terkirim ({skipped_count} dari {total_selected} item dilewati karena tidak aktif/cooldown)."
+
+    return JsonResponse({
+        "success": sent_count > 0,
+        "sent_count": sent_count,
+        "skipped_count": skipped_count,
+        "total_selected": total_selected,
+        "message": summary_msg,
+        "details": details,
+    })
 
 
 @login_required
@@ -2533,6 +2691,7 @@ def approval_inbox(request):
             "form_fields": form_fields,
             "any_exportable": any_exportable,
             "any_pdf_exportable": any_pdf_exportable,
+            "can_push_notifications": _user_can_push_notifications(request.user),
             "default_sort_col": default_sort_col,
             # Role-scope filter (None or "reviewing" or "overseeing");
             # available_role_filters is the set the user has access to so
@@ -3831,6 +3990,7 @@ def completed_approvals(request):
             "status_filter": status_filter,
             "any_exportable": any_exportable,
             "any_pdf_exportable": any_pdf_exportable,
+            "can_push_notifications": _user_can_push_notifications(request.user),
             "form_fields": form_fields,
             "default_sort_col": default_sort_col,
         },
@@ -6600,11 +6760,14 @@ def approval_inbox_ajax(request):
     )[start : start + length]
 
     # --- Serialise ---
+    can_push_user = _user_can_push_notifications(request.user)
     data = []
     for task in page_qs:
         sub = task.submission
         wf = getattr(sub.form_definition, "workflow", None)
         can_exp = wf and (wf.allow_bulk_export or wf.allow_bulk_pdf_export)
+        is_kontrak_toko = bool(sub.form_definition and sub.form_definition.slug == "permohonan-kontrak")
+        can_push_row = can_push_user and is_kontrak_toko and sub.status in ("pending_approval", "submitted")
         approve_url = reverse("forms_workflows:approve_submission", args=[task.id])
         det_url = reverse("forms_workflows:submission_detail", args=[sub.id])
 
@@ -6744,11 +6907,24 @@ def approval_inbox_ajax(request):
                 else (task.assigned_group.name if task.assigned_group else "—")
             )
 
+        if can_push_row:
+            push_url = reverse("forms_workflows:push_stage_notification", args=[sub.id])
+            spk_label = escape((sub.form_data or {}).get("nomor_spk") or f"SPK #{sub.id}")
+            toko_label = escape((sub.form_data or {}).get("nama_toko") or "Mitra Toko")
+            push_btn = (
+                f'<button type="button" class="btn btn-sm btn-outline-warning text-dark fw-semibold ms-1 js-btn-push-notif" '
+                f'data-submission-id="{sub.id}" data-push-url="{push_url}" '
+                f'data-spk="{spk_label}" data-toko="{toko_label}" '
+                f'title="Push Notifikasi pengingat ke PIC stage aktif">'
+                f'<i class="bi bi-bell-fill"></i> Push</button>'
+            )
+            action_btn = f"{action_btn}{push_btn}"
+
         row = {
             "DT_RowId": f"row_{task.id}",
             "checkbox": (
                 f'<input type="checkbox" name="submission_ids" value="{sub.id}" class="export-check">'
-                if can_exp
+                if (can_exp or can_push_row)
                 else ""
             ),
             "category": _cat_html(getattr(sub.form_definition, "category", None)),
