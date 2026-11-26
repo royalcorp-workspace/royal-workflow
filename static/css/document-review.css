@@ -3,7 +3,8 @@
 /* Document & Review Wrapper Container */
 .document-wrapper,
 .review-wrapper {
-  max-width: 1040px;
+  max-width: 1400px;
+  width: 100%;
   margin: 0 auto;
 }
 

@@ -12,8 +12,30 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/enterprise-tables.css' %}">
-<link rel="stylesheet" href="{% static 'css/document-review.css' %}?v=2.1">
+<link rel="stylesheet" href="{% static 'css/document-review.css' %}?v=2.2">
 <style>
+.document-wrapper,
+.review-wrapper {
+    max-width: 1400px !important;
+    width: 100% !important;
+}
+.content-body-inner {
+    max-width: 1440px !important;
+    width: 100% !important;
+}
+{% if submission.form_definition.slug == 'pengajuan-biaya' %}
+#submittedFormDataCard {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+#submittedFormDataCard > .doc-card-header {
+    display: none !important;
+}
+#submittedFormDataCard > .doc-card-body {
+    padding: 0 !important;
+}
+{% endif %}
 .btn-download-pdf {
     background-color: #fff5f5 !important;
     border: 1px solid #fca5a5 !important;
