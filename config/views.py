@@ -612,10 +612,21 @@ def jde_customer_lookup(request):
             nik_digits = re.sub(r'\D', '', raw_nik)
             nik = nik_digits if len(nik_digits) == 16 else (nik_digits if nik_digits else "")
 
+            raw_nama_parent = str(
+                jde_data.get("nama_toko_parent")
+                or jde_data.get("nama_parent")
+                or jde_data.get("parent_name")
+                or jde_data.get("parent_customer")
+                or ""
+            ).strip()
+            nama_toko_parent = "" if raw_nama_parent in ("", "-", "—") else raw_nama_parent
+
             customer = {
                 "customer_code": jde_data.get("kode_customer") or code,
                 "kode_customer": jde_data.get("kode_customer") or code,
+                "nama_customer": jde_data.get("nama_customer") or jde_data.get("nama_toko") or "",
                 "nama_toko": jde_data.get("nama_toko") or "",
+                "nama_toko_parent": nama_toko_parent,
                 "nama_pemilik": nama_pemilik,
                 "alamat_lengkap": normalized_alamat,
                 "alamat_toko": normalized_alamat,
@@ -669,7 +680,9 @@ def jde_customer_lookup(request):
         mock_fallback = {
             "100107": {
                 "kode_customer": "100107",
+                "nama_customer": "Yudi Cahyadi",
                 "nama_toko": "Yudi Cahyadi",
+                "nama_toko_parent": "",
                 "npwp": "000000000000000",
                 "status_npwp": "Valid",
                 "payment_terms": "045",
@@ -681,7 +694,9 @@ def jde_customer_lookup(request):
             },
             "100228": {
                 "kode_customer": "100228",
+                "nama_customer": "VERONICA SB ( GAYA ABADI )",
                 "nama_toko": "VERONICA SB ( GAYA ABADI )",
+                "nama_toko_parent": "GAYA ABADI GROUP",
                 "npwp": "094389459428000",
                 "status_npwp": "Valid",
                 "payment_terms": "045",
@@ -710,7 +725,9 @@ def jde_customer_lookup(request):
             customer = {
                 "customer_code": mf["kode_customer"],
                 "kode_customer": mf["kode_customer"],
+                "nama_customer": mf.get("nama_customer") or mf["nama_toko"],
                 "nama_toko": mf["nama_toko"],
+                "nama_toko_parent": mf.get("nama_toko_parent") or "",
                 "nama_pemilik": nama_pemilik,
                 "alamat_lengkap": normalized_alamat,
                 "alamat_toko": normalized_alamat,

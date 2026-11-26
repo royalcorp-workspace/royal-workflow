@@ -89,7 +89,7 @@ def forms_workflows(request):
                 )
 
                 if is_contract_role:
-                    access_filter |= Q(slug="permohonan-kontrak")
+                    access_filter |= Q(slug__in=["permohonan-kontrak", "release-credit-limit"])
 
                 forms_qs = (
                     FormDefinition.objects.filter(is_active=True)

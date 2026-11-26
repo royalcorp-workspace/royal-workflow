@@ -549,18 +549,18 @@
   <div class="hub-page-header d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3">
     <div>
       <div class="hub-category-meta">
-        <span class="meta-badge">Formulir SPK</span>
+        <span class="meta-badge">{% if form_def.slug == 'release-credit-limit' %}Formulir Release Credit Limit{% elif form_def.slug == 'permohonan-kontrak' %}Formulir SPK{% else %}Formulir{% endif %}</span>
         <span>•</span>
-        <span>Sales &amp; Marketing</span>
+        <span>{% if form_def.category %}{{ form_def.category.name }}{% else %}Sales &amp; Marketing{% endif %}</span>
       </div>
       <h1 class="hub-page-title">{{ form_def.name }}</h1>
-      <p class="hub-page-subtitle">Kelola dan pantau riwayat serta status pengajuan kontrak kerjasama toko/dealer ritel.</p>
+      <p class="hub-page-subtitle">{% if form_def.slug == 'release-credit-limit' %}Kelola dan pantau riwayat serta status pengajuan pelepasan hold Credit Limit / TOP.{% else %}Kelola dan pantau riwayat serta status pengajuan kontrak kerjasama toko/dealer ritel.{% endif %}</p>
     </div>
     {% if can_submit %}
     <div class="align-self-stretch align-self-md-auto">
       <a href="{{ submit_url }}" class="btn-create-submission w-100 justify-content-center" id="btnCreateNewSubmission">
         <i class="bi bi-plus-lg"></i>
-        <span>Buat Pengajuan Baru</span>
+        <span>{% if form_def.slug == 'release-credit-limit' %}Ajukan Release Credit Limit{% else %}Buat Pengajuan Baru{% endif %}</span>
       </a>
     </div>
     {% endif %}
@@ -579,7 +579,7 @@
                  name="q"
                  id="hubSearchInput"
                  class="form-control filter-search-input"
-                 placeholder="Cari no. SPK, brand, toko, diajukan oleh..."
+                 placeholder="{% if form_def.slug == 'release-credit-limit' %}Cari no. pengajuan, no. SO, brand, toko...{% else %}Cari no. SPK, brand, toko, diajukan oleh...{% endif %}"
                  value="{{ search_query }}"
                  aria-label="Cari no. SPK, brand, toko, atau pemohon"
                  autocomplete="off">
@@ -622,9 +622,9 @@
       <table class="table enterprise-table" id="submissionsUnifiedTable">
         <thead>
           <tr>
-            <th scope="col" style="width: 20%;">NO. SPK</th>
-            <th scope="col" style="width: 26%;">TOKO / DEALER</th>
-            <th scope="col" style="width: 10%;">JENIS</th>
+            <th scope="col" style="width: 20%;">{% if form_def.slug == 'release-credit-limit' %}NO. PENGAJUAN{% else %}NO. SPK{% endif %}</th>
+            <th scope="col" style="width: 26%;">{% if form_def.slug == 'release-credit-limit' %}TOKO / CUSTOMER{% else %}TOKO / DEALER{% endif %}</th>
+            <th scope="col" style="width: 10%;">{% if form_def.slug == 'release-credit-limit' %}JENIS HOLD{% else %}JENIS{% endif %}</th>
             <th scope="col" style="width: 16%;">TANGGAL DIAJUKAN</th>
             <th scope="col" style="width: 20%;">STATUS</th>
             <th scope="col" style="width: 8%; text-align: right;">AKSI</th>

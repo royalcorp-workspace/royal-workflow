@@ -54,42 +54,89 @@ logger = logging.getLogger(__name__)
 # ---- notification shims ----
 
 
+def _should_dispatch_eager_in_thread() -> bool:
+    """Return True when Celery runs eagerly/in-memory and async threads are enabled."""
+    from django.conf import settings
+
+    if not getattr(settings, "ASYNC_EAGER_NOTIFICATIONS_IN_THREAD", True):
+        return False
+    is_eager = getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False)
+    broker_url = str(getattr(settings, "CELERY_BROKER_URL", "") or "")
+    return bool(is_eager or broker_url.startswith("memory://"))
+
+
+def _spawn_background_task(fn, *args, label: str = "wf-bg") -> None:
+    """Run a notification/webhook callable on a daemon thread with safe DB connection cleanup."""
+    import threading
+    from django.db import close_old_connections
+
+    def _runner() -> None:
+        close_old_connections()
+        try:
+            fn(*args)
+        except Exception:
+            logger.exception("Background task '%s' failed with args=%s", label, args)
+        finally:
+            close_old_connections()
+
+    threading.Thread(target=_runner, daemon=True, name=label).start()
+
+
 def _dispatch_notification_rules(
     submission: FormSubmission, event: str, task_id: int | None = None
 ) -> None:
     """Dispatch all NotificationRule records for the given event.
 
-    Uses Celery when available; falls back to synchronous dispatch.
+    Uses Celery when an external broker is active; dispatches on a daemon
+    background thread when Celery is eager/in-memory so Submit/Approve HTTP
+    requests return immediately without waiting for SMTP handshakes.
     """
     # --- Unified NotificationRule dispatch ---
     try:
         from .tasks import send_notification_rules
 
-        import threading
-
         def _fire_rules() -> None:
-            try:
-                send_notification_rules.delay(submission.id, event, task_id)
-            except Exception:
+            if _should_dispatch_eager_in_thread():
                 logger.info(
-                    "NotificationRule '%s' dispatched via background thread for submission %s",
+                    "NotificationRule '%s' dispatched non-blocking via background thread for submission %s",
                     event,
                     submission.id,
                 )
-                threading.Thread(
-                    target=send_notification_rules,
-                    args=(submission.id, event, task_id),
-                    daemon=True,
-                ).start()
+                _spawn_background_task(
+                    send_notification_rules,
+                    submission.id,
+                    event,
+                    task_id,
+                    label=f"notif-{event}-{submission.id}",
+                )
+            else:
+                try:
+                    send_notification_rules.delay(submission.id, event, task_id)
+                except Exception:
+                    logger.info(
+                        "NotificationRule '%s' dispatched via fallback thread for submission %s",
+                        event,
+                        submission.id,
+                    )
+                    _spawn_background_task(
+                        send_notification_rules,
+                        submission.id,
+                        event,
+                        task_id,
+                        label=f"notif-{event}-{submission.id}",
+                    )
 
             # Also dispatch Telegram notification concurrently if enabled
             try:
                 from .services.telegram_service import dispatch_telegram_workflow_event
-                threading.Thread(
-                    target=dispatch_telegram_workflow_event,
-                    args=(submission.id, event, task_id),
-                    daemon=True,
-                ).start()
+
+                _spawn_background_task(
+                    dispatch_telegram_workflow_event,
+                    submission.id,
+                    event,
+                    task_id,
+                    label=f"tg-{event}-{submission.id}",
+                )
             except Exception as _tel_err:
                 logger.debug("Telegram dispatch error: %s", _tel_err)
 
@@ -113,34 +160,42 @@ def _dispatch_workflow_webhooks(
     """Dispatch first-class webhook deliveries for a workflow lifecycle event."""
     try:
         from .tasks import dispatch_workflow_webhooks
-        import threading
 
         def _fire_webhooks() -> None:
-            try:
-                dispatch_workflow_webhooks.delay(
+            if _should_dispatch_eager_in_thread():
+                _spawn_background_task(
+                    dispatch_workflow_webhooks,
                     submission.id,
                     event,
                     task_id,
                     workflow_id,
                     target_stage_id,
+                    label=f"wh-{event}-{submission.id}",
                 )
-            except Exception:
-                logger.info(
-                    "Webhook '%s' dispatched via background thread for submission %s",
-                    event,
-                    submission.id,
-                )
-                threading.Thread(
-                    target=dispatch_workflow_webhooks,
-                    args=(
+            else:
+                try:
+                    dispatch_workflow_webhooks.delay(
                         submission.id,
                         event,
                         task_id,
                         workflow_id,
                         target_stage_id,
-                    ),
-                    daemon=True,
-                ).start()
+                    )
+                except Exception:
+                    logger.info(
+                        "Webhook '%s' dispatched via fallback thread for submission %s",
+                        event,
+                        submission.id,
+                    )
+                    _spawn_background_task(
+                        dispatch_workflow_webhooks,
+                        submission.id,
+                        event,
+                        task_id,
+                        workflow_id,
+                        target_stage_id,
+                        label=f"wh-{event}-{submission.id}",
+                    )
 
         transaction.on_commit(_fire_webhooks)
     except Exception:
@@ -1561,6 +1616,23 @@ def handle_resubmit_revision(
     target_val = extract_target_value(updated_form_data)
     if target_val and updated_form_data.get("nilai_target") != target_val:
         updated_form_data["nilai_target"] = target_val
+
+    if getattr(getattr(submission, "form_definition", None), "slug", "") == "release-credit-limit":
+        prev_fd = submission.form_data or {}
+        for acc_key in (
+            "acc_plafon_saat_ini",
+            "acc_total_over_credit",
+            "acc_open_order_amount",
+            "acc_over_due",
+            "acc_rata_rata_omzet",
+            "acc_reviewed_by",
+            "acc_reviewed_at",
+        ):
+            if acc_key in prev_fd and acc_key not in updated_form_data:
+                updated_form_data[acc_key] = prev_fd[acc_key]
+        for stale_key in ("rcl_target_final_level", "rcl_target_final_label", "rcl_matrix_reason"):
+            updated_form_data.pop(stale_key, None)
+
     submission.form_data = updated_form_data
     submission.status = "pending_approval"
     submission.submitted_at = timezone.now()

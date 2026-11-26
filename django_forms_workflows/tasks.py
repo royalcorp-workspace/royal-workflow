@@ -68,15 +68,17 @@ def _base_url() -> str:
     2. ``settings.SITE_BASE_URL``
     3. First entry in ``settings.CSRF_TRUSTED_ORIGINS``
     """
-    url = getattr(settings, "FORMS_WORKFLOWS_BASE_URL", None) or getattr(
-        settings, "SITE_BASE_URL", None
+    url = (
+        getattr(settings, "FORMS_WORKFLOWS_BASE_URL", None)
+        or getattr(settings, "SITE_BASE_URL", None)
+        or os.getenv("SITE_URL", "")
     )
     if url:
         return url
     origins = getattr(settings, "CSRF_TRUSTED_ORIGINS", None)
     if origins:
         return origins[0]
-    return ""
+    return "http://127.0.0.1:8069"
 
 
 def _abs(url_path: str) -> str:
@@ -1447,13 +1449,26 @@ def _build_form_field_notification_context(
     task: ApprovalTask | None = None,
 ) -> tuple[str, str]:
     """Return (submission_url, approval_url) for notification templates."""
+    if getattr(submission, "status", "") == "needs_revision":
+        fdef = getattr(submission, "form_definition", None)
+        if fdef and getattr(fdef, "slug", ""):
+            rev_url = _abs(
+                f"{reverse('forms_workflows:form_submit', args=[fdef.slug])}?revision={submission.id}"
+            )
+            return rev_url, rev_url
+
     submission_url = _abs(
         reverse("forms_workflows:submission_detail", args=[submission.id])
     )
+    is_rcl = getattr(getattr(submission, "form_definition", None), "slug", "") == "release-credit-limit"
     approval_url = (
-        _abs(reverse("forms_workflows:approve_submission", args=[task.id]))
-        if task
-        else submission_url
+        submission_url
+        if is_rcl
+        else (
+            _abs(reverse("forms_workflows:approve_submission", args=[task.id]))
+            if task
+            else submission_url
+        )
     )
     return submission_url, approval_url
 
@@ -1565,6 +1580,14 @@ def send_notification_rules(
             )
             if _rejecting:
                 task_id = _rejecting.id
+        elif event in ("submission_returned", "needs_revision"):
+            _returned = (
+                submission.approval_tasks.filter(status="returned")
+                .order_by("-completed_at")
+                .first()
+            )
+            if _returned:
+                task_id = _returned.id
 
     submission_url, approval_url = _build_form_field_notification_context(
         submission,

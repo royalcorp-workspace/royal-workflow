@@ -26,6 +26,22 @@ urlpatterns = [
         signing_views.public_spk_reject_view,
         name="public_spk_reject",
     ),
+    # Release Credit Limit dynamic workflow & review endpoints
+    path(
+        "release-credit-limit/evaluate-matrix/",
+        views.release_credit_limit_evaluate_matrix,
+        name="rcl_evaluate_matrix",
+    ),
+    path(
+        "release-credit-limit/review/<int:submission_id>/",
+        views.release_credit_limit_review_action,
+        name="rcl_review_action",
+    ),
+    path(
+        "release-credit-limit/attachment/<int:submission_id>/<int:index>/",
+        views.release_credit_limit_attachment,
+        name="rcl_attachment",
+    ),
     # Form list and submission
     path("", views.form_list, name="form_list"),
     path("<slug:slug>/submit/", views.form_submit, name="form_submit"),

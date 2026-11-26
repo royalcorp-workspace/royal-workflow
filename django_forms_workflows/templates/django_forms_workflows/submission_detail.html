@@ -1,624 +1,1500 @@
 {% extends 'django_forms_workflows/base.html' %}
+{% load static %}
 {% load forms_workflows_tags %}
 
-{% block title %}Submission #{{ submission.id }} - {{ site_name }}{% endblock %}
+{% block title %}Submission #{{ submission.id }} — {{ submission.form_definition.name }} - {{ site_name }}{% endblock %}
+
+{% block topbar_title %}
+    <a href="{% url 'forms_workflows:form_submission_hub' submission.form_definition.slug %}" class="text-decoration-none text-muted">{{ submission.form_definition.name }}</a>
+    <span class="crumb-sep">/</span>
+    <span class="crumb-current">#{{ submission.id }}</span>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/enterprise-tables.css' %}">
+<link rel="stylesheet" href="{% static 'css/document-review.css' %}?v=2.1">
+<style>
+.btn-download-pdf {
+    background-color: #fff5f5 !important;
+    border: 1px solid #fca5a5 !important;
+    color: #dc2626 !important;
+    font-weight: 500 !important;
+    white-space: nowrap !important;
+}
+.btn-download-pdf i {
+    color: #dc2626 !important;
+}
+.btn-download-pdf:hover, .btn-download-pdf:focus {
+    background-color: #dc2626 !important;
+    border-color: #dc2626 !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.28) !important;
+}
+.btn-download-pdf:hover i, .btn-download-pdf:focus i {
+    color: #ffffff !important;
+}
+
+/* ── Clean Enterprise Audit Log, Filter Tabs & Subtle Status Pills ── */
+.audit-tab-btn {
+    background: transparent;
+    color: #64748b;
+    font-weight: 500;
+    font-size: 12.5px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 4px 12px;
+    cursor: pointer;
+    transition: all 0.15s ease-in-out;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    line-height: 1.4;
+    text-decoration: none;
+}
+.audit-tab-btn:hover {
+    color: #0f172a;
+}
+.audit-tab-btn.active {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-weight: 600 !important;
+    border-color: #cbd5e1 !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Soft Subtle Status Pill with 6px Dot */
+.audit-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.25;
+    white-space: nowrap;
+}
+.audit-status-pill .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-block;
+}
+
+/* Diajukan (Soft Blue) */
+.audit-status-submitted {
+    background-color: #eff6ff !important;
+    color: #1d4ed8 !important;
+    border: 1px solid #bfdbfe !important;
+}
+.audit-status-submitted .status-dot {
+    background-color: #2563eb;
+}
+
+/* Disetujui (Soft Green) */
+.audit-status-approved {
+    background-color: #f0fdf4 !important;
+    color: #15803d !important;
+    border: 1px solid #bbf7d0 !important;
+}
+.audit-status-approved .status-dot {
+    background-color: #16a34a;
+}
+
+/* Menunggu (Soft Amber) */
+.audit-status-pending {
+    background-color: #fffbeb !important;
+    color: #b45309 !important;
+    border: 1px solid #fde68a !important;
+}
+.audit-status-pending .status-dot {
+    background-color: #d97706;
+}
+
+/* Ditolak / Revisi / Send-Back (Soft Red) */
+.audit-status-rejected,
+.audit-status-revision,
+.audit-status-returned {
+    background-color: #fef2f2 !important;
+    color: #b91c1c !important;
+    border: 1px solid #fecaca !important;
+}
+.audit-status-rejected .status-dot,
+.audit-status-revision .status-dot,
+.audit-status-returned .status-dot {
+    background-color: #dc2626;
+}
+
+/* Draf / Netral / Dilewati (Soft Neutral Slate) */
+.audit-status-neutral,
+.audit-status-draft,
+.audit-status-skipped {
+    background-color: #f8fafc !important;
+    color: #475569 !important;
+    border: 1px solid #e2e8f0 !important;
+}
+.audit-status-neutral .status-dot,
+.audit-status-draft .status-dot,
+.audit-status-skipped .status-dot {
+    background-color: #94a3b8;
+}
+
+/* ── RCL Clean Symmetric Horizontal Stepper ── */
+.rcl-stepper {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    width: 100%;
+    overflow-x: auto;
+    padding: 6px 0 2px;
+}
+.rcl-step {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 110px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 0 8px;
+}
+.rcl-step:not(:first-child)::before {
+    content: "";
+    position: absolute;
+    top: 11px;
+    right: 50%;
+    width: 100%;
+    height: 2px;
+    background-color: #e2e8f0;
+    z-index: 0;
+}
+.rcl-step.is-done:not(:first-child)::before,
+.rcl-step.is-active:not(:first-child)::before {
+    background-color: #86efac;
+}
+.rcl-step-dot {
+    position: relative;
+    z-index: 1;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11.5px;
+    font-weight: 700;
+    background-color: #f8fafc;
+    border: 2px solid #cbd5e1;
+    color: #64748b;
+}
+.rcl-step.is-done .rcl-step-dot {
+    background-color: #16a34a;
+    border-color: #16a34a;
+    color: #ffffff;
+}
+.rcl-step.is-active .rcl-step-dot {
+    background-color: #2563eb;
+    border-color: #2563eb;
+    color: #ffffff;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+}
+.rcl-step.is-rejected .rcl-step-dot {
+    background-color: #dc2626;
+    border-color: #dc2626;
+    color: #ffffff;
+    box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.14);
+}
+.rcl-step.is-skipped .rcl-step-dot {
+    background-color: #f1f5f9;
+    border-color: #e2e8f0;
+    color: #94a3b8;
+}
+.rcl-step-label {
+    margin-top: 7px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #334155;
+    line-height: 1.25;
+}
+.rcl-step.is-active .rcl-step-label {
+    color: #1d4ed8;
+    font-weight: 700;
+}
+.rcl-step.is-skipped .rcl-step-label {
+    color: #94a3b8;
+    font-weight: 500;
+}
+.rcl-step-sub {
+    margin-top: 2px;
+    font-size: 11px;
+    color: #64748b;
+    line-height: 1.2;
+}
+.rcl-step.is-done .rcl-step-sub {
+    color: #15803d;
+}
+.rcl-step.is-active .rcl-step-sub {
+    color: #2563eb;
+    font-weight: 500;
+}
+.rcl-step.is-rejected .rcl-step-sub {
+    color: #dc2626;
+    font-weight: 500;
+}
+.rcl-step.is-skipped .rcl-step-sub {
+    color: #94a3b8;
+}
+.rcl-doc-title {
+    font-size: clamp(1rem, 1.4vw, 1.32rem);
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+@media (min-width: 768px) {
+    .rcl-doc-title {
+        white-space: nowrap;
+        overflow-wrap: normal;
+    }
+}
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-lg-10 mx-auto">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1>Submission #{{ submission.id }}</h1>
-            <div class="d-flex align-items-center gap-2">
-                {% if submission.status == 'draft' %}
-                    <span class="badge bg-secondary">Draft</span>
-                {% elif submission.status == 'submitted' %}
-                    <span class="badge bg-info">Submitted</span>
-                {% elif submission.status == 'pending_approval' %}
-                    <span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Pending Approval</span>
-                {% elif submission.status == 'needs_revision' %}
-                    <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle-fill me-1"></i>Needs Revision</span>
-                {% elif submission.status == 'approved' %}
-                    <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Approved</span>
-                    {% if submission.stamped_document and submission.stamped_document.status == 'stamped' and submission.stamped_document.provider != 'MockMeteraiProvider' %}
-                      <span class="badge d-inline-flex align-items-center" style="background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 6px;">
-                        <i class="bi bi-patch-check-fill me-1" style="color: #059669;"></i>e-Meterai Terpasang
+<div class="document-wrapper py-3">
+
+  {% if submission.form_definition.slug != 'release-credit-limit' %}
+  {# ── Breadcrumb Navigation ── #}
+  <nav aria-label="breadcrumb" class="mb-2">
+    <ol class="breadcrumb mb-0" style="font-size: 12.5px;">
+      <li class="breadcrumb-item"><a href="{% url 'forms_workflows:form_list' %}" class="text-decoration-none text-muted">Dashboard</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'forms_workflows:form_submission_hub' submission.form_definition.slug %}" class="text-decoration-none text-muted">{{ submission.form_definition.name }}</a></li>
+      <li class="breadcrumb-item active text-dark fw-semibold" aria-current="page">#{{ submission.id }}</li>
+    </ol>
+  </nav>
+  {% endif %}
+
+  {# ── Document Title Bar & Action Controls ── #}
+  <div class="doc-card mb-3">
+    <div class="doc-card-body p-3 p-md-4">
+      <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3">
+        
+        {# Left: Form Title, Reference ID, Standardized Status Badge #}
+        <div class="flex-grow-1" style="min-width: 0;">
+          {% if submission.form_definition.slug == 'release-credit-limit' and rcl_ctx %}
+            <h1 class="fw-bold font-monospace text-dark mb-0 rcl-doc-title">
+              {{ submission.form_data.no_pengajuan|default:submission.form_definition.name }}
+            </h1>
+            <div class="text-secondary small fw-medium mt-0.5">
+              {% if rcl_ctx.is_accounting_pending_actor %}Review Release Credit Limit{% else %}Release Credit Limit{% endif %}
+              <span class="font-monospace text-muted">(#{{ submission.id }})</span>
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-2 text-muted small mt-2">
+              <span><i class="bi bi-person me-1"></i>{% if submission.submitter %}{{ submission.submitter.get_full_name|default:submission.submitter.username }}{% else %}Anonymous{% endif %}</span>
+              {% if submission.form_data.cabang %}
+                <span>&middot;</span>
+                <span><i class="bi bi-building me-1"></i>{{ submission.form_data.cabang }}</span>
+              {% endif %}
+              <span>&middot;</span>
+              <span><i class="bi bi-calendar3 me-1"></i>{{ submission.created_at|date:"d M Y, H:i" }}</span>
+              {% if rcl_ctx.matrix.target_final_label %}
+                <span>&middot;</span>
+                <span>Target Akhir: <strong class="text-dark">{{ rcl_ctx.matrix.target_final_label }}</strong></span>
+              {% endif %}
+              {% if submission.status == 'approved' and submission.completed_at %}
+                <span>&middot;</span>
+                <span class="text-success"><i class="bi bi-check2-all me-1"></i>Selesai {{ submission.completed_at|date:"d M Y, H:i" }}</span>
+              {% endif %}
+            </div>
+          {% else %}
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+              <h1 class="h4 fw-bold text-dark mb-0">{{ submission.form_definition.name }}</h1>
+              <span class="font-monospace fw-semibold text-secondary small">#{{ submission.id }}</span>
+              {% if submission.status == 'draft' %}
+                  <span class="badge-status-pill badge-status-draft">Draft</span>
+              {% elif submission.status == 'submitted' %}
+                  <span class="badge-status-pill badge-status-submitted">Submitted</span>
+              {% elif submission.status == 'pending_approval' or submission.status == 'pending' %}
+                  <span class="badge-status-pill badge-status-pending"><i class="bi bi-clock me-1"></i>Pending Approval</span>
+              {% elif submission.status == 'needs_revision' %}
+                  <span class="badge-status-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle"><i class="bi bi-arrow-repeat me-1"></i>Perlu Revisi</span>
+              {% elif submission.status == 'approved' %}
+                  <span class="badge-status-pill badge-status-approved"><i class="bi bi-check-circle me-1"></i>Approved</span>
+                  {% if submission.stamped_document and submission.stamped_document.status == 'stamped' and submission.stamped_document.provider != 'MockMeteraiProvider' %}
+                    <span class="badge d-inline-flex align-items-center" style="background-color: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 6px;">
+                      <i class="bi bi-patch-check-fill me-1" style="color: #059669;"></i>e-Meterai Terpasang
+                    </span>
+                  {% elif can_manage_ematerai and submission.form_definition.slug == 'permohonan-kontrak' %}
+                    {% if submission.stamped_document and submission.stamped_document.status in 'pending,in_progress' %}
+                      <span class="badge d-inline-flex align-items-center" style="background-color: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 6px;">
+                        <span class="spinner-border spinner-border-sm me-1" role="status" style="width: 10px; height: 10px; border-width: 1.5px;"></span>Memproses e-Meterai
                       </span>
-                    {% elif can_manage_ematerai and submission.form_definition.slug == 'permohonan-kontrak' %}
-                      {% if submission.stamped_document and submission.stamped_document.status in 'pending,in_progress' %}
-                        <span class="badge d-inline-flex align-items-center" style="background-color: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 6px;">
-                          <span class="spinner-border spinner-border-sm me-1" role="status" style="width: 10px; height: 10px; border-width: 1.5px;"></span>Memproses e-Meterai
-                        </span>
-                      {% elif not submission.stamped_document or submission.stamped_document.status == 'failed' or submission.stamped_document.provider == 'MockMeteraiProvider' %}
-                        <span style="font-size: 12px; color: #b45309; font-weight: 500;">&bull; Menunggu e-Meterai</span>
-                      {% endif %}
+                    {% elif not submission.stamped_document or submission.stamped_document.status == 'failed' or submission.stamped_document.provider == 'MockMeteraiProvider' %}
+                      <span style="font-size: 12px; color: #b45309; font-weight: 500;">&bull; Menunggu e-Meterai</span>
                     {% endif %}
-                {% elif submission.status == 'rejected' %}
-                    <span class="badge bg-danger">Rejected</span>
-                {% elif submission.status == 'withdrawn' %}
-                    <span class="badge bg-secondary">Withdrawn</span>
-                {% endif %}
-
-                {% with pdf=submission.form_definition.pdf_generation %}
-                    {% if pdf == 'anytime' and submission.status != 'draft' or pdf == 'post_approval' and submission.status == 'approved' or can_approve_pdf and submission.status != 'draft' %}
-                        <a href="{% url 'forms_workflows:submission_pdf' submission.id %}SPK_Submission_{{ submission.id }}.pdf" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1.5" target="_blank" title="Buka dokumen PDF di tab baru">
-                            <i class="bi bi-file-earmark-pdf-fill text-danger"></i>
-                            <span>PDF</span>
-                        </a>
-                    {% endif %}
-                {% endwith %}
-                {% if can_push_notification %}
-                    <button type="button" 
-                            class="btn btn-sm btn-outline-warning text-dark d-inline-flex align-items-center gap-1.5"
-                            data-bs-toggle="modal" 
-                            data-bs-target="#pushNotificationModal"
-                            title="Kirim pengingat manual ke PIC stage aktif saat ini"
-                            {% if push_cooldown_remaining > 0 %}disabled{% endif %}>
-                        <i class="bi bi-bell-fill text-warning"></i>
-                        <span>Push Notifikasi</span>
-                        {% if push_cooldown_remaining > 0 %}
-                            <span class="badge bg-secondary ms-1">{{ push_cooldown_remaining }}s</span>
-                        {% endif %}
-                    </button>
-                {% endif %}
-                {% if is_approver_user %}
-                    <a href="{% url 'forms_workflows:approval_inbox' %}" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1.5">
-                        <i class="bi bi-inbox-fill"></i>
-                        <span>Inbox Approval</span>
-                    </a>
-                    <a href="{% url 'forms_workflows:completed_approvals' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1.5">
-                        <i class="bi bi-clock-history"></i>
-                        <span>Riwayat Approval</span>
-                    </a>
-                {% else %}
-                    <a href="{% url 'forms_workflows:form_submission_hub' submission.form_definition.slug %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1.5">
-                        <i class="bi bi-arrow-left"></i>
-                        <span>{% if submission.form_definition.slug == 'permohonan-kontrak' %}Back{% else %}Kembali{% endif %}</span>
-                    </a>
-                {% endif %}
+                  {% endif %}
+              {% elif submission.status == 'rejected' %}
+                  <span class="badge-status-pill badge-status-rejected"><i class="bi bi-x-circle me-1"></i>Rejected</span>
+              {% elif submission.status == 'withdrawn' %}
+                  <span class="badge-status-pill badge-status-withdrawn"><i class="bi bi-dash-circle me-1"></i>Withdrawn</span>
+              {% else %}
+                  <span class="badge-status-pill badge-status-draft">{{ submission.get_status_display }}</span>
+              {% endif %}
             </div>
-        </div>
-
-        {# ── Clean Enterprise Notice: e-Meterai Status & Action (Sales Support & Administrator Only) ── #}
-        {% if can_manage_ematerai and submission.status == 'approved' and submission.form_definition.slug == 'permohonan-kontrak' %}
-          {% if submission.stamped_document and submission.stamped_document.status in 'pending,in_progress' %}
-            <div style="background: #f8fafc; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 16px; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
-              <div style="display: flex; align-items: flex-start; gap: 12px; min-width: 0;">
-                <div class="spinner-border text-primary flex-shrink-0 mt-1" role="status" style="width: 15px; height: 15px; border-width: 2px;"></div>
-                <div style="min-width: 0;">
-                  <div style="font-size: 13px; font-weight: 600; color: #1e3a8a; line-height: 1.4;">
-                    Pembubuhan e-Meterai sedang diproses di latar belakang
-                  </div>
-                  <div style="font-size: 12.5px; color: #64748b; line-height: 1.4; margin-top: 2px;">
-                    Dokumen sedang dikirim dan diverifikasi oleh server Peruri (biasanya membutuhkan 15–60 detik). Anda dapat memuat ulang halaman secara berkala untuk memperbarui status.
-                  </div>
-                </div>
-              </div>
-              <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                <button type="button" disabled style="display: inline-flex; align-items: center; gap: 6px; background: #94a3b8; color: #ffffff; border: none; border-radius: 6px; padding: 6px 14px; font-size: 12.5px; font-weight: 500; cursor: not-allowed; opacity: 0.85;">
-                  <span class="spinner-border spinner-border-sm" role="status" style="width: 11px; height: 11px; border-width: 1.5px;"></span>
-                  <span>Memproses...</span>
-                </button>
-                <button type="button" onclick="location.reload()" style="display: inline-flex; align-items: center; gap: 5px; background: #ffffff; color: #334155; border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 11px; font-size: 12px; font-weight: 500; cursor: pointer;">
-                  <i class="bi bi-arrow-clockwise"></i>
-                  <span>Muat Ulang</span>
-                </button>
-              </div>
-            </div>
-          {% elif not submission.stamped_document or submission.stamped_document.status == 'failed' or submission.stamped_document.provider == 'MockMeteraiProvider' %}
-            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
-              <div style="display: flex; align-items: flex-start; gap: 12px; min-width: 0;">
-                <i class="bi bi-info-circle" style="font-size: 15px; color: #d97706; margin-top: 2px; flex-shrink: 0;"></i>
-                <div style="min-width: 0;">
-                  <div style="font-size: 13px; font-weight: 600; color: #0f172a; line-height: 1.4;">
-                    {% if submission.stamped_document and submission.stamped_document.status == 'failed' %}
-                      Pembubuhan e-Meterai tertunda
-                    {% elif submission.stamped_document and submission.stamped_document.provider == 'MockMeteraiProvider' %}
-                      Dokumen menggunakan simulasi e-Meterai
-                    {% else %}
-                      Stempel e-Meterai belum terpasang
-                    {% endif %}
-                  </div>
-                  <div style="font-size: 12.5px; color: #64748b; line-height: 1.4; margin-top: 2px;">
-                    {% if submission.stamped_document and submission.stamped_document.status == 'failed' %}
-                      {% if "IP whitelist" in submission.stamped_document.error_message %}
-                        IP publik belum terdaftar di whitelist EzMeterai (403).
-                      {% else %}
-                        Kendala provider: {{ submission.stamped_document.error_message|cut:"Provider Upload Failed: "|cut:"Upload failed "|cut:"{"|cut:"}"|cut:'"msg":'|truncatechars:110 }}
-                      {% endif %}
-                    {% elif submission.stamped_document and submission.stamped_document.provider == 'MockMeteraiProvider' %}
-                      SPK saat ini dibubuhi stempel simulasi lokal. Klik Proses Ulang untuk menggunakan EzMeterai resmi.
-                    {% else %}
-                      SPK telah disetujui Direksi. Silakan proses pembubuhan stempel resmi Peruri.
-                    {% endif %}
-                  </div>
-                </div>
-              </div>
-              <form method="post" action="{% url 'forms_workflows:retry_ematerai_stamping' submission.id %}" style="margin: 0; flex-shrink: 0;">
-                {% csrf_token %}
-                <button type="submit" style="display: inline-flex; align-items: center; gap: 6px; background: #0f172a; color: #ffffff; border: none; border-radius: 6px; padding: 6px 14px; font-size: 12.5px; font-weight: 500; cursor: pointer; transition: background 0.15s;">
-                  <i class="bi bi-arrow-clockwise" style="font-size: 13px;"></i>
-                  <span>{% if submission.stamped_document and submission.stamped_document.provider == 'MockMeteraiProvider' %}Proses e-Meterai Resmi{% else %}Proses Ulang{% endif %}</span>
-                </button>
-              </form>
+            <div class="d-flex flex-wrap align-items-center gap-3 text-muted small">
+              {% if submission.form_definition.category %}
+              <span><i class="bi bi-folder2 me-1"></i>{{ submission.form_definition.category.name }}</span>
+              <span>&bull;</span>
+              {% endif %}
+              <span><i class="bi bi-person me-1"></i>{% if submission.submitter %}{{ submission.submitter.get_full_name|default:submission.submitter.username }}{% else %}Anonymous{% endif %}</span>
+              <span>&bull;</span>
+              <span><i class="bi bi-calendar3 me-1"></i>{{ submission.created_at|date:"Y-m-d H:i" }}</span>
             </div>
           {% endif %}
-        {% endif %}
-
-        {% if submission.status == 'needs_revision' %}
-        <!-- Banner Needs Revision -->
-        <div class="alert alert-warning border-warning shadow-sm mb-4">
-            <div class="d-flex align-items-start gap-3">
-                <i class="bi bi-exclamation-triangle-fill fs-2 text-warning flex-shrink-0 mt-1"></i>
-                <div class="flex-grow-1">
-                    <h5 class="alert-heading fw-bold mb-1">Permohonan Memerlukan Perbaikan / Revisi</h5>
-                    <p class="mb-2">Peninjau telah mengembalikan permohonan SPK ini kepada Admin Sales Cabang untuk diperbaiki.</p>
-                    {% for t in approval_tasks %}
-                        {% if t.decision == 'request_revision' or t.status == 'returned' %}
-                            {% if t.comments %}
-                            <div class="bg-white p-3 rounded border border-warning-subtle text-dark mb-2">
-                                <div class="fw-bold mb-1">
-                                    <i class="bi bi-chat-left-dots-fill text-warning me-1"></i>
-                                    Catatan dari {{ t.completed_by.get_full_name|default:t.completed_by.username }} ({{ t.workflow_stage.name|default:t.step_name }}):
-                                </div>
-                                <div>{{ t.comments }}</div>
-                            </div>
-                            {% endif %}
-                        {% endif %}
-                    {% endfor %}
-                    {% if submission.submitter == user %}
-                    <div class="mt-3">
-                        <a href="{% url 'forms_workflows:form_submit' submission.form_definition.slug %}?revision_id={{ submission.id }}" class="btn btn-warning fw-bold">
-                            <i class="bi bi-pencil-square me-1"></i> {% if submission.form_definition.slug == 'permohonan-kontrak' %}Edit &amp; Resubmit{% else %}Perbaiki &amp; Kirim Ulang SPK{% endif %}
-                        </a>
-                    </div>
-                    {% else %}
-                    <div class="text-muted small mt-2">
-                        <i class="bi bi-lock-fill"></i> Hak akses revisi bersifat eksklusif hanya untuk inisiator/submitter tiket (<strong>{{ submission.submitter.get_full_name|default:submission.submitter.username }}</strong>).
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Submission Info -->
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">Submission Information</h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <p><strong>Form:</strong> {{ submission.form_definition.name }}</p>
-                        <p><strong>Submitter:</strong> {% if submission.submitter %}{{ submission.submitter.get_full_name|default:submission.submitter.username }}{% else %}Anonymous{% endif %}</p>
-                        <p><strong>Created:</strong> {{ submission.created_at|date:"Y-m-d H:i" }}</p>
-                    </div>
-                    <div class="col-md-6">
-                        <p><strong>Status:</strong> {{ submission.get_status_display }}</p>
-                        {% if submission.submitted_at %}
-                            <p><strong>Submitted:</strong> {{ submission.submitted_at|date:"Y-m-d H:i" }}</p>
-                        {% endif %}
-                        {% if submission.completed_at %}
-                            <p><strong>Completed:</strong> {{ submission.completed_at|date:"Y-m-d H:i" }}</p>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
         </div>
 
-        <!-- Form Data (original submission fields only — approval-step fields rendered separately below) -->
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">Form Data</h5>
-            </div>
-            <div class="card-body">
-                <table class="table table-bordered">
-                    {% include "django_forms_workflows/_form_data_rows.html" %}
-                </table>
-            </div>
-        </div>
-
-        <!-- Model-level Attachments (e.g. migrated SharePoint documents) -->
-        {% if resolved_attachments %}
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-paperclip"></i> Attachments</h5>
-            </div>
-            <div class="card-body">
-                <ul class="list-unstyled mb-0">
-                {% for att in resolved_attachments %}
-                    <li class="mb-2">
-                        {% if att.url %}
-                            <a href="{{ att.url }}" target="_blank" class="btn btn-sm btn-outline-primary">
-                                <i class="bi bi-download"></i> {{ att.filename }}
-                            </a>
-                        {% else %}
-                            <span class="text-muted"><i class="bi bi-file-earmark"></i> {{ att.filename }}</span>
-                            <small class="text-muted ms-2">(URL unavailable)</small>
-                        {% endif %}
-                    </li>
-                {% endfor %}
-                </ul>
-            </div>
-        </div>
-        {% endif %}
-
-        {# ── Public Signing Link Panel for Store Partner (Sales Support & Admin Tracking) ── #}
-        {% if signing_token and signing_url and submission.form_definition.slug == 'permohonan-kontrak' %}
-          <div class="card mb-3 shadow-sm border-0">
-            <div class="card-header py-2.5 bg-white border-bottom d-flex align-items-center justify-content-between">
-              <span class="fw-bold text-dark"><i class="bi bi-pen-fill text-primary me-1"></i> Tautan Tanda Tangan Toko (Digital SPK)</span>
-              {% if signing_token.status == 'signed' %}
-                <span class="badge bg-success-subtle text-success border border-success-subtle">Customer Telah Menandatangani</span>
+        {# Right: Top Action Bar (Status Badge for RCL, Download PDF & Back to Submissions) #}
+        <div class="d-flex align-items-center gap-2 flex-wrap flex-sm-nowrap flex-shrink-0 justify-content-start justify-content-md-end">
+          {% if submission.form_definition.slug == 'release-credit-limit' and rcl_ctx %}
+            {% if submission.status == 'approved' %}
+              <span class="badge-status-pill badge-status-approved"><i class="bi bi-check-circle me-1"></i>{{ rcl_ctx.rcl_status_badge }}</span>
+            {% elif submission.status == 'needs_revision' %}
+              <span class="badge-status-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle"><i class="bi bi-arrow-repeat me-1"></i>{{ rcl_ctx.rcl_status_badge }}</span>
+            {% elif submission.status == 'rejected' %}
+              <span class="badge-status-pill badge-status-rejected"><i class="bi bi-x-circle me-1"></i>{{ rcl_ctx.rcl_status_badge }}</span>
+            {% else %}
+              <span class="badge-status-pill badge-status-pending"><i class="bi bi-clock me-1"></i>{{ rcl_ctx.rcl_status_badge }}</span>
+            {% endif %}
+          {% endif %}
+          {% with pdf=submission.form_definition.pdf_generation %}
+            {% if pdf == 'anytime' and submission.status != 'draft' or pdf == 'post_approval' and submission.status == 'approved' or can_approve_pdf and submission.status != 'draft' %}
+              {% if submission.form_definition.slug == 'pengajuan-biaya' %}
+                <a href="{% url 'forms_workflows:submission_pdf' submission.id %}Pengajuan_Biaya_{{ submission.id }}.pdf" target="_blank" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;" title="Cetak Dokumen Pengajuan Biaya (PDF)">
+                  <i class="bi bi-printer-fill text-danger"></i>
+                  <span>Cetak Dokumen (PDF)</span>
+                </a>
               {% else %}
-                <span class="badge bg-light text-secondary border">Menunggu Tanda Tangan</span>
+                <a href="{% url 'forms_workflows:submission_pdf' submission.id %}SPK_Submission_{{ submission.id }}.pdf" target="_blank" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;" title="Buka dokumen PDF di tab baru">
+                  <i class="bi bi-file-earmark-pdf-fill text-danger"></i>
+                  <span>PDF</span>
+                </a>
+              {% endif %}
+            {% endif %}
+          {% endwith %}
+          {% if can_push_notification %}
+            <button type="button" 
+                    class="btn btn-sm btn-outline-warning text-dark d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0"
+                    data-bs-toggle="modal" 
+                    data-bs-target="#pushNotificationModal"
+                    title="Kirim pengingat manual ke PIC stage aktif saat ini"
+                    {% if push_cooldown_remaining > 0 %}disabled{% endif %}>
+              <i class="bi bi-bell-fill text-warning"></i>
+              <span>Push Notifikasi</span>
+              {% if push_cooldown_remaining > 0 %}
+                <span class="badge bg-secondary ms-1">{{ push_cooldown_remaining }}s</span>
+              {% endif %}
+            </button>
+          {% endif %}
+          {% if is_approver_user %}
+            <a href="{% url 'forms_workflows:approval_inbox' %}" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;">
+              <i class="bi bi-inbox-fill"></i>
+              <span>Inbox Approval</span>
+            </a>
+            <a href="{% url 'forms_workflows:completed_approvals' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;">
+              <i class="bi bi-clock-history"></i>
+              <span>Riwayat Approval</span>
+            </a>
+          {% else %}
+            <a href="{% url 'forms_workflows:form_submission_hub' submission.form_definition.slug %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;">
+              <i class="bi bi-arrow-left"></i>
+              <span>{% if submission.form_definition.slug == 'permohonan-kontrak' %}Back{% else %}Kembali{% endif %}</span>
+            </a>
+          {% endif %}
+        </div>
+
+
+      </div>
+    </div>
+  </div>
+
+  {# ── Clean Enterprise Notice: e-Meterai Status & Action (Sales Support & Administrator Only) ── #}
+  {% if can_manage_ematerai and submission.status == 'approved' and submission.form_definition.slug == 'permohonan-kontrak' %}
+    {% if submission.stamped_document and submission.stamped_document.status in 'pending,in_progress' %}
+      <div style="background: #f8fafc; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 16px; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+        <div style="display: flex; align-items: flex-start; gap: 12px; min-width: 0;">
+          <div class="spinner-border text-primary flex-shrink-0 mt-1" role="status" style="width: 15px; height: 15px; border-width: 2px;"></div>
+          <div style="min-width: 0;">
+            <div style="font-size: 13px; font-weight: 600; color: #1e3a8a; line-height: 1.4;">
+              Pembubuhan e-Meterai sedang diproses di latar belakang
+            </div>
+            <div style="font-size: 12.5px; color: #64748b; line-height: 1.4; margin-top: 2px;">
+              Dokumen sedang dikirim dan diverifikasi oleh server Peruri (biasanya membutuhkan 15–60 detik). Anda dapat memuat ulang halaman secara berkala untuk memperbarui status.
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+          <button type="button" disabled style="display: inline-flex; align-items: center; gap: 6px; background: #94a3b8; color: #ffffff; border: none; border-radius: 6px; padding: 6px 14px; font-size: 12.5px; font-weight: 500; cursor: not-allowed; opacity: 0.85;">
+            <span class="spinner-border spinner-border-sm" role="status" style="width: 11px; height: 11px; border-width: 1.5px;"></span>
+            <span>Memproses...</span>
+          </button>
+          <button type="button" onclick="location.reload()" style="display: inline-flex; align-items: center; gap: 5px; background: #ffffff; color: #334155; border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 11px; font-size: 12px; font-weight: 500; cursor: pointer;">
+            <i class="bi bi-arrow-clockwise"></i>
+            <span>Muat Ulang</span>
+          </button>
+        </div>
+      </div>
+    {% elif not submission.stamped_document or submission.stamped_document.status == 'failed' or submission.stamped_document.provider == 'MockMeteraiProvider' %}
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+        <div style="display: flex; align-items: flex-start; gap: 12px; min-width: 0;">
+          <i class="bi bi-info-circle" style="font-size: 15px; color: #d97706; margin-top: 2px; flex-shrink: 0;"></i>
+          <div style="min-width: 0;">
+            <div style="font-size: 13px; font-weight: 600; color: #0f172a; line-height: 1.4;">
+              {% if submission.stamped_document and submission.stamped_document.status == 'failed' %}
+                Pembubuhan e-Meterai tertunda
+              {% elif submission.stamped_document and submission.stamped_document.provider == 'MockMeteraiProvider' %}
+                Dokumen menggunakan simulasi e-Meterai
+              {% else %}
+                Stempel e-Meterai belum terpasang
               {% endif %}
             </div>
-            <div class="card-body p-3">
-              <div class="input-group input-group-sm mb-2">
-                <input type="text" class="form-control font-monospace" value="{{ signing_url }}" readonly>
-                <a href="{{ signing_url }}" target="_blank" class="btn btn-outline-secondary">Buka Portal</a>
+            <div style="font-size: 12.5px; color: #64748b; line-height: 1.4; margin-top: 2px;">
+              {% if submission.stamped_document and submission.stamped_document.status == 'failed' %}
+                {% if "IP whitelist" in submission.stamped_document.error_message %}
+                  IP publik belum terdaftar di whitelist EzMeterai (403).
+                {% else %}
+                  Kendala provider: {{ submission.stamped_document.error_message|cut:"Provider Upload Failed: "|cut:"Upload failed "|cut:"{"|cut:"}"|cut:'"msg":'|truncatechars:110 }}
+                {% endif %}
+              {% elif submission.stamped_document and submission.stamped_document.provider == 'MockMeteraiProvider' %}
+                SPK saat ini dibubuhi stempel simulasi lokal. Klik Proses Ulang untuk menggunakan EzMeterai resmi.
+              {% else %}
+                SPK telah disetujui Direksi. Silakan proses pembubuhan stempel resmi Peruri.
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <form method="post" action="{% url 'forms_workflows:retry_ematerai_stamping' submission.id %}" style="margin: 0; flex-shrink: 0;">
+          {% csrf_token %}
+          <button type="submit" style="display: inline-flex; align-items: center; gap: 6px; background: #0f172a; color: #ffffff; border: none; border-radius: 6px; padding: 6px 14px; font-size: 12.5px; font-weight: 500; cursor: pointer; transition: background 0.15s;">
+            <i class="bi bi-arrow-clockwise" style="font-size: 13px;"></i>
+            <span>{% if submission.stamped_document and submission.stamped_document.provider == 'MockMeteraiProvider' %}Proses e-Meterai Resmi{% else %}Proses Ulang{% endif %}</span>
+          </button>
+        </form>
+      </div>
+    {% endif %}
+  {% endif %}
+
+  {# ── Public Signing Link Panel for Store Partner (Sales Support & Admin Tracking) ── #}
+  {% if signing_token and signing_url and submission.form_definition.slug == 'permohonan-kontrak' %}
+    <div class="signing-link-card mb-3">
+      <div class="card-header py-2.5 bg-white border-bottom">
+        <div class="d-flex align-items-center justify-content-between w-100 flex-wrap gap-2">
+          <div class="d-flex align-items-center gap-2">
+            <span class="d-inline-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle" style="width: 28px; height: 28px;">
+              <i class="bi bi-pen-fill" style="font-size: 13px;"></i>
+            </span>
+            <div>
+              <span class="doc-card-title text-dark fw-bold" style="font-size: 13px;">
+                Tautan Tanda Tangan Toko (Digital SPK)
+              </span>
+              <div class="text-muted" style="font-size: 11px;">Portal Penandatanganan Digital SPK Publik — Pemantauan Sales Support & Toko Mitra</div>
+            </div>
+          </div>
+          <div>
+            {% if signing_token.status == 'signed' %}
+              <span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1.5 fw-medium" style="font-size: 11.5px;">
+                <i class="bi bi-check2-circle me-1"></i> Customer Telah Menandatangani
+              </span>
+            {% elif signing_token.status == 'rejected' %}
+              <span class="badge bg-warning-subtle text-dark border border-warning-subtle px-2.5 py-1.5 fw-medium" style="font-size: 11.5px;">
+                <i class="bi bi-arrow-return-left me-1"></i> Revisi Diminta Toko
+              </span>
+            {% elif signing_token.is_expired %}
+              <span class="badge bg-secondary-subtle text-secondary border px-2.5 py-1.5 fw-medium" style="font-size: 11.5px;">
+                <i class="bi bi-clock-history me-1"></i> Tautan Kedaluwarsa
+              </span>
+            {% else %}
+              <span class="badge bg-light text-secondary border px-2.5 py-1.5 fw-medium" style="font-size: 11.5px;">
+                <i class="bi bi-clock me-1"></i> Menunggu Tanda Tangan
+              </span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="card-body p-3 p-md-4">
+        <div class="mb-2">
+          <label class="form-label text-secondary fw-medium mb-1" style="font-size: 12px;">
+            Secure Public Portal URL (Tautan resmi penandatanganan toko):
+          </label>
+          <div class="d-flex flex-column flex-md-row gap-2 align-items-stretch align-items-md-center">
+            <div class="input-group input-group-sm flex-grow-1">
+              <span class="input-group-text bg-light text-muted border-slate-200"><i class="bi bi-globe2"></i></span>
+              <input type="text" class="form-control font-monospace border-slate-200" id="publicSigningUrlInput" value="{{ signing_url }}" style="font-size: 12px; background-color: #f8fafc;" readonly>
+              <button class="btn btn-outline-secondary d-inline-flex align-items-center" type="button" id="copySigningUrlBtn" onclick="copySigningLink()">
+                <i class="bi bi-clipboard me-1"></i> Salin
+              </button>
+            </div>
+            <div class="d-flex gap-2 flex-wrap flex-sm-nowrap">
+              <a href="{{ signing_url }}" target="_blank" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center flex-fill flex-sm-grow-0" style="white-space: nowrap;">
+                <i class="bi bi-box-arrow-up-right me-1.5"></i> Buka Portal
+              </a>
+              {% with pemilik=submission.form_data.nama_pemilik|default:"Bapak/Ibu" toko=submission.form_data.nama_toko no_hp=submission.form_data.no_telepon %}
+                <a href="https://api.whatsapp.com/send?{% if no_hp %}phone={{ no_hp|whatsapp_phone }}&{% endif %}text=Halo%20{{ pemilik|urlencode }}%20({{ toko|urlencode }}),%20berikut%20adalah%20tautan%20resmi%20penandatanganan%20draf%20Surat%20Perjanjian%20Kerjasama%20(SPK):%20{{ signing_url|urlencode }}%20.%20Silakan%20periksa%20dan%20bubuhkan%20tanda%20tangan%20digital%20Anda.%20Terima%20kasih." target="_blank" class="btn btn-sm btn-wa-enterprise d-inline-flex align-items-center justify-content-center flex-fill flex-sm-grow-0" style="white-space: nowrap;">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" class="me-1" aria-hidden="true">
+                    <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217l.332.006c.106.005.249-.04.39.298.144.347.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86s.275.072.376-.044c.101-.116.433-.506.549-.68.116-.173.231-.145.39-.087s1.011.477 1.184.564.289.13.332.202c.043.073.043.419-.101.824z"/>
+                  </svg>
+                  <span>Kirim WhatsApp</span>
+                </a>
+              {% endwith %}
+            </div>
+          </div>
+          <div id="copyToastNotice" class="text-success mt-1 d-none" style="font-size: 11.5px;">
+            <i class="bi bi-check2"></i> Tautan berhasil disalin ke clipboard!
+          </div>
+        </div>
+
+        {% if signing_token.status == 'signed' %}
+          <div class="p-3 rounded-2 mt-3" style="background: #f0fdf4; border: 1px solid #bbf7d0; font-size: 12.5px; color: #166534;">
+            <div class="d-flex align-items-start align-items-sm-center justify-content-between flex-column flex-sm-row gap-2">
+              <div>
+                <i class="bi bi-check-circle-fill me-1.5 text-success"></i>
+                Dokumen telah ditandatangani pada <strong>{{ signing_token.signed_at|date:"d M Y H:i" }}</strong> oleh <strong>{{ signing_token.signer_name }}</strong> ({{ signing_token.signer_title }}).
+              </div>
+              {% if signing_token.signature_image %}
+                <img src="{{ signing_token.signature_image }}" alt="TTD Toko" style="max-height: 44px; max-width: 120px;" class="bg-white border rounded p-1">
+              {% endif %}
+            </div>
+          </div>
+        {% elif signing_token.status == 'rejected' %}
+          <div class="p-3 rounded-2 mt-3" style="background: #fef2f2; border: 1px solid #fecaca; font-size: 12.5px; color: #991b1b;">
+            <i class="bi bi-exclamation-circle-fill me-1.5"></i>
+            <strong>Catatan Revisi dari Toko:</strong> "{{ signing_token.rejection_reason }}"
+          </div>
+        {% else %}
+          <div class="text-muted mt-2 d-flex align-items-center gap-1.5" style="font-size: 11.5px;">
+            <i class="bi bi-info-circle text-primary"></i>
+            <span>Tautan tanda tangan publik ini diterbitkan secara otomatis setelah tahap persetujuan RSOM.</span>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  {# ── High-Visibility Revision Notice Alert ── #}
+  {% if submission.status == 'needs_revision' %}
+    <div class="alert alert-warning border border-warning shadow-sm mb-3 p-3 p-md-4 rounded-3" role="alert">
+      <div class="d-flex flex-column flex-md-row align-items-start justify-content-between gap-3">
+        <div class="d-flex align-items-start gap-3">
+          <div class="p-2 bg-warning bg-opacity-25 rounded-circle text-warning-emphasis flex-shrink-0">
+            <i class="bi bi-exclamation-triangle-fill fs-4 text-warning"></i>
+          </div>
+          <div>
+            <h5 class="fw-bold text-dark mb-1 d-flex align-items-center gap-2 flex-wrap">
+              <span>Pengajuan Memerlukan Revisi</span>
+              <span class="badge bg-warning text-dark font-monospace" style="font-size: 11px;">needs_revision</span>
+            </h5>
+            <p class="text-secondary small mb-2">
+              Peninjau meminta Anda untuk memperbaiki data pada pengajuan ini sebelum dapat diproses kembali ke Tahap 1 (ASM).
+            </p>
+
+            {% with last_revision_task=submission.approval_tasks.all|dictsortreversed:"completed_at"|first %}
+              {% if last_revision_task and last_revision_task.comments %}
+                <div class="p-3 bg-white rounded border border-warning-subtle my-2">
+                  <div class="d-flex align-items-center gap-2 small text-muted mb-1">
+                    <i class="bi bi-chat-quote-fill text-warning"></i>
+                    <strong>Catatan dari {% if last_revision_task.completed_by %}{{ last_revision_task.completed_by.get_full_name|default:last_revision_task.completed_by.username }}{% else %}Approver{% endif %}{% if last_revision_task.workflow_stage %} ({{ last_revision_task.workflow_stage.name }}){% endif %}:</strong>
+                    <span>{{ last_revision_task.completed_at|date:"d M Y H:i" }}</span>
+                  </div>
+                  <div class="fst-italic text-dark ps-3 border-start border-3 border-warning" style="font-size: 0.95rem;">
+                    &#8220;{{ last_revision_task.comments }}&#8221;
+                  </div>
+                </div>
+              {% endif %}
+            {% endwith %}
+          </div>
+        </div>
+
+        {% if submission.submitter == user %}
+          <div class="flex-shrink-0 w-100 w-md-auto text-end">
+            <a href="{% url 'forms_workflows:form_submit' submission.form_definition.slug %}?revision={{ submission.id }}" class="btn btn-warning btn-lg fw-bold px-3 py-2 text-dark shadow-sm d-inline-flex align-items-center justify-content-center gap-2 w-100 w-md-auto">
+              <i class="bi bi-pencil-square fs-5"></i>
+              <span>{% if submission.form_definition.slug == 'permohonan-kontrak' %}Edit &amp; Resubmit{% else %}Perbaiki Pengajuan Sekarang{% endif %}</span>
+            </a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  {% if submission.form_definition.slug != 'release-credit-limit' %}
+  {# ── Form Metadata Overview ── #}
+  <div class="doc-card mb-3">
+    <div class="doc-card-header">
+      <span class="doc-card-title">Submission Overview</span>
+      <span class="text-muted small">Reference: #{{ submission.id }}</span>
+    </div>
+    <div class="doc-card-body">
+      <div class="row g-2 g-md-3 overview-grid">
+        <div class="col-6 col-md-3">
+          <div class="kv-card-cell">
+            <div class="kv-label">Submitter</div>
+            <div class="kv-value">{% if submission.submitter %}{{ submission.submitter.get_full_name|default:submission.submitter.username }}{% else %}Anonymous{% endif %}</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="kv-card-cell">
+            <div class="kv-label">Date Submitted</div>
+            <div class="kv-value">
+              {% if submission.submitted_at %}
+                {{ submission.submitted_at|date:"Y-m-d H:i" }}
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="kv-card-cell">
+            <div class="kv-label">Current Status</div>
+            <div class="kv-value">
+              {% if submission.status == 'approved' %}
+                <span class="badge-status-pill badge-status-approved">{{ submission.get_status_display }}</span>
+            {% elif submission.status == 'needs_revision' %}
+                <span class="badge-status-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle">{{ submission.get_status_display }}</span>
+              {% elif submission.status == 'rejected' %}
+                <span class="badge-status-pill badge-status-rejected">{{ submission.get_status_display }}</span>
+              {% elif submission.status == 'pending_approval' or submission.status == 'pending' %}
+                <span class="badge-status-pill badge-status-pending">{{ submission.get_status_display }}</span>
+              {% elif submission.status == 'submitted' %}
+                <span class="badge-status-pill badge-status-submitted">{{ submission.get_status_display }}</span>
+              {% elif submission.status == 'withdrawn' %}
+                <span class="badge-status-pill badge-status-withdrawn">{{ submission.get_status_display }}</span>
+              {% else %}
+                <span class="badge-status-pill badge-status-draft">{{ submission.get_status_display }}</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="kv-card-cell">
+            <div class="kv-label">Completed Date</div>
+            <div class="kv-value">
+              {% if submission.completed_at %}
+                {{ submission.completed_at|date:"Y-m-d H:i" }}
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Approval Pipeline Stepper (Linear Progress Tracker) ── #}
+  {% if workflow_mode == "staged" and approval_stages %}
+    {% if submission.form_definition.slug == 'release-credit-limit' %}
+      <div class="doc-card mb-3">
+        <div class="doc-card-body py-3 px-3 px-md-4">
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+            <span class="fw-bold text-dark small">Alur Persetujuan</span>
+            <span class="text-muted" style="font-size: 11.5px;">
+              Tahap {{ current_stage_number|default:1 }} dari {{ total_stages }}
+              {% if rcl_ctx.matrix.target_final_label %}&middot; Target Akhir: <strong class="text-dark">{{ rcl_ctx.matrix.target_final_label }}</strong>{% endif %}
+            </span>
+          </div>
+          <div class="rcl-stepper">
+            {# Initiator Step #}
+            <div class="rcl-step is-done">
+              <div class="rcl-step-dot"><i class="bi bi-check-lg"></i></div>
+              <div class="rcl-step-label">Pemohon</div>
+              <div class="rcl-step-sub">Submitted</div>
+            </div>
+            {% for stage in approval_stages %}
+              <div class="rcl-step {% if stage.is_skipped_by_matrix %}is-skipped{% elif stage.is_completed %}is-done{% elif stage.is_current %}is-active{% elif stage.is_rejected %}is-rejected{% endif %}" {% if stage.is_skipped_by_matrix %}title="Dilewati sesuai matriks batas akhir"{% endif %}>
+                <div class="rcl-step-dot">
+                  {% if stage.is_completed %}
+                    <i class="bi bi-check-lg"></i>
+                  {% elif stage.is_rejected %}
+                    <i class="bi bi-x-lg"></i>
+                  {% elif stage.is_skipped_by_matrix %}
+                    <i class="bi bi-dash"></i>
+                  {% elif stage.is_current %}
+                    {{ stage.number }}
+                  {% else %}
+                    {{ stage.number }}
+                  {% endif %}
+                </div>
+                <div class="rcl-step-label">{{ stage.name|cut:"Approval "|cut:"Review " }}</div>
+                <div class="rcl-step-sub">
+                  {% if stage.is_completed %}
+                    Approved
+                  {% elif stage.is_current %}
+                    Menunggu
+                  {% elif stage.is_rejected %}
+                    Ditolak
+                  {% elif stage.is_skipped_by_matrix %}
+                    Dilewati
+                  {% else %}
+                    Berikutnya
+                  {% endif %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    {% else %}
+    <div class="doc-card mb-3">
+      <div class="doc-card-header d-flex align-items-center justify-content-between py-2 px-3">
+        <span class="doc-card-title fw-bold text-dark" style="font-size: 14px;">Linimasa Alur Persetujuan (Approval Tracking Pipeline)</span>
+        <span class="text-muted small">Tahap {{ current_stage_number|default:1 }} dari {{ total_stages }}</span>
+      </div>
+      <div class="doc-card-body p-3">
+        <div class="pipeline-stepper">
+          {# ── Pre-Step: Initiator / Submitter Step ── #}
+          <div class="pipeline-step-item is-completed" style="border-left: 3px solid #16a34a;">
+            <div>
+              {# Row 1: Step Index Badge & Submitter Status Pill #}
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="step-index-badge badge-completed" title="Pengajuan dibuat oleh pemohon">
+                  <i class="bi bi-send-check-fill text-white"></i>
+                </span>
+
+                {% if submission.status == 'draft' %}
+                  <span class="badge bg-warning-subtle text-warning-emphasis text-uppercase stage-pill">Draft</span>
+                {% elif submission.status == 'needs_revision' %}
+                  <span class="badge bg-warning text-dark text-uppercase stage-pill">Needs Revision</span>
+                {% else %}
+                  <span class="badge bg-success-subtle text-success text-uppercase stage-pill">Submitted</span>
+                {% endif %}
+              </div>
+
+              {# Row 2: Full Stage Name #}
+              <div class="stage-name-title mb-1.5 fw-bold text-dark">
+                Pengajuan Formulir
+              </div>
+
+              {# Row 3: Submitter Identity & Timestamp #}
+              <div class="text-muted" style="font-size: 11.5px; line-height: 1.4;">
+                <div class="fw-semibold text-dark text-truncate" title="{% if submission.submitter %}{{ submission.submitter.get_full_name|default:submission.submitter.username }}{% else %}Pemohon (Inisiator){% endif %}">
+                  <i class="bi bi-person-fill text-primary me-1"></i>
+                  {% if submission.submitter %}
+                    {{ submission.submitter.get_full_name|default:submission.submitter.username }}
+                  {% else %}
+                    Pemohon
+                  {% endif %}
+                </div>
+                <div class="text-secondary small mt-0.5 d-flex align-items-center flex-wrap gap-1">
+                  {% if submission.form_data.cabang %}
+                    <span class="badge bg-light text-secondary border px-1.5 py-0.5">{{ submission.form_data.cabang }}</span>
+                  {% elif submission.submitter.employee_profile.position %}
+                    <span class="badge bg-light text-secondary border px-1.5 py-0.5">{{ submission.submitter.employee_profile.position }}</span>
+                  {% endif %}
+                  <span class="text-nowrap">
+                    <i class="bi bi-clock me-0.5 text-muted"></i>
+                    {% if submission.submitted_at %}
+                      {{ submission.submitted_at|date:"d M Y, H:i" }} WIB
+                    {% elif submission.created_at %}
+                      {{ submission.created_at|date:"d M Y, H:i" }} WIB
+                    {% else %}
+                      —
+                    {% endif %}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
-        {% endif %}
-
-        <!-- Approval History -->
-        {% if approval_tasks %}
-
-        {% if hide_approval_history %}
-        {# ---- Privacy mode: submitter sees only the final decision ---- #}
-        <h5 class="mb-3"><i class="bi bi-shield-lock"></i> Approval Status</h5>
-        <div class="card mb-4
-            {% if submission.status == 'approved' %}border-success
-            {% elif submission.status == 'rejected' %}border-danger
-            {% else %}border-warning{% endif %}">
-            <div class="card-body text-center py-4">
-                {% if submission.status == 'approved' %}
-                    <span class="badge bg-success fs-5 px-4 py-2">Approved</span>
-                    {% if submission.completed_at %}
-                    <p class="text-muted mt-2 mb-0">Decision made on {{ submission.completed_at|date:"F d, Y g:i A" }}</p>
+          {% for stage in approval_stages %}
+            <div class="pipeline-step-item {% if stage.is_completed %}is-completed{% elif stage.is_current %}is-current{% elif stage.is_rejected %}is-rejected{% endif %}" {% if stage.is_skipped_by_matrix %}style="opacity: 0.55; background: #f8fafc;"{% endif %}>
+              <div>
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <span class="step-index-badge {% if stage.is_completed %}badge-completed{% elif stage.is_current %}badge-current{% elif stage.is_rejected %}badge-rejected{% else %}badge-pending{% endif %}">
+                    {% if stage.is_completed %}
+                      <i class="bi bi-check-lg"></i>
+                    {% elif stage.is_rejected %}
+                      <i class="bi bi-x-lg"></i>
+                    {% elif stage.is_skipped_by_matrix %}
+                      <i class="bi bi-dash"></i>
+                    {% else %}
+                      {{ stage.number }}
                     {% endif %}
-                    {% for task in approval_tasks %}
-                        {% if task.status == 'approved' and task.comments %}
-                        <div class="alert alert-success mt-3 mb-0 text-start">
-                            <strong>Reviewer comments:</strong> {{ task.comments }}
-                        </div>
+                  </span>
+                  {% if stage.is_current %}
+                    <span class="badge bg-dark text-white text-uppercase stage-pill">Active Stage</span>
+                  {% elif stage.is_completed %}
+                    <span class="badge bg-secondary-subtle text-secondary text-uppercase stage-pill">Approved</span>
+                  {% elif stage.is_rejected %}
+                    <span class="badge bg-danger-subtle text-danger text-uppercase stage-pill">Rejected</span>
+                  {% elif stage.is_skipped_by_matrix %}
+                    <span class="badge bg-light text-muted border text-uppercase stage-pill">Tidak Diperlukan</span>
+                  {% endif %}
+                </div>
+                <div class="stage-name-title mb-1.5">
+                  {{ stage.name }}
+                </div>
+                <div class="text-muted" style="font-size: 11.5px; line-height: 1.4;">
+                  {% if stage.is_skipped_by_matrix %}
+                    <span>Dilewati sesuai matriks batas akhir</span>
+                  {% elif stage.is_completed %}
+                    {% with last_task=stage.tasks|last %}
+                      {% if last_task and last_task.completed_at %}
+                        <span>Completed {{ last_task.completed_at|date:"M d, H:i" }}</span>
+                      {% else %}
+                        <span>Stage Completed</span>
+                      {% endif %}
+                    {% endwith %}
+                  {% elif stage.is_current %}
+                    <span class="text-dark fw-medium">
+                      Menunggu:
+                      {% with cur_task=stage.tasks|first %}
+                        {% if cur_task.assigned_to %}
+                          {{ cur_task.assigned_to.get_full_name|default:cur_task.assigned_to.username }}
+                        {% elif cur_task.assigned_group %}
+                          {{ cur_task.assigned_group.name }}
+                        {% else %}
+                          Reviewer
                         {% endif %}
-                    {% endfor %}
-                {% elif submission.status == 'rejected' %}
-                    <span class="badge bg-danger fs-5 px-4 py-2">Rejected</span>
-                    {% if submission.completed_at %}
-                    <p class="text-muted mt-2 mb-0">Decision made on {{ submission.completed_at|date:"F d, Y g:i A" }}</p>
-                    {% endif %}
-                    {% for task in approval_tasks %}
-                        {% if task.status == 'rejected' and task.comments %}
-                        <div class="alert alert-danger mt-3 mb-0 text-start">
-                            <strong>Reason:</strong> {{ task.comments }}
-                        </div>
-                        {% endif %}
-                    {% endfor %}
-                {% else %}
-                    <span class="badge bg-warning text-dark fs-5 px-4 py-2">Under Review</span>
-                    <p class="text-muted mt-2 mb-0">Your submission is being reviewed. You will be notified when a decision is made.</p>
-                {% endif %}
-            </div>
-        </div>
-
-        {% elif stage_groups %}
-        {# ---- Staged workflow: one card per stage ---- #}
-        <h5 class="mb-3"><i class="bi bi-diagram-3"></i> Approval History</h5>
-        {% for stage in stage_groups %}
-        <div class="card mb-3
-            {% if stage.rejected_count > 0 %}border-danger
-            {% elif stage.approved_count == stage.total_count %}border-success
-            {% elif stage.approved_count > 0 %}border-primary
-            {% else %}border-secondary{% endif %}">
-            <div class="card-header d-flex justify-content-between align-items-center
-                {% if stage.rejected_count > 0 %}bg-danger text-white
-                {% elif stage.approved_count == stage.total_count %}bg-success text-white
-                {% elif stage.approved_count > 0 %}bg-primary text-white
-                {% else %}bg-light text-muted{% endif %}">
-                <span>
-                    <strong>{% if stage.has_multiple_stages %}Stage {{ stage.number }}{% else %}{{ stage.display_label }}{% endif %}</strong>
-                </span>
-                <span class="badge bg-white
-                    {% if stage.rejected_count > 0 %}text-danger
-                    {% elif stage.approved_count == stage.total_count %}text-success
-                    {% else %}text-secondary{% endif %}">
-                    {{ stage.approved_count }}/{{ stage.total_count }} approved
-                    {% if stage.rejected_count > 0 %}&nbsp;· {{ stage.rejected_count }} rejected{% endif %}
-                </span>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-sm mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Step</th>
-                                <th>Assigned To</th>
-                                <th>Status</th>
-                                <th>Completed By</th>
-                                <th>Completed At</th>
-                                <th>Decision Comment <span class="badge bg-warning text-dark" title="Comments are visible to the submitter."><i class="bi bi-eye-fill"></i> Public</span></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for task in stage.tasks %}
-                            <tr>
-                                <td><strong>{{ task.display_label }}</strong></td>
-                                <td>
-                                    {% if task.assigned_to %}
-                                        {{ task.assigned_to.get_full_name|default:task.assigned_to.username }}
-                                    {% elif task.assigned_group %}
-                                        {{ task.assigned_group.name }} <span class="text-muted">(Group)</span>
-                                    {% else %}-{% endif %}
-                                </td>
-                                <td>
-                                    {% if task.status == 'pending' %}<span class="badge bg-warning text-dark">Pending</span>
-                                    {% elif task.status == 'approved' %}<span class="badge bg-success">Approved</span>
-                                    {% elif task.status == 'rejected' %}<span class="badge bg-danger">Rejected</span>
-                                    {% elif task.status == 'returned' %}<span class="badge bg-warning text-dark"><i class="bi bi-arrow-return-left me-1"></i>Revisi</span>
-                                    {% elif task.status == 'expired' %}<span class="badge bg-secondary">Expired</span>
-                                    {% elif task.status == 'skipped' %}<span class="badge bg-secondary">Skipped</span>
-                                    {% endif %}
-                                </td>
-                                <td>{% if task.completed_by %}{{ task.completed_by.get_full_name|default:task.completed_by.username }}{% else %}-{% endif %}</td>
-                                <td>{% if task.completed_at %}{{ task.completed_at|date:"Y-m-d H:i" }}{% else %}-{% endif %}</td>
-                                <td>{{ task.comments|default:"-" }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                      {% endwith %}
+                    </span>
+                  {% else %}
+                    <span>Upcoming stage</span>
+                  {% endif %}
                 </div>
-            </div>
-        </div>
-        {% endfor %}
-
-        {% if sub_workflow_instance_stages %}
-        {# ---- One table per sub-workflow instance, steps as rows ---- #}
-        {% for section in sub_workflow_instance_stages %}
-        <div class="card mb-3
-            {% if section.rejected_count > 0 %}border-danger
-            {% elif section.approved_count == section.total_count and section.total_count > 0 %}border-success
-            {% elif section.approved_count > 0 %}border-primary
-            {% else %}border-secondary{% endif %}">
-            <div class="card-header d-flex justify-content-between align-items-center
-                {% if section.rejected_count > 0 %}bg-danger text-white
-                {% elif section.approved_count == section.total_count and section.total_count > 0 %}bg-success text-white
-                {% elif section.approved_count > 0 %}bg-primary text-white
-                {% else %}bg-light text-muted{% endif %}">
-                <span>
-                    <strong>{{ section.label }}</strong>
-                </span>
-                <span class="badge bg-white
-                    {% if section.rejected_count > 0 %}text-danger
-                    {% elif section.approved_count == section.total_count and section.total_count > 0 %}text-success
-                    {% else %}text-secondary{% endif %}">
-                    {{ section.approved_count }}/{{ section.total_count }} approved
-                    {% if section.rejected_count > 0 %}&nbsp;· {{ section.rejected_count }} rejected{% endif %}
-                </span>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Step</th>
-                                <th>Assigned To</th>
-                                <th>Status</th>
-                                <th>Completed By</th>
-                                <th>Completed At</th>
-                                <th>Decision Comment <span class="badge bg-warning text-dark" title="Comments are visible to the submitter."><i class="bi bi-eye-fill"></i> Public</span></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for stage in section.stage_groups %}
-                            {% for task in stage.tasks %}
-                            <tr>
-                                <td><strong>{{ task.display_label }}</strong></td>
-                                <td>
-                                    {% if task.assigned_to %}
-                                        {{ task.assigned_to.get_full_name|default:task.assigned_to.username }}
-                                    {% elif task.assigned_group %}
-                                        {{ task.assigned_group.name }} <span class="text-muted">(Group)</span>
-                                    {% else %}-{% endif %}
-                                </td>
-                                <td>
-                                    {% if task.status == 'pending' %}<span class="badge bg-warning text-dark">Pending</span>
-                                    {% elif task.status == 'approved' %}<span class="badge bg-success">Approved</span>
-                                    {% elif task.status == 'rejected' %}<span class="badge bg-danger">Rejected</span>
-                                    {% elif task.status == 'expired' %}<span class="badge bg-secondary">Expired</span>
-                                    {% elif task.status == 'skipped' %}<span class="badge bg-secondary">Skipped</span>
-                                    {% endif %}
-                                </td>
-                                <td>{% if task.completed_by %}{{ task.completed_by.get_full_name|default:task.completed_by.username }}{% else %}-{% endif %}</td>
-                                <td>{% if task.completed_at %}{{ task.completed_at|date:"Y-m-d H:i" }}{% else %}-{% endif %}</td>
-                                <td>{{ task.comments|default:"-" }}</td>
-                            </tr>
-                            {% endfor %}
-                            {% endfor %}
-                        </tbody>
-                    </table>
+              </div>
+              {% if stage.total_count > 1 %}
+                <div class="mt-2 pt-1.5 border-top text-muted" style="font-size: 11px;">
+                  {{ stage.approved_count }}/{{ stage.total_count }} approvers signed off
                 </div>
-            </div>
-        </div>
-        {% endfor %}
-        {% endif %}
-
-        {% else %}
-        {# ---- Legacy flat workflow ---- #}
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">Approval History</h5>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Step</th>
-                                <th>Assigned To</th>
-                                <th>Status</th>
-                                <th>Completed By</th>
-                                <th>Completed At</th>
-                                <th>Decision Comment <span class="badge bg-warning text-dark" title="Comments are visible to the submitter."><i class="bi bi-eye-fill"></i> Public</span></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for task in approval_tasks %}
-                            <tr>
-                                <td>{{ task.display_label }}</td>
-                                <td>
-                                    {% if task.assigned_to %}
-                                        {{ task.assigned_to.get_full_name|default:task.assigned_to.username }}
-                                    {% elif task.assigned_group %}
-                                        {{ task.assigned_group.name }} <span class="text-muted">(Group)</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if task.status == 'pending' %}<span class="badge bg-warning text-dark">Pending</span>
-                                    {% elif task.status == 'approved' %}<span class="badge bg-success">Approved</span>
-                                    {% elif task.status == 'rejected' %}<span class="badge bg-danger">Rejected</span>
-                                    {% elif task.status == 'expired' %}<span class="badge bg-secondary">Expired</span>
-                                    {% elif task.status == 'skipped' %}<span class="badge bg-secondary">Skipped</span>
-                                    {% endif %}
-                                </td>
-                                <td>{% if task.completed_by %}{{ task.completed_by.get_full_name|default:task.completed_by.username }}{% else %}-{% endif %}</td>
-                                <td>{% if task.completed_at %}{{ task.completed_at|date:"Y-m-d H:i" }}{% else %}-{% endif %}</td>
-                                <td>{{ task.comments|default:"-" }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-        {% endif %}
-
-        {% endif %}
-
-
-
-        <!-- Actions -->
-        <div class="mt-3 d-flex flex-wrap gap-2 align-items-center">
-            {% if is_approver_user %}
-                <a href="{% url 'forms_workflows:approval_inbox' %}" class="btn btn-outline-primary d-inline-flex align-items-center gap-1.5">
-                    <i class="bi bi-inbox-fill"></i>
-                    <span>Inbox Approval</span>
-                </a>
-                <a href="{% url 'forms_workflows:completed_approvals' %}" class="btn btn-outline-secondary d-inline-flex align-items-center gap-1.5">
-                    <i class="bi bi-clock-history"></i>
-                    <span>Riwayat Approval</span>
-                </a>
-            {% else %}
-                <a href="{% url 'forms_workflows:form_submission_hub' submission.form_definition.slug %}" class="btn btn-outline-secondary">
-                    <i class="bi bi-arrow-left"></i> {% if submission.form_definition.slug == 'permohonan-kontrak' %}Back{% else %}Kembali{% endif %}
-                </a>
-            {% endif %}
-            {% if submission.status == 'draft' %}
-                {% if submission.submitter == user %}
-                    <a href="{% url 'forms_workflows:form_submit' submission.form_definition.slug %}"
-                       class="btn btn-primary">
-                        <i class="bi bi-pencil"></i> Continue Editing
-                    </a>
-                    <a href="{% url 'forms_workflows:discard_draft' submission.id %}"
-                       class="btn btn-outline-danger">
-                        <i class="bi bi-trash"></i> Discard Draft
-                    </a>
-                {% endif %}
-            {% endif %}
-            {% if submission.status == 'submitted' or submission.status == 'pending_approval' %}
-                {% if submission.form_definition.allow_withdrawal and submission.submitter == user %}
-                    <a href="{% url 'forms_workflows:withdraw_submission' submission.id %}" class="btn btn-outline-danger">
-                        <i class="bi bi-x-circle"></i> {% if submission.form_definition.slug == 'permohonan-kontrak' %}Withdraw{% else %}Withdraw Submission{% endif %}
-                    </a>
-                {% endif %}
-            {% endif %}
-            {% if submission.status == 'needs_revision' and submission.submitter == user %}
-                <a href="{% url 'forms_workflows:form_submit' submission.form_definition.slug %}?revision_id={{ submission.id }}"
-                   class="btn btn-warning fw-bold">
-                    <i class="bi bi-pencil-square me-1"></i> {% if submission.form_definition.slug == 'permohonan-kontrak' %}Edit &amp; Resubmit{% else %}Perbaiki &amp; Kirim Ulang SPK{% endif %}
-                </a>
-            {% endif %}
-            {% if submission.status == 'rejected' or submission.status == 'withdrawn' %}
-                {% if submission.form_definition.allow_resubmit and submission.submitter == user %}
-                    <a href="{% url 'forms_workflows:resubmit_submission' submission.id %}" class="btn btn-outline-info">
-                        <i class="bi bi-arrow-repeat"></i> Resubmit
-                    </a>
-                {% endif %}
-            {% endif %}
-        </div>
-    </div>
-</div>
-
-{# ── Modal Konfirmasi Push Notifikasi (Khusus Sales Support & Admin) ── #}
-{% if can_push_notification %}
-<div class="modal fade" id="pushNotificationModal" tabindex="-1" aria-labelledby="pushNotificationModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered" style="max-width: 520px;">
-    <div class="modal-content border-0 shadow" style="border-radius: 10px;">
-      <div class="modal-header border-0 pb-0 pt-4 px-4">
-        <h6 class="modal-title fw-bold text-dark d-flex align-items-center gap-2" id="pushNotificationModalLabel">
-          <i class="bi bi-bell-fill text-warning fs-5"></i> Kirim Push Notifikasi Pengingat
-        </h6>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
-      </div>
-
-      <form method="post" action="{% url 'forms_workflows:push_stage_notification' submission.id %}" id="pushNotificationFormSecondary">
-        {% csrf_token %}
-        <div class="modal-body px-4 py-3">
-          <p class="text-secondary small mb-3">
-            Kirimkan pengingat notifikasi manual secara langsung kepada pihak yang sedang bertanggung jawab pada tahap aktif saat ini.
-          </p>
-
-          <div class="p-3 bg-light rounded border mb-3">
-            <div class="d-flex align-items-center justify-content-between mb-2">
-              <span class="text-muted small" style="font-size: 11px; text-transform: uppercase; font-weight: 600;">Tahap Aktif Saat Ini</span>
-              <span class="badge bg-primary bg-opacity-10 text-primary border border-primary-subtle px-2 py-1" style="font-size: 11px;">
-                {{ push_target_info.stage_name|default:"Tahap Berjalan" }}
-              </span>
-            </div>
-            
-            <div class="text-muted small mt-2" style="font-size: 11px; text-transform: uppercase; font-weight: 600;">Target Penerima Notifikasi</div>
-            <div class="fw-semibold text-dark small mt-0.5">
-              {% if push_target_info.recipient_names %}
-                {{ push_target_info.recipient_names|join:", " }}
-              {% else %}
-                {{ push_target_info.role_label|default:"PIC Stage" }}
               {% endif %}
             </div>
-
-            {% if push_target_info.recipient_emails %}
-            <div class="text-muted small mt-1" style="font-size: 11.5px;">
-              <i class="bi bi-envelope me-1"></i>{{ push_target_info.recipient_emails|join:", " }}
-            </div>
-            {% endif %}
-          </div>
-
-          <div class="alert alert-info bg-info bg-opacity-10 border border-info-subtle p-2.5 small text-dark mb-0 rounded-2" style="font-size: 11.5px; line-height: 1.45;">
-            <i class="bi bi-info-circle-fill text-info me-1"></i>
-            Tindakan ini <strong>tidak mengubah</strong> status pengajuan, urutan stage, maupun persetujuan task. Pengingat hanya akan dikirimkan via email resmi dan notifikasi internal.
-          </div>
+          {% endfor %}
         </div>
+      </div>
+    </div>
+    {% endif %}
+  {% endif %}
 
-        <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-between" style="border-bottom-left-radius: 10px; border-bottom-right-radius: 10px;">
-          <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal">
-            Batal
+  {# ── Submitted Form Data (Key-Value Grid via Partial) ── #}
+  {% if submission.form_definition.slug == 'release-credit-limit' %}
+    <div class="mb-3" id="submittedFormDataCard">
+      {% include 'django_forms_workflows/partials/_release_credit_limit_review.html' %}
+    </div>
+  {% else %}
+    <div class="doc-card mb-3" id="submittedFormDataCard">
+      <div class="doc-card-header d-flex align-items-center justify-content-between flex-wrap gap-2 py-2 px-3">
+        <div class="d-flex align-items-center gap-2">
+          <span class="text-uppercase tracking-wider text-muted fw-bold" style="font-size: 11px; letter-spacing: 0.05em;">Rincian Data Pengajuan (Submission Data)</span>
+        </div>
+        {% if submission.form_definition.slug == 'permohonan-kontrak' %}
+        <div class="d-flex align-items-center gap-1">
+          <button type="button" class="btn-review-toggle" id="btnExpandAllDetail" onclick="toggleAllReviewAccordions(true)" title="Buka seluruh 5 section data">
+            <i class="bi bi-arrows-angle-expand" style="font-size: 11px;"></i>
+            <span>Buka Semua</span>
           </button>
-          <button type="submit" class="btn btn-warning btn-sm px-3.5 fw-semibold d-inline-flex align-items-center gap-1.5" id="btnConfirmPushNotifSecondary" {% if push_cooldown_remaining > 0 %}disabled{% endif %}>
-            <i class="bi bi-send-fill"></i>
-            <span>{% if push_cooldown_remaining > 0 %}Tunggu {{ push_cooldown_remaining }}s{% else %}Kirim Pengingat Sekarang{% endif %}</span>
+          <span class="text-muted" style="font-size: 10px;">&middot;</span>
+          <button type="button" class="btn-review-toggle" id="btnCollapseAllDetail" onclick="toggleAllReviewAccordions(false)" title="Tutup seluruh 5 section data">
+            <i class="bi bi-arrows-angle-contract" style="font-size: 11px;"></i>
+            <span>Tutup Semua</span>
           </button>
         </div>
-      </form>
+        {% else %}
+        <span class="text-muted small font-monospace" style="font-size: 11px;">{{ form_data_ordered|length }} field groups</span>
+        {% endif %}
+      </div>
+      <div class="doc-card-body p-3">
+        {% include 'django_forms_workflows/partials/_form_data_grid.html' %}
+      </div>
+    </div>
+  {% endif %}
+
+  {# ── Approval Timeline & Audit Log (Tabel Riwayat Persetujuan & Delegasi Wewenang) ── #}
+  {% if approval_tasks %}
+  <div class="doc-card mb-4 shadow-sm border" style="border-radius: 10px; overflow: hidden;">
+    
+    {# 1. Header Card Bersih & Tegas #}
+    <div class="bg-white d-flex align-items-center justify-content-between flex-wrap gap-2" style="padding: 16px 24px; border-bottom: 1px solid #e2e8f0;">
+      <h6 class="mb-0" style="font-size: 15px; font-weight: 600; color: #0f172a; letter-spacing: -0.01em;">Riwayat Persetujuan</h6>
+      {% if submission.form_definition.slug != 'release-credit-limit' %}
+      <div>
+        <span class="badge" style="background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; font-size: 11.5px; font-weight: 500; padding: 4px 10px; border-radius: 6px;">
+          <span id="auditHeaderCount">{{ approval_tasks|length|add:1 }} Riwayat</span>
+        </span>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if submission.form_definition.slug != 'release-credit-limit' %}
+    {# 2. Bilah Filter Minimalis (Segmented Neutral Control) #}
+    <div class="py-2 px-4 border-bottom d-flex align-items-center justify-content-between flex-wrap gap-2" style="background: #ffffff;">
+      <div class="d-inline-flex align-items-center p-1 rounded-2" id="auditFilterButtonGroup" style="background: #f1f5f9; border: 1px solid #e2e8f0; gap: 2px;">
+        <button type="button" class="audit-tab-btn active" id="btnFilterActive" onclick="setAuditFilter('active', this)">
+          Persetujuan (<span id="auditCountActive">{{ active_tasks_count|default:approval_tasks|length|add:1 }}</span>)
+        </button>
+        <button type="button" class="audit-tab-btn" id="btnFilterAll" onclick="setAuditFilter('all', this)">
+          Semua (<span id="auditCountAll">{{ approval_tasks|length|add:1 }}</span>)
+        </button>
+        {% if skipped_tasks_count and skipped_tasks_count > 0 %}
+        <button type="button" class="audit-tab-btn" id="btnFilterSkipped" onclick="setAuditFilter('skipped', this)">
+          Sistem (<span id="auditCountSkipped">{{ skipped_tasks_count }}</span>)
+        </button>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="doc-card-body {% if submission.form_definition.slug == 'release-credit-limit' %}p-3 p-md-4{% else %}p-0{% endif %}">
+      {% if hide_approval_history %}
+        {# Privacy mode for submitter #}
+        <div class="text-center py-4 p-3">
+          {% if submission.status == 'approved' %}
+            <span class="badge-status-pill badge-status-approved fs-6 px-3 py-1.5 mb-2">Approved</span>
+            <p class="text-muted small mb-0">Authorized on {{ submission.completed_at|date:"Y-m-d H:i" }}</p>
+          {% elif submission.status == 'rejected' %}
+            <span class="badge-status-pill badge-status-rejected fs-6 px-3 py-1.5 mb-2">Rejected</span>
+            <p class="text-muted small mb-0">Rejected on {{ submission.completed_at|date:"Y-m-d H:i" }}</p>
+          {% else %}
+            <span class="badge-status-pill badge-status-pending fs-6 px-3 py-1.5 mb-2">Under Review</span>
+            <p class="text-muted small mb-0">Your submission is currently progressing through authorization stages.</p>
+          {% endif %}
+        </div>
+      {% else %}
+        {# Tabel Bersih, Bergaris Rapi, & Berjarak Proporsional #}
+        <div class="table-responsive {% if submission.form_definition.slug == 'release-credit-limit' %}border rounded-2{% endif %}">
+          <table class="table table-hover align-middle mb-0" id="auditLogTable" style="font-size: 12.5px;">
+            <thead class="table-light text-secondary border-bottom" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;">
+              <tr>
+                <th class="text-center py-2.5 px-2" style="width: 45px;">#</th>
+                <th class="py-2.5 px-3" style="width: 155px;">WAKTU</th>
+                <th class="py-2.5 px-3" style="width: 190px;">TAHAP</th>
+                <th class="py-2.5 px-3" style="width: 210px;">APPROVER / USER</th>
+                <th class="text-center py-2.5 px-3" style="width: 135px;">STATUS</th>
+                <th class="py-2.5 px-3" style="min-width: 280px;">CATATAN</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Row Inisiasi Pengajuan oleh Pemohon (Inisiator) -->
+              <tr class="border-bottom audit-log-row audit-row-active">
+                <td class="text-center font-monospace text-muted" style="font-size: 11.5px;">1</td>
+                <td class="px-3 text-nowrap">
+                  {% if submission.submitted_at %}
+                    <div class="fw-semibold text-dark" style="font-size: 12px;">
+                      {{ submission.submitted_at|date:"d M Y" }}
+                    </div>
+                    <div class="text-muted font-monospace mt-0.5" style="font-size: 11px;">
+                      {{ submission.submitted_at|date:"H:i:s" }} WIB
+                    </div>
+                  {% elif submission.created_at %}
+                    <div class="fw-semibold text-dark" style="font-size: 12px;">
+                      {{ submission.created_at|date:"d M Y" }}
+                    </div>
+                    <div class="text-muted font-monospace mt-0.5" style="font-size: 11px;">
+                      {{ submission.created_at|date:"H:i:s" }} WIB
+                    </div>
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+                <td class="px-3">
+                  <div class="fw-semibold text-dark" style="font-size: 12.5px; line-height: 1.35;">Pengajuan Dibuat</div>
+                  <div class="text-muted small mt-0.5" style="font-size: 11px;">
+                    {{ submission.form_definition.name }}{% if submission.form_data.cabang %} · {{ submission.form_data.cabang }}{% endif %}
+                  </div>
+                </td>
+                <td class="px-3">
+                  {% if submission.submitter %}
+                    <div class="fw-semibold text-dark" style="font-size: 12.5px;">
+                      {{ submission.submitter.get_full_name|default:submission.submitter.username }}
+                    </div>
+                    <div class="text-secondary small mt-0.5" style="font-size: 11px;">
+                      {{ submission.submitter.employee_profile.position|default:"Pemohon (Inisiator)" }}
+                    </div>
+                  {% else %}
+                    <div class="fw-semibold text-muted" style="font-size: 12px;">Pemohon / Sistem</div>
+                  {% endif %}
+                </td>
+                <td class="text-center px-3">
+                  {% if submission.status == 'draft' %}
+                    <span class="audit-status-pill audit-status-draft">
+                      <span class="status-dot"></span>Draf
+                    </span>
+                  {% elif submission.status == 'needs_revision' %}
+                    <span class="audit-status-pill audit-status-revision">
+                      <span class="status-dot"></span>Perlu Revisi
+                    </span>
+                  {% else %}
+                    <span class="audit-status-pill audit-status-submitted">
+                      <span class="status-dot"></span>Diajukan
+                    </span>
+                  {% endif %}
+                </td>
+                <td class="px-3">
+                  <div class="small text-secondary" style="font-size: 12px; line-height: 1.4;">
+                    Formulir diajukan oleh pemohon
+                  </div>
+                </td>
+              </tr>
+              {% for row in audit_history_rows %}
+              {% with task=row.task %}
+              <tr class="border-bottom audit-log-row {% if task.status == 'skipped' %}audit-row-skipped bg-light bg-opacity-25{% else %}audit-row-active{% endif %}">
+                <td class="text-center font-monospace text-muted" style="font-size: 11.5px;">
+                  {{ forloop.counter|add:1 }}
+                </td>
+                <td class="px-3 text-nowrap">
+                  {% if task.completed_at %}
+                    <div class="fw-semibold text-dark" style="font-size: 12px;">
+                      {{ task.completed_at|date:"d M Y" }}
+                    </div>
+                    <div class="text-muted font-monospace mt-0.5" style="font-size: 11px;">
+                      {{ task.completed_at|date:"H:i:s" }} WIB
+                    </div>
+                  {% else %}
+                    <div class="fw-semibold text-secondary" style="font-size: 12px;">
+                      {{ task.created_at|date:"d M Y" }}
+                    </div>
+                    <div class="text-muted font-monospace mt-0.5" style="font-size: 11px;">
+                      {{ task.created_at|date:"H:i:s" }} (Menunggu)
+                    </div>
+                  {% endif %}
+                </td>
+                <td class="px-3">
+                  <div class="fw-semibold text-dark" style="font-size: 12.5px; line-height: 1.35;">{{ task.display_label }}</div>
+                  {% if task.workflow_stage and task.workflow_stage.name != task.display_label %}
+                    <div class="text-muted small mt-0.5" style="font-size: 11px;">{{ task.workflow_stage.name }}</div>
+                  {% endif %}
+                </td>
+                <td class="px-3">
+                  {% if task.completed_by %}
+                    <div class="fw-semibold text-dark" style="font-size: 12.5px;">
+                      {{ task.completed_by.get_full_name|default:task.completed_by.username }}
+                    </div>
+                    {% if task.completed_by.employee_profile.position %}
+                      <div class="text-secondary small mt-0.5" style="font-size: 11px;">
+                        {{ task.completed_by.employee_profile.position }}
+                      </div>
+                    {% elif task.assigned_group %}
+                      <div class="text-secondary small mt-0.5" style="font-size: 11px;">
+                        {{ task.assigned_group.name }}
+                      </div>
+                    {% else %}
+                      <div class="text-secondary small mt-0.5" style="font-size: 11px;">Approver</div>
+                    {% endif %}
+                  {% elif task.status == 'skipped' %}
+                    <span class="audit-status-pill audit-status-skipped" style="font-size: 11px;">
+                      <span class="status-dot"></span>Otomatis Sistem
+                    </span>
+                  {% elif row.is_pending_merged %}
+                    <div class="fw-semibold text-secondary" style="font-size: 12.5px;">
+                      {{ row.pending_actors_text }}
+                    </div>
+                    <div class="text-muted small mt-0.5" style="font-size: 11px;">
+                      {% if row.is_multi_group %}Menunggu persetujuan salah satu grup{% else %}Menunggu Review Group{% endif %}
+                    </div>
+                  {% elif task.assigned_to %}
+                    <div class="fw-semibold text-secondary" style="font-size: 12.5px;">
+                      {{ task.assigned_to.get_full_name|default:task.assigned_to.username }}
+                    </div>
+                    <div class="text-muted small mt-0.5" style="font-size: 11px;">
+                      Menunggu: {% if task.assigned_to.employee_profile.position %}{{ task.assigned_to.employee_profile.position }}{% else %}Approver{% endif %}
+                    </div>
+                  {% elif task.assigned_group %}
+                    <div class="fw-semibold text-secondary" style="font-size: 12.5px;">
+                      {{ task.assigned_group.name }}
+                    </div>
+                    <div class="text-muted small mt-0.5" style="font-size: 11px;">
+                      Menunggu Review Group
+                    </div>
+                  {% else %}
+                    <span class="text-muted font-monospace">—</span>
+                  {% endif %}
+                </td>
+                <td class="text-center px-3">
+                  {% if task.status == 'approved' %}
+                    <span class="audit-status-pill audit-status-approved">
+                      <span class="status-dot"></span>Disetujui
+                    </span>
+                  {% elif task.decision == 'send_back' or task.status == 'returned' and task.decision == 'send_back' %}
+                    <span class="audit-status-pill audit-status-returned">
+                      <span class="status-dot"></span>Send-Back
+                    </span>
+                  {% elif task.decision == 'request_revision' or task.status == 'returned' %}
+                    <span class="audit-status-pill audit-status-revision">
+                      <span class="status-dot"></span>Revisi
+                    </span>
+                  {% elif task.status == 'rejected' %}
+                    <span class="audit-status-pill audit-status-rejected">
+                      <span class="status-dot"></span>Ditolak
+                    </span>
+                  {% elif task.status == 'skipped' %}
+                    <span class="audit-status-pill audit-status-skipped">
+                      <span class="status-dot"></span>Dilewati
+                    </span>
+                  {% elif task.status == 'pending' %}
+                    <span class="audit-status-pill audit-status-pending">
+                      <span class="status-dot"></span>Menunggu
+                    </span>
+                  {% elif task.status == 'expired' %}
+                    <span class="audit-status-pill audit-status-neutral">
+                      <span class="status-dot"></span>Expired
+                    </span>
+                  {% else %}
+                    <span class="audit-status-pill audit-status-neutral">
+                      <span class="status-dot"></span>{{ task.get_status_display }}
+                    </span>
+                  {% endif %}
+                </td>
+                <td class="px-3">
+                  {# Riwayat pendelegasian staf jika task ini pernah didelegasikan #}
+                  {% for del in task.delegations.all %}
+                    <div class="p-2.5 mb-2 rounded bg-light border border-warning-subtle" style="font-size: 11.5px; border-left: 3px solid #f59e0b !important;">
+                      <div class="d-flex align-items-center justify-content-between gap-2 mb-1 flex-wrap">
+                        <span class="fw-bold text-dark">
+                          <i class="bi bi-person-gear text-warning me-1"></i>Delegasi: {{ del.delegated_to.get_full_name|default:del.delegated_to.username }}
+                          {% if del.delegated_to.employee_profile.position %}
+                            <span class="text-muted fw-normal">({{ del.delegated_to.employee_profile.position }})</span>
+                          {% endif %}
+                        </span>
+                        <span class="badge bg-success-subtle text-success border border-success-subtle font-monospace" style="font-size: 10px;">
+                          Telaah Selesai
+                        </span>
+                      </div>
+                      {% if del.instructions %}
+                        <div class="text-muted mb-1" style="font-size: 11px;">
+                          <span class="fw-semibold text-secondary">Instruksi:</span> {{ del.instructions }}
+                        </div>
+                      {% endif %}
+                      {% if del.staff_notes %}
+                        <div class="text-success p-1.5 bg-white rounded border border-success-subtle mt-1" style="font-size: 11.5px;">
+                          <strong>Rekomendasi Staf:</strong> {{ del.staff_notes }}
+                        </div>
+                      {% endif %}
+                    </div>
+                  {% endfor %}
+
+                  {% if task.comments %}
+                    <div class="p-2 bg-light rounded border text-dark fst-italic mb-1.5" style="font-size: 12px; line-height: 1.45;">
+                      <i class="bi bi-chat-quote text-muted me-1"></i>&#8220;{{ task.comments }}&#8221;
+                    </div>
+                  {% endif %}
+
+                  {% if task.step_fields %}
+                    <div class="row g-1 mt-1 mb-1.5">
+                      {% for field in task.step_fields %}
+                        <div class="col-sm-6">
+                          <div class="p-1.5 bg-white border rounded small">
+                            <span class="text-muted d-block" style="font-size: 10px;">{{ field.label }}</span>
+                            <span class="fw-semibold text-dark" style="font-size: 11px;">{{ field.value|default:"—" }}</span>
+                          </div>
+                        </div>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+
+                  {% if task.status == 'skipped' %}
+                    <div class="text-muted small fst-italic" style="font-size: 11px;">
+                      <i class="bi bi-info-circle me-1"></i>Penugasan paralel ditutup otomatis karena tahapan telah diselesaikan oleh pejabat terkait.
+                    </div>
+                  {% elif not task.comments and not task.step_fields and not task.delegations.all %}
+                    <span class="text-muted small font-monospace">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endwith %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
     </div>
   </div>
-</div>
+  {% endif %}
 
+  {# ── Bottom Action Bar (Permitted Workflow Actions - Clean Enterprise Unboxed) ── #}
+  {% if not rcl_ctx or not rcl_ctx.can_act_current %}
+    {% if submission.form_definition.slug != 'release-credit-limit' or submission.submitter == user and submission.status != 'approved' %}
+  <div class="d-flex justify-content-between align-items-center mt-4 px-1 flex-wrap gap-2">
+    <div>
+      {% if submission.form_definition.slug != 'release-credit-limit' %}
+        {% if is_approver_user %}
+          <a href="{% url 'forms_workflows:approval_inbox' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1.5 me-2">
+            <i class="bi bi-inbox"></i>
+            <span>Inbox Approval</span>
+          </a>
+          <a href="{% url 'forms_workflows:completed_approvals' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1.5">
+            <i class="bi bi-clock-history"></i>
+            <span>Riwayat Approval</span>
+          </a>
+        {% else %}
+          <a href="{% url 'forms_workflows:form_submission_hub' submission.form_definition.slug %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1.5">
+            <i class="bi bi-arrow-left"></i>
+            <span>{% if submission.form_definition.slug == 'permohonan-kontrak' %}Back{% else %}Kembali{% endif %}</span>
+          </a>
+        {% endif %}
+      {% endif %}
+    </div>
+
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      {% if submission.status == 'draft' and submission.submitter == user %}
+        <a href="{% url 'forms_workflows:form_submit' submission.form_definition.slug %}?draft_id={{ submission.id }}" class="btn btn-sm btn-dark d-inline-flex align-items-center gap-1">
+          <i class="bi bi-pencil"></i>
+          <span>Continue Editing</span>
+        </a>
+        <a href="{% url 'forms_workflows:discard_draft' submission.id %}" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1">
+          <i class="bi bi-trash3"></i>
+          <span>Discard Draft</span>
+        </a>
+      {% endif %}
+
+      {% if submission.status == 'submitted' or submission.status == 'pending_approval' or submission.status == 'needs_revision' %}
+        {% if submission.form_definition.allow_withdrawal and submission.submitter == user %}
+          <button type="button" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1" data-bs-toggle="modal" data-bs-target="#withdrawModal">
+            <i class="bi bi-x-circle"></i>
+            <span>{% if submission.form_definition.slug == 'permohonan-kontrak' %}Withdraw{% else %}Withdraw Submission{% endif %}</span>
+          </button>
+        {% endif %}
+      {% endif %}
+
+      {% if submission.status == 'needs_revision' and submission.submitter == user %}
+        <a href="{% url 'forms_workflows:form_submit' submission.form_definition.slug %}?revision={{ submission.id }}" class="btn btn-sm btn-warning fw-semibold text-dark d-inline-flex align-items-center gap-1 shadow-sm">
+          <i class="bi bi-pencil-square"></i>
+          <span>{% if submission.form_definition.slug == 'permohonan-kontrak' %}Edit &amp; Resubmit{% else %}Perbaiki Pengajuan{% endif %}</span>
+        </a>
+      {% endif %}
+
+      {% if submission.status == 'rejected' or submission.status == 'withdrawn' %}
+        {% if submission.form_definition.allow_resubmit and submission.submitter == user %}
+          <a href="{% url 'forms_workflows:resubmit_submission' submission.id %}" class="btn btn-sm btn-dark d-inline-flex align-items-center gap-1">
+            <i class="bi bi-arrow-repeat"></i>
+            <span>Resubmit Form</span>
+          </a>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+    {% endif %}
+  {% endif %}
+
+  {# ── Modal Konfirmasi Withdraw (Pemohon) ── #}
+  {% if submission.form_definition.allow_withdrawal and submission.submitter == user %}
+    <div class="modal fade" id="withdrawModal" tabindex="-1" aria-labelledby="withdrawModalLabel" aria-hidden="true" data-bs-backdrop="static">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border shadow">
+          <div class="modal-header bg-danger bg-opacity-10 text-danger border-bottom border-danger-subtle py-3">
+            <h5 class="modal-title h6 fw-bold text-danger mb-0 d-flex align-items-center gap-2" id="withdrawModalLabel">
+              <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+              <span>Konfirmasi Penarikan Pengajuan</span>
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+          </div>
+
+          <form method="post" action="{% url 'forms_workflows:withdraw_submission' submission.id %}">
+            {% csrf_token %}
+            <div class="modal-body p-3 p-md-4">
+              <p class="mb-2 text-dark" style="font-size: 0.95rem;">
+                Apakah Anda yakin ingin menarik / membatalkan pengajuan <strong>{{ submission.form_definition.name }} #{{ submission.id }}</strong>?
+              </p>
+              
+              <div class="alert alert-danger bg-danger bg-opacity-10 border border-danger-subtle p-2.5 small text-danger mb-3 rounded-2">
+                <i class="bi bi-info-circle-fill me-1"></i>
+                Tindakan ini akan <strong>menghentikan seluruh proses persetujuan</strong> yang sedang aktif dan menandai tiket sebagai <em>Withdrawn</em>. Tindakan ini tidak dapat dibatalkan.
+              </div>
+
+              <div class="mb-1">
+                <label for="withdrawModalReason" class="form-label text-secondary small fw-semibold">Catatan / Alasan Penarikan (Opsional)</label>
+                <textarea id="withdrawModalReason" name="reason" rows="2" class="form-control form-control-sm" placeholder="Contoh: Salah mengisi data toko, diajukan ulang nanti..."></textarea>
+              </div>
+            </div>
+
+            <div class="modal-footer bg-light border-top py-2.5 px-3 d-flex justify-content-between">
+              <button type="button" class="btn btn-sm btn-outline-secondary px-3" data-bs-dismiss="modal">
+                {% if submission.form_definition.slug == 'permohonan-kontrak' %}Cancel{% else %}Batal{% endif %}
+              </button>
+              <button type="submit" class="btn btn-sm btn-danger px-3.5 fw-semibold d-inline-flex align-items-center gap-1.5">
+                <i class="bi bi-x-circle"></i>
+                <span>{% if submission.form_definition.slug == 'permohonan-kontrak' %}Withdraw{% else %}Ya, Tarik Pengajuan{% endif %}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {# ── Modal Konfirmasi Push Notifikasi (Khusus Sales Support & Admin) ── #}
+  {% if can_push_notification %}
+    <div class="modal fade" id="pushNotificationModal" tabindex="-1" aria-labelledby="pushNotificationModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered" style="max-width: 520px;">
+        <div class="modal-content border-0 shadow" style="border-radius: 10px;">
+          <div class="modal-header border-0 pb-0 pt-4 px-4">
+            <h6 class="modal-title fw-bold text-dark d-flex align-items-center gap-2" id="pushNotificationModalLabel">
+              <i class="bi bi-bell-fill text-warning fs-5"></i> Kirim Push Notifikasi Pengingat
+            </h6>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+          </div>
+
+          <form method="post" action="{% url 'forms_workflows:push_stage_notification' submission.id %}" id="pushNotificationForm">
+            {% csrf_token %}
+            <div class="modal-body px-4 py-3">
+              <p class="text-secondary small mb-3">
+                Kirimkan pengingat notifikasi manual secara langsung kepada pihak yang sedang bertanggung jawab pada tahap aktif saat ini.
+              </p>
+
+              <div class="p-3 bg-light rounded border mb-3">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                  <span class="text-muted small" style="font-size: 11px; text-transform: uppercase; font-weight: 600;">Tahap Aktif Saat Ini</span>
+                  <span class="badge bg-primary bg-opacity-10 text-primary border border-primary-subtle px-2 py-1" style="font-size: 11px;">
+                    {{ push_target_info.stage_name|default:"Tahap Berjalan" }}
+                  </span>
+                </div>
+                
+                <div class="text-muted small mt-2" style="font-size: 11px; text-transform: uppercase; font-weight: 600;">Target Penerima Notifikasi</div>
+                <div class="fw-semibold text-dark small mt-0.5">
+                  {% if push_target_info.recipient_names %}
+                    {{ push_target_info.recipient_names|join:", " }}
+                  {% else %}
+                    {{ push_target_info.role_label|default:"PIC Stage" }}
+                  {% endif %}
+                </div>
+
+                {% if push_target_info.recipient_emails %}
+                <div class="text-muted small mt-1" style="font-size: 11.5px;">
+                  <i class="bi bi-envelope me-1"></i>{{ push_target_info.recipient_emails|join:", " }}
+                </div>
+                {% endif %}
+              </div>
+
+              <div class="alert alert-info bg-info bg-opacity-10 border border-info-subtle p-2.5 small text-dark mb-0 rounded-2" style="font-size: 11.5px; line-height: 1.45;">
+                <i class="bi bi-info-circle-fill text-info me-1"></i>
+                Tindakan ini <strong>tidak mengubah</strong> status pengajuan, urutan stage, maupun persetujuan task. Pengingat hanya akan dikirimkan via email resmi dan notifikasi internal.
+              </div>
+            </div>
+
+            <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-between" style="border-bottom-left-radius: 10px; border-bottom-right-radius: 10px;">
+              <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal">
+                Batal
+              </button>
+              <button type="submit" class="btn btn-warning btn-sm px-3.5 fw-semibold d-inline-flex align-items-center gap-1.5" id="btnConfirmPushNotif" {% if push_cooldown_remaining > 0 %}disabled{% endif %}>
+                <i class="bi bi-send-fill"></i>
+                <span>{% if push_cooldown_remaining > 0 %}Tunggu {{ push_cooldown_remaining }}s{% else %}Kirim Pengingat Sekarang{% endif %}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
 <script>
+  // Utility to expand/collapse all 5 review accordion sections (Revisi Poin 9)
+  window.toggleAllReviewAccordions = function(expand) {
+    const accordionEl = document.getElementById('reviewContractAccordion');
+    if (!accordionEl) return;
+    const collapseEls = accordionEl.querySelectorAll('.accordion-collapse');
+    collapseEls.forEach(el => {
+      if (window.bootstrap && bootstrap.Collapse) {
+        const bsCollapse = bootstrap.Collapse.getOrCreateInstance(el, { toggle: false });
+        if (expand) {
+          bsCollapse.show();
+        } else {
+          bsCollapse.hide();
+        }
+      } else {
+        if (expand) {
+          el.classList.add('show');
+          const btn = accordionEl.querySelector(`button[data-bs-target="#${el.id}"]`);
+          if (btn) {
+            btn.classList.remove('collapsed');
+            btn.setAttribute('aria-expanded', 'true');
+          }
+        } else {
+          el.classList.remove('show');
+          const btn = accordionEl.querySelector(`button[data-bs-target="#${el.id}"]`);
+          if (btn) {
+            btn.classList.add('collapsed');
+            btn.setAttribute('aria-expanded', 'false');
+          }
+        }
+      }
+    });
+  };
+  // Sinkronisasi counter tab riwayat persetujuan dari baris tabel riil
+  function syncAuditTabCounts() {
+    const allRows = document.querySelectorAll('.audit-log-row');
+    const activeRows = document.querySelectorAll('.audit-log-row.audit-row-active');
+    const skippedRows = document.querySelectorAll('.audit-log-row.audit-row-skipped');
+
+    const countActiveEl = document.getElementById('auditCountActive');
+    if (countActiveEl) countActiveEl.textContent = activeRows.length;
+
+    const countAllEl = document.getElementById('auditCountAll');
+    if (countAllEl) countAllEl.textContent = allRows.length;
+
+    const countSkippedEl = document.getElementById('auditCountSkipped');
+    if (countSkippedEl) countSkippedEl.textContent = skippedRows.length;
+
+    const headerCountEl = document.getElementById('auditHeaderCount');
+    if (headerCountEl) headerCountEl.textContent = allRows.length + ' Riwayat';
+  }
+
+  // Filter Pengesahan & Delegasi Wewenang (Clean Neutral Tabs)
+  window.setAuditFilter = function(mode, activeBtn) {
+    const btnGroup = document.getElementById('auditFilterButtonGroup');
+    if (btnGroup) {
+      btnGroup.querySelectorAll('.audit-tab-btn').forEach(b => {
+        b.classList.remove('active');
+      });
+    }
+    if (activeBtn) {
+      activeBtn.classList.add('active');
+    }
+
+    const rows = document.querySelectorAll('.audit-log-row');
+    rows.forEach(row => {
+      if (mode === 'all') {
+        row.style.display = '';
+      } else if (mode === 'active') {
+        row.style.display = row.classList.contains('audit-row-active') ? '' : 'none';
+      } else if (mode === 'skipped') {
+        row.style.display = row.classList.contains('audit-row-skipped') ? '' : 'none';
+      }
+    });
+  };
+
+  function copySigningLink() {
+    const input = document.getElementById('publicSigningUrlInput');
+    const toast = document.getElementById('copyToastNotice');
+    if (!input) return;
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(input.value).then(() => {
+        if (toast) {
+          toast.classList.remove('d-none');
+          setTimeout(() => toast.classList.add('d-none'), 3000);
+        }
+      });
+    } else {
+      input.select();
+      document.execCommand('copy');
+      if (toast) {
+        toast.classList.remove('d-none');
+        setTimeout(() => toast.classList.add('d-none'), 3000);
+      }
+    }
+  }
+
+  // Sinkronkan counter dan aktifkan filter "Persetujuan" saat halaman dimuat
   document.addEventListener('DOMContentLoaded', function() {
-    const pushForm = document.getElementById('pushNotificationFormSecondary');
-    const pushBtn = document.getElementById('btnConfirmPushNotifSecondary');
+    syncAuditTabCounts();
+    const btnActive = document.getElementById('btnFilterActive');
+    if (btnActive) {
+      window.setAuditFilter('active', btnActive);
+    }
+
+    // Anti-double click for push notification
+    const pushForm = document.getElementById('pushNotificationForm');
+    const pushBtn = document.getElementById('btnConfirmPushNotif');
     if (pushForm && pushBtn) {
       pushForm.addEventListener('submit', function() {
         pushBtn.disabled = true;
@@ -627,6 +1503,4 @@
     }
   });
 </script>
-{% endif %}
 {% endblock %}
-

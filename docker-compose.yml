@@ -15,6 +15,7 @@ services:
       - ./media:/app/media
       - ./staticfiles:/app/staticfiles
       - ./db.sqlite3:/app/db.sqlite3
+      - ./.env:/app/.env:ro
     environment:
       - PORT=8000
       - DJANGO_SETTINGS_MODULE=config.settings

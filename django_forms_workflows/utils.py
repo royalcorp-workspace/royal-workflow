@@ -91,6 +91,24 @@ def user_can_approve(user: User, submission: FormSubmission) -> bool:
         return True
 
     user_groups = user.groups.all()
+    if getattr(getattr(submission, "form_definition", None), "slug", "") == "release-credit-limit":
+        from .services.release_credit_limit_workflow import is_rcl_user_branch_eligible
+
+        matching_tasks = submission.approval_tasks.select_related("workflow_stage").filter(
+            models.Q(assigned_to=user) | models.Q(assigned_group__in=user_groups)
+        )
+        for t in matching_tasks:
+            if t.assigned_to_id == user.id:
+                return True
+            s_order = (
+                t.workflow_stage.order
+                if t.workflow_stage_id and t.workflow_stage
+                else t.stage_number
+            )
+            if is_rcl_user_branch_eligible(user, submission, s_order):
+                return True
+        return False
+
     return submission.approval_tasks.filter(
         models.Q(assigned_to=user) | models.Q(assigned_group__in=user_groups)
     ).exists()

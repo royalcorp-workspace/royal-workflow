@@ -29,7 +29,7 @@ def _resolve_base_url() -> str:
     origins = getattr(settings, "CSRF_TRUSTED_ORIGINS", None)
     if origins:
         return origins[0].rstrip("/")
-    return "http://localhost:8069"
+    return "http://127.0.0.1:8069"
 
 
 def extract_document_info(submission, task=None) -> dict[str, str]:
@@ -77,9 +77,16 @@ def extract_document_info(submission, task=None) -> dict[str, str]:
     elif divisi:
         unit_kerja = str(divisi)
     else:
-        # Fallback to submitter branch attribute or default
+        # Fallback to submitter employee_profile branch/department or default
         submitter = getattr(submission, "submitter", None)
-        unit_kerja = getattr(submitter, "branch", None) or getattr(submitter, "department", None) or "Kantor Pusat / Umum"
+        ep = getattr(submitter, "employee_profile", None) if submitter else None
+        unit_kerja = (
+            getattr(ep, "branch", None)
+            or getattr(ep, "department", None)
+            or getattr(submitter, "branch", None)
+            or getattr(submitter, "department", None)
+            or "Kantor Pusat / Umum"
+        )
 
     # Pemohon
     submitter = getattr(submission, "submitter", None)
@@ -89,17 +96,40 @@ def extract_document_info(submission, task=None) -> dict[str, str]:
         pemohon = form_data.get("inisiator_nama") or "Inisiator"
 
     # Tujuan Pengajuan
-    tujuan_pengajuan = (
-        form_data.get("tujuan_pengajuan")
-        or form_data.get("tujuan")
-        or form_data.get("nama_kegiatan")
-        or form_data.get("catatan_justifikasi")
-        or form_data.get("keperluan")
-        or form_data.get("keterangan")
-        or form_data.get("deskripsi")
-        or form_data.get("perihal")
-        or "-"
-    )
+    form_slug = getattr(getattr(submission, "form_definition", None), "slug", "")
+    if form_slug == "release-credit-limit":
+        nama_toko = (
+            form_data.get("nama_toko")
+            or form_data.get("nama_customer")
+            or form_data.get("kode_customer_jde")
+            or "Customer"
+        )
+        kode_jde = form_data.get("kode_customer_jde") or "-"
+        jenis_hold = form_data.get("jenis_hold") or "C1"
+        brand = form_data.get("brand") or "-"
+        nomor_so = form_data.get("nomor_so") or "-"
+        raw_total_so = str(form_data.get("total_so") or "0")
+        digits_so = re.sub(r"[^\d]", "", raw_total_so)
+        total_so_fmt = f"Rp {int(digits_so):,}".replace(",", ".") if digits_so else "Rp 0"
+        tujuan_pengajuan = (
+            f"Release Credit Limit ({jenis_hold}) untuk {nama_toko} (Kode JDE: {kode_jde}) "
+            f"— Brand {brand}, No. SO {nomor_so}, Total SO {total_so_fmt}"
+        )
+        ket = str(form_data.get("keterangan") or "").strip()
+        if ket and ket not in ("-", "—"):
+            tujuan_pengajuan += f" | Catatan: {ket}"
+    else:
+        tujuan_pengajuan = (
+            form_data.get("tujuan_pengajuan")
+            or form_data.get("tujuan")
+            or form_data.get("nama_kegiatan")
+            or form_data.get("catatan_justifikasi")
+            or form_data.get("keperluan")
+            or form_data.get("keterangan")
+            or form_data.get("deskripsi")
+            or form_data.get("perihal")
+            or "-"
+        )
 
     return {
         "jenis_dokumen": str(jenis_dokumen),
@@ -144,6 +174,15 @@ def get_event_wording(event: str, submission=None, task=None) -> dict[str, str]:
         }
 
     elif event in ("workflow_approved", "stage_decision", "approval_notification"):
+        is_rcl = getattr(getattr(submission, "form_definition", None), "slug", "") == "release-credit-limit"
+        if is_rcl:
+            return {
+                "judul_notifikasi": "RELEASE CREDIT LIMIT DISETUJUI",
+                "emoji": "✅",
+                "event_message": "Pengajuan Release Credit Limit berikut telah disetujui penuh sesuai matriks hierarki.",
+                "status_label": "Disetujui Sepenuhnya (Siap Release Credit Limit JDE)",
+                "action_instruction": "Pengajuan telah disahkan secara resmi dan siap untuk proses release credit limit di JDE.",
+            }
         return {
             "judul_notifikasi": "PENGAJUAN TELAH DISETUJUI",
             "emoji": "✅",
@@ -206,10 +245,18 @@ def get_event_wording(event: str, submission=None, task=None) -> dict[str, str]:
 def get_notification_action_url(submission, task=None) -> str:
     """Build full absolute URL for the notification action/detail link."""
     base = _resolve_base_url()
+    fdef = getattr(submission, "form_definition", None) if submission else None
+    form_slug = getattr(fdef, "slug", "") if fdef else ""
     if submission and getattr(submission, "status", "") == "needs_revision":
-        fdef = getattr(submission, "form_definition", None)
-        if fdef and getattr(fdef, "slug", ""):
-            return f"{base}/forms/{fdef.slug}/submit/?revision={submission.id}&step=1"
+        if form_slug:
+            step_qs = "&step=1" if form_slug == "permohonan-kontrak" else ""
+            return f"{base}/forms/{form_slug}/submit/?revision={submission.id}{step_qs}"
+    if form_slug == "release-credit-limit" and submission and getattr(submission, "id", None):
+        try:
+            rel = reverse("forms_workflows:submission_detail", args=[submission.id])
+            return f"{base}{rel}"
+        except Exception:
+            return f"{base}/forms/submissions/{submission.id}/"
     if task and getattr(task, "id", None):
         try:
             rel = reverse("forms_workflows:approve_submission", args=[task.id])
@@ -296,11 +343,13 @@ def build_notification_placeholders(
     sub_id_str = str(getattr(submission, "id", "") or "")
     nomor_spk = (
         placeholders.get("nomor_spk")
+        or placeholders.get("no_pengajuan")
         or placeholders.get("nomor_pengajuan")
         or (f"#{sub_id_str}" if sub_id_str else "")
     )
     placeholders["nomor_spk"] = nomor_spk
     placeholders.setdefault("nomor_pengajuan", nomor_spk)
+    placeholders.setdefault("no_pengajuan", nomor_spk)
 
     # Date formatting
     dt_val = getattr(submission, "submitted_at", None) or getattr(submission, "created_at", None)
