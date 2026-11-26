@@ -7,21 +7,24 @@ and submission management.
 
 import json
 import logging
+import mimetypes
+import os
 import re
 from datetime import date, datetime, time
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.files.storage import default_storage
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.db import models
-from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import escape
-from django.views.decorators.clickjacking import xframe_options_exempt
+from django.views.decorators.clickjacking import xframe_options_exempt, xframe_options_sameorigin
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
@@ -344,6 +347,108 @@ def form_qr_code(request, slug):
     response = HttpResponse(buf.getvalue(), content_type="image/svg+xml")
     response["Content-Disposition"] = f'inline; filename="{form_def.slug}-qr.svg"'
     return response
+
+
+def _process_release_credit_limit_data(form_data, submission_pk, request, is_submit=True):
+    """
+    Normalizes form_data for 'release-credit-limit':
+    1. Auto-generates no_pengajuan (RCL/YYYY/MM/XXXX) on submit if blank.
+    2. Normalizes total_so numeric digits.
+    3. Saves uploaded dynamic attachment files (rcl_lampiran_file_*) into lampiran_dokumen JSON.
+    """
+    import re as _re
+    now = timezone.now()
+    if is_submit:
+        curr_no = str(form_data.get("no_pengajuan") or "").strip()
+        if not curr_no or "otomatis" in curr_no.lower() or "/CL-" not in curr_no.upper():
+            from .company_profiles import (
+                format_official_cl_number,
+                get_next_spk_sequence,
+                resolve_company_profile,
+            )
+
+            cabang = form_data.get("cabang") or "PUSAT"
+            brand = form_data.get("brand") or "LADY"
+            req_user = getattr(request, "user", None)
+            c_prof = resolve_company_profile(form_data=form_data, user=req_user)
+            seq = get_next_spk_sequence(
+                cabang=cabang,
+                brand=brand,
+                year=now.year,
+                form_slug="release-credit-limit",
+                exclude_submission_id=submission_pk,
+                company_profile=c_prof,
+            )
+            no_gen = format_official_cl_number(
+                nomor=seq,
+                brand=brand,
+                cabang=cabang,
+                date_val=now,
+                company_profile=c_prof,
+            )
+            form_data["no_pengajuan"] = no_gen
+            form_data["nomor_pengajuan"] = no_gen
+
+    raw_total = str(form_data.get("total_so") or "").strip()
+    digits = _re.sub(r"[^\d]", "", raw_total)
+    if digits:
+        form_data["total_so"] = digits
+
+    raw_lampiran = form_data.get("lampiran_dokumen")
+    items = []
+    if isinstance(raw_lampiran, list):
+        items = raw_lampiran
+    elif isinstance(raw_lampiran, str) and raw_lampiran.strip().startswith("["):
+        try:
+            items = json.loads(raw_lampiran)
+        except Exception:
+            items = []
+
+    cleaned_items = []
+    for idx, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        nama_lamp = str(item.get("nama_lampiran") or "").strip()
+        file_key = f"rcl_lampiran_file_{idx}"
+        uploaded = request.FILES.get(file_key) if request and hasattr(request, "FILES") else None
+        if uploaded:
+            saved_path = save_uploaded_file(uploaded, file_key, submission_pk or 0)
+            cleaned_items.append({
+                "index": idx,
+                "nama_lampiran": nama_lamp or uploaded.name,
+                "filename": uploaded.name,
+                "path": saved_path,
+                "size": getattr(uploaded, "size", 0),
+            })
+        elif item.get("path") or nama_lamp:
+            cleaned_items.append({
+                "index": idx,
+                "nama_lampiran": nama_lamp,
+                "filename": item.get("filename") or "",
+                "path": item.get("path") or "",
+                "size": item.get("size", 0),
+            })
+
+    # Also capture any extra uploaded files beyond initial JSON rows
+    if request and hasattr(request, "FILES"):
+        for fkey, fobj in request.FILES.items():
+            if fkey.startswith("rcl_lampiran_file_"):
+                try:
+                    fidx = int(fkey.rsplit("_", 1)[-1])
+                except ValueError:
+                    continue
+                if not any(it.get("index") == fidx for it in cleaned_items):
+                    saved_path = save_uploaded_file(fobj, fkey, submission_pk or 0)
+                    cleaned_items.append({
+                        "index": fidx,
+                        "nama_lampiran": fobj.name,
+                        "filename": fobj.name,
+                        "path": saved_path,
+                        "size": getattr(fobj, "size", 0),
+                    })
+
+    form_data["lampiran_dokumen"] = cleaned_items
+    return form_data
 
 
 def _process_pengajuan_biaya_data(form_data, submission_pk, request):
@@ -681,7 +786,12 @@ def form_submit(request, slug):
                 created = True
 
             # Persist uploaded files with the draft
-            if request.FILES:
+            if form_def.slug == "release-credit-limit":
+                draft_obj.form_data = _process_release_credit_limit_data(
+                    draft_obj.form_data, draft_obj.pk, request, is_submit=False
+                )
+                draft_obj.save(update_fields=["form_data"])
+            elif request.FILES:
                 _save_draft_files(request.FILES, draft_obj, form_def)
 
             AuditLog.objects.create(
@@ -764,6 +874,8 @@ def form_submit(request, slug):
 
                 if form_def.slug == "pengajuan-biaya":
                     updated_data = _process_pengajuan_biaya_data(updated_data, revision_submission.pk, request)
+                elif form_def.slug == "release-credit-limit":
+                    updated_data = _process_release_credit_limit_data(updated_data, revision_submission.pk, request, is_submit=True)
 
                 from .workflow_engine import handle_resubmit_revision
 
@@ -894,6 +1006,9 @@ def form_submit(request, slug):
                     submission.form_data["pengecualian_ketentuan_support"] = ""
             if form_def.slug == "pengajuan-biaya":
                 submission.form_data = _process_pengajuan_biaya_data(submission.form_data, submission.pk, request)
+                submission.save(update_fields=["form_data"])
+            elif form_def.slug == "release-credit-limit":
+                submission.form_data = _process_release_credit_limit_data(submission.form_data, submission.pk, request, is_submit=True)
                 submission.save(update_fields=["form_data"])
 
             submission.form_data = _re_evaluate_calculated_fields(
@@ -1067,6 +1182,7 @@ def form_submit(request, slug):
             "form": form,
             "is_draft": draft is not None,
             "draft_id": draft.id if draft else None,
+            "draft": draft,
             "active_server_draft": active_server_draft,
             "is_revision": revision_submission is not None,
             "revision_id": revision_submission.id if revision_submission else None,
@@ -1175,6 +1291,9 @@ def form_embed(request, slug):
             )
             if form_def.slug == "pengajuan-biaya":
                 submission.form_data = _process_pengajuan_biaya_data(submission.form_data, submission.pk, request)
+                submission.save(update_fields=["form_data"])
+            elif form_def.slug == "release-credit-limit":
+                submission.form_data = _process_release_credit_limit_data(submission.form_data, submission.pk, request, is_submit=True)
                 submission.save(update_fields=["form_data"])
 
             submission.form_data = _re_evaluate_calculated_fields(
@@ -1458,6 +1577,211 @@ def form_auto_save(request, slug):
         )
 
 
+def _is_global_admin_user(user) -> bool:
+    """Return True if user is Superuser or member of MIS (full cross-form & cross-branch access)."""
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    return bool(getattr(user, "is_superuser", False) or user.groups.filter(name="MIS").exists())
+
+
+def _is_branch_scoped_role_name(group_name: str) -> bool:
+    """Return True if group name represents a branch-scoped approver role."""
+    name_lower = (group_name or "").strip().lower()
+    if not name_lower:
+        return False
+    national_tokens = (
+        "sales national manager",
+        "regional sales operation manager",
+        "general manager sales",
+        "direksi",
+        "commercial director",
+        "sales support",
+        "legal team",
+        "mis",
+        "pic pusat",
+        "atasan pic pusat",
+    )
+    if any(t in name_lower for t in national_tokens):
+        return False
+    branch_tokens = (
+        "accounting",
+        "accounting cabang",
+        "finance accounting tax",
+        "finance and accounting",
+        "sales area manager",
+        "branch manager",
+        "area sales manager",
+        "kasir cabang",
+        "atasan cabang",
+        "manager cabang",
+    )
+    return any(t in name_lower for t in branch_tokens)
+
+
+def _get_user_profile_branch(user):
+    ep = getattr(user, "employee_profile", None)
+    br = getattr(ep, "branch", None) if ep else None
+    return str(br).strip() if br and str(br).strip() else None
+
+
+def _filter_tasks_for_user_scope(tasks_qs, user):
+    """Enforce stage-membership and branch isolation on ApprovalTask querysets."""
+    if _is_global_admin_user(user):
+        return tasks_qs
+
+    from .services.branch_resolver import branch_matches, resolve_submission_branch
+
+    user_groups = user.groups.all()
+    delegated_ids = list(
+        TaskDelegation.objects.filter(delegated_to=user, status="pending").values_list("task_id", flat=True)
+    )
+    delegated_id_set = set(delegated_ids)
+
+    scoped_qs = tasks_qs.filter(
+        models.Q(assigned_to=user)
+        | models.Q(completed_by=user)
+        | models.Q(id__in=delegated_ids)
+        | (
+            models.Q(assigned_group__in=user_groups)
+            & models.Q(
+                workflow_stage__stageapprovalgroup__group__in=user_groups,
+                workflow_stage__stageapprovalgroup__role="approval",
+                workflow_stage__stageapprovalgroup__group_id=models.F("assigned_group_id"),
+            )
+        )
+    ).distinct()
+
+    user_branch = _get_user_profile_branch(user)
+    if not user_branch:
+        return scoped_qs
+
+    allowed_ids = []
+    for t in scoped_qs.select_related(
+        "submission__submitter__employee_profile",
+        "assigned_group",
+        "workflow_stage",
+    ):
+        if t.assigned_to_id == user.id or t.completed_by_id == user.id or t.id in delegated_id_set:
+            allowed_ids.append(t.id)
+            continue
+        grp_name = t.assigned_group.name if t.assigned_group else ""
+        if grp_name and _is_branch_scoped_role_name(grp_name):
+            sub_branch = resolve_submission_branch(t.submission)
+            if not branch_matches(sub_branch, user_branch):
+                continue
+        allowed_ids.append(t.id)
+    return tasks_qs.filter(id__in=allowed_ids)
+
+
+def _filter_completed_submissions_for_user_scope(user, history_statuses):
+    """Return FormSubmission queryset scoped to stages & branches user is authorized for."""
+    if _is_global_admin_user(user):
+        return FormSubmission.objects.filter(status__in=history_statuses)
+
+    from .services.branch_resolver import branch_matches, resolve_submission_branch
+
+    user_groups = user.groups.all()
+    user_branch = _get_user_profile_branch(user)
+
+    candidate_tasks = (
+        ApprovalTask.objects.filter(
+            status__in=["pending", "approved", "rejected"],
+            submission__status__in=history_statuses,
+        )
+        .filter(
+            models.Q(assigned_to=user)
+            | models.Q(completed_by=user)
+            | models.Q(delegations__delegated_to=user)
+            | (
+                models.Q(assigned_group__in=user_groups)
+                & models.Q(
+                    workflow_stage__stageapprovalgroup__group__in=user_groups,
+                    workflow_stage__stageapprovalgroup__role="approval",
+                    workflow_stage__stageapprovalgroup__group_id=models.F("assigned_group_id"),
+                )
+            )
+        )
+        .select_related("submission__submitter__employee_profile", "assigned_group")
+        .distinct()
+    )
+
+    allowed_task_sub_ids = set()
+    for t in candidate_tasks:
+        if t.assigned_to_id == user.id or t.completed_by_id == user.id:
+            allowed_task_sub_ids.add(t.submission_id)
+            continue
+        if t.delegations.filter(delegated_to=user).exists():
+            allowed_task_sub_ids.add(t.submission_id)
+            continue
+        grp_name = t.assigned_group.name if t.assigned_group else ""
+        if user_branch and grp_name and _is_branch_scoped_role_name(grp_name):
+            sub_branch = resolve_submission_branch(t.submission)
+            if not branch_matches(sub_branch, user_branch):
+                continue
+        allowed_task_sub_ids.add(t.submission_id)
+
+    admin_form_ids = list(
+        FormDefinition.objects.filter(admin_groups__in=user_groups).values_list("id", flat=True).distinct()
+    )
+
+    return FormSubmission.objects.filter(
+        models.Q(id__in=allowed_task_sub_ids)
+        | models.Q(submitter=user, status__in=history_statuses)
+        | models.Q(form_definition_id__in=admin_form_ids, status__in=history_statuses)
+    ).distinct()
+
+
+def _filter_hub_submissions_for_user_scope(form_def, user):
+    """Return FormSubmission queryset for form_submission_hub respecting stage & branch isolation."""
+    from .models import StageApprovalGroup
+    from .services.branch_resolver import branch_matches, resolve_submission_branch
+
+    user_groups = user.groups.all()
+    if _is_global_admin_user(user) or form_def.admin_groups.filter(id__in=user_groups).exists():
+        return FormSubmission.objects.filter(form_definition=form_def).filter(
+            ~models.Q(status="draft") | models.Q(submitter=user)
+        )
+
+    stage_group_names = list(
+        StageApprovalGroup.objects.filter(
+            stage__workflow__form_definition=form_def,
+            role="approval",
+            group__in=user_groups,
+        )
+        .values_list("group__name", flat=True)
+        .distinct()
+    )
+    direct_sub_ids = list(
+        ApprovalTask.objects.filter(submission__form_definition=form_def)
+        .filter(models.Q(assigned_to=user) | models.Q(completed_by=user) | models.Q(delegations__delegated_to=user))
+        .values_list("submission_id", flat=True)
+        .distinct()
+    )
+
+    if not stage_group_names and not direct_sub_ids:
+        return FormSubmission.objects.filter(form_definition=form_def, submitter=user)
+
+    has_national_stage_role = any(not _is_branch_scoped_role_name(gn) for gn in stage_group_names)
+    user_branch = _get_user_profile_branch(user)
+
+    base_qs = FormSubmission.objects.filter(form_definition=form_def).filter(
+        ~models.Q(status="draft") | models.Q(submitter=user)
+    )
+    if has_national_stage_role or not user_branch:
+        return base_qs
+
+    # Strictly branch-scoped stage approvers only see matching branch + own + direct tasks
+    direct_set = set(direct_sub_ids)
+    allowed_ids = []
+    for sub in base_qs.select_related("submitter__employee_profile"):
+        if sub.submitter_id == user.id or sub.id in direct_set:
+            allowed_ids.append(sub.id)
+            continue
+        if branch_matches(resolve_submission_branch(sub), user_branch):
+            allowed_ids.append(sub.id)
+    return base_qs.filter(id__in=allowed_ids)
+
+
 @login_required
 def form_submission_hub(request, slug):
     """
@@ -1469,43 +1793,7 @@ def form_submission_hub(request, slug):
     user = request.user
     user_groups = user.groups.all()
 
-    # Determine access scope: Staff/superusers/reviewers/workflow approvers see all, regular users see their own
-    is_contract_role = form_def.slug == "permohonan-kontrak" and user_groups.filter(
-        name__in=[
-            "Sales Support",
-            "Area Sales Manager (L1)",
-            "Regional Sales Operation Manager (L2)",
-            "Direksi",
-        ]
-    ).exists()
-    is_stage_approver = form_def.workflows.filter(stages__approval_groups__in=user_groups).exists()
-    has_assigned_tasks = ApprovalTask.objects.filter(
-        submission__form_definition=form_def
-    ).filter(
-        models.Q(assigned_to=user) | models.Q(assigned_group__in=user_groups)
-    ).exists()
-
-    is_privileged = (
-        user.is_superuser
-        or user.is_staff
-        or form_def.reviewer_groups.filter(id__in=user_groups).exists()
-        or form_def.admin_groups.filter(id__in=user_groups).exists()
-        or is_contract_role
-        or is_stage_approver
-        or has_assigned_tasks
-    )
-
-    if is_privileged:
-        # Dokumen DRAFT hanya boleh terlihat oleh pembuatnya sendiri!
-        # Reviewer / Approver di level selanjutnya tidak boleh melihat draf user lain.
-        submissions_qs = FormSubmission.objects.filter(form_definition=form_def).filter(
-            ~models.Q(status="draft") | models.Q(submitter=user)
-        )
-    else:
-        submissions_qs = FormSubmission.objects.filter(
-            form_definition=form_def,
-            submitter=user,
-        )
+    submissions_qs = _filter_hub_submissions_for_user_scope(form_def, user)
 
     # Filter Bar: Input pencarian: placeholder "Cari no. SPK / toko..."
     search_query = request.GET.get("q", "").strip()
@@ -1648,14 +1936,19 @@ def form_submission_hub(request, slug):
         is_token_signed = (latest_token and latest_token.status == "signed") or bool(fd.get("ttd_toko_image"))
 
         # 1. No. SPK / No. Pengajuan (semi-bold)
-        if sub.form_definition and sub.form_definition.slug == "pengajuan-biaya":
+        cabang = fd.get("cabang") or ""
+        if sub.form_definition and sub.form_definition.slug == "release-credit-limit":
+            spk_no = fd.get("no_pengajuan") or fd.get("nomor_pengajuan")
+            if not spk_no:
+                spk_no = "Draf Otomatis" if sub.status == "draft" else f"RCL-{sub.id:04d}"
+            toko = fd.get("nama_toko") or fd.get("nama_customer") or fd.get("kode_customer_jde") or "—"
+            jenis = fd.get("jenis_hold") or "—"
+        elif sub.form_definition and sub.form_definition.slug == "pengajuan-biaya":
             spk_no = fd.get("nomor_pengajuan") or f"PB-{sub.id:04d}"
             toko = ""
             jenis = fd.get("kategori_barang") or "Operasional"
-            cabang = fd.get("cabang") or ""
         else:
             spk_no = fd.get("nomor_spk") or f"SPK-{sub.id:04d}"
-            cabang = fd.get("cabang") or ""
             if sub.form_definition and sub.form_definition.slug == "permohonan-kontrak":
                 spk_str = str(spk_no).strip()
                 if not spk_str or "No." in spk_str or "/SK-" not in spk_str or spk_str.startswith("SPK-"):
@@ -1698,26 +1991,52 @@ def form_submission_hub(request, slug):
                 s_order = active_task.workflow_stage.order
                 pic_user = active_task.assigned_to
                 pic_user_name = (pic_user.get_full_name() or pic_user.username) if pic_user else ""
-                
-                if s_order == 1:
+                is_spk_form = bool(sub.form_definition and sub.form_definition.slug == "permohonan-kontrak")
+                is_rcl_form = bool(sub.form_definition and sub.form_definition.slug == "release-credit-limit")
+
+                if is_rcl_form:
+                    cab_label = fd.get("cabang") or ""
+                    if s_order == 1:
+                        stage_desc = "Review Accounting Cabang"
+                        pic_name = pic_user_name or (f"Accounting ({cab_label})" if cab_label else "Accounting Cabang")
+                        status_label = f"Menunggu Review Accounting — {cab_label}" if cab_label else "Menunggu Review Accounting"
+                    elif s_order == 2:
+                        stage_desc = "Approval ASM / BM"
+                        pic_name = pic_user_name or (f"ASM/BM ({cab_label})" if cab_label else "ASM / BM")
+                        status_label = f"Menunggu ASM / BM — {cab_label}" if cab_label else "Menunggu ASM / BM"
+                    elif s_order == 3:
+                        stage_desc = "Approval NSM"
+                        pic_name = pic_user_name or "NSM"
+                        status_label = "Menunggu NSM"
+                    elif s_order == 4:
+                        stage_desc = "Approval GM"
+                        pic_name = pic_user_name or "GM Sales"
+                        status_label = "Menunggu GM"
+                    else:
+                        stage_desc = active_task.workflow_stage.name or "Menunggu Review"
+                        pic_name = pic_user_name or "-"
+                        status_label = stage_desc
+                    status_subtext = f"Target: {fd.get('rcl_target_final_label')}" if fd.get("rcl_target_final_label") else (f"Cabang: {cab_label}" if cab_label else "")
+                    badge_class = "badge-status-menunggu"
+                elif is_spk_form and s_order == 1:
                     stage_desc = "Review ASM"
                     pic_name = pic_user_name or "-"
                     status_subtext = f"PIC: {pic_user_name}" if pic_user_name else ""
                     status_label = f"Menunggu Review ASM — {pic_user_name}" if pic_user_name else "Menunggu Review ASM"
                     badge_class = "badge-status-menunggu"
-                elif s_order == 2:
+                elif is_spk_form and s_order == 2:
                     stage_desc = "Review Sales Support"
                     pic_name = pic_user_name or "-"
                     status_subtext = f"PIC: {pic_user_name}" if pic_user_name else ""
                     status_label = f"Menunggu Review Sales Support — {pic_user_name}" if pic_user_name else "Menunggu Review Sales Support"
                     badge_class = "badge-status-menunggu"
-                elif s_order == 3:
+                elif is_spk_form and s_order == 3:
                     stage_desc = "Review RSOM"
                     pic_name = pic_user_name or "-"
                     status_subtext = f"PIC: {pic_user_name}" if pic_user_name else ""
                     status_label = f"Menunggu Review RSOM — {pic_user_name}" if pic_user_name else "Menunggu Review RSOM"
                     badge_class = "badge-status-menunggu"
-                elif s_order == 4:
+                elif is_spk_form and s_order == 4:
                     if not is_token_signed:
                         toko_name = fd.get("nama_toko") or fd.get("nama_pemilik") or ""
                         stage_desc = "Menunggu TTD Toko"
@@ -1803,7 +2122,11 @@ def form_submission_hub(request, slug):
             action_url = reverse("forms_workflows:submission_detail", kwargs={"submission_id": sub.id})
             action_is_review = False
             if active_task:
-                if active_task.assigned_to_id == user_id or (active_task.assigned_group_id and active_task.assigned_group_id in user_group_ids):
+                if sub.form_definition and sub.form_definition.slug == "release-credit-limit":
+                    from .services.release_credit_limit_workflow import user_can_act_on_rcl_task
+
+                    action_is_review = user_can_act_on_rcl_task(user, sub, active_task)
+                elif active_task.assigned_to_id == user_id or (active_task.assigned_group_id and active_task.assigned_group_id in user_group_ids):
                     action_is_review = True
             action_label = "Review" if action_is_review else "Detail"
 
@@ -2171,24 +2494,56 @@ def submission_detail(request, submission_id):
                 if t.workflow_stage_id:
                     tasks_by_stage.setdefault(t.workflow_stage_id, []).append(t)
 
+            rcl_target_level = ""
+            if form_def and form_def.slug == "release-credit-limit":
+                rcl_target_level = str(form_data.get("rcl_target_final_level") or "").strip().upper()
+
             for i, stage in enumerate(stages, start=1):
                 stage_tasks = tasks_by_stage.get(stage.id, [])
                 approved_count = sum(1 for t in stage_tasks if t.status == "approved")
+                is_skipped_by_matrix = False
+                if form_def and form_def.slug == "release-credit-limit" and rcl_target_level:
+                    if rcl_target_level == "ASM" and stage.order in (3, 4):
+                        is_skipped_by_matrix = True
+                    elif rcl_target_level == "NSM" and stage.order == 4:
+                        is_skipped_by_matrix = True
                 approval_stages.append(
                     {
                         "number": i,
                         "name": stage.name,
                         "approval_logic": stage.approval_logic,
                         "total_stages": len(stages),
-                        "is_current": i == current_stage_number and submission.status not in ("approved", "rejected"),
-                        "is_completed": approved_count > 0 and not any(t.status == "pending" for t in stage_tasks),
+                        "is_current": (not is_skipped_by_matrix) and i == current_stage_number and submission.status not in ("approved", "rejected", "needs_revision"),
+                        "is_completed": (not is_skipped_by_matrix) and approved_count > 0 and not any(t.status == "pending" for t in stage_tasks),
                         "is_rejected": any(t.status == "rejected" for t in stage_tasks),
-                        "is_pending": i > current_stage_number,
+                        "is_pending": (not is_skipped_by_matrix) and i > current_stage_number,
+                        "is_skipped_by_matrix": is_skipped_by_matrix,
                         "tasks": stage_tasks,
                         "approved_count": approved_count,
                         "total_count": len(stage_tasks),
                     }
                 )
+
+    rcl_ctx = None
+    if form_def and form_def.slug == "release-credit-limit":
+        from .services.release_credit_limit_workflow import get_rcl_review_context
+
+        rcl_ctx = get_rcl_review_context(request.user, submission, form_data)
+
+    audit_history_rows = (
+        rcl_ctx["history_rows"]
+        if rcl_ctx
+        else [
+            {
+                "is_pending_merged": False,
+                "task": t,
+                "pending_actors": [],
+                "pending_actors_text": "",
+                "is_multi_group": False,
+            }
+            for t in approval_tasks
+        ]
+    )
 
     signing_token = getattr(submission, "signing_tokens", None)
     if signing_token:
@@ -2226,6 +2581,7 @@ def submission_detail(request, submission_id):
         {
             "submission": submission,
             "approval_tasks": approval_tasks,
+            "audit_history_rows": audit_history_rows,
             "active_tasks_count": active_tasks_count,
             "skipped_tasks_count": skipped_tasks_count,
             "stage_groups": stage_groups,
@@ -2252,8 +2608,342 @@ def submission_detail(request, submission_id):
             "can_push_notification": can_push_notification,
             "push_target_info": push_target_info,
             "push_cooldown_remaining": push_cooldown_remaining,
+            "rcl_ctx": rcl_ctx,
         },
     )
+
+
+@login_required
+def release_credit_limit_evaluate_matrix(request):
+    """Return real-time target final approver preview for Release Credit Limit."""
+    from .services.release_credit_limit_workflow import evaluate_rcl_approval_matrix
+
+    result = evaluate_rcl_approval_matrix(
+        {
+            "jenis_hold": request.GET.get("jenis_hold", "C1"),
+            "brand": request.GET.get("brand", ""),
+            "total_so": request.GET.get("total_so", 0),
+            "acc_rata_rata_omzet": request.GET.get("rata_rata_omzet", 0),
+        }
+    )
+    return JsonResponse({"success": True, **result})
+
+
+@login_required
+def release_credit_limit_review_action(request, submission_id):
+    """Handle Accounting Cabang (Stage 1) and ASM/NSM/GM (Stage 2-4) actions on Release Credit Limit."""
+    if request.method != "POST":
+        return redirect("forms_workflows:submission_detail", submission_id=submission_id)
+
+    submission = get_object_or_404(FormSubmission, id=submission_id)
+    form_def = submission.form_definition
+    if not form_def or form_def.slug != "release-credit-limit":
+        messages.error(request, "Endpoint ini hanya berlaku untuk Release Credit Limit.")
+        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+    if submission.status not in ("pending_approval", "submitted"):
+        messages.warning(request, "Pengajuan ini tidak sedang dalam status menunggu review/persetujuan.")
+        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+    from .services.release_credit_limit_workflow import (
+        STAGE_ACCOUNTING,
+        STAGE_ASM,
+        STAGE_GM,
+        STAGE_NSM,
+        evaluate_rcl_approval_matrix,
+        get_pending_rcl_task,
+        parse_rupiah_amount,
+        user_can_act_on_rcl_task,
+    )
+    from .workflow_engine import handle_approval, handle_rejection, handle_request_revision
+
+    pending_task = get_pending_rcl_task(submission)
+    if not pending_task or not user_can_act_on_rcl_task(request.user, submission, pending_task):
+        messages.error(
+            request,
+            "Anda tidak memiliki wewenang atau bukan PIC cabang aktif untuk menindak tahapan ini.",
+        )
+        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+    stage_order = (
+        pending_task.workflow_stage.order
+        if pending_task.workflow_stage_id and pending_task.workflow_stage
+        else pending_task.stage_number
+    )
+    decision = (request.POST.get("decision") or "").strip()
+    comments = (request.POST.get("comments") or "").strip()
+
+    acc_field_map = [
+        ("acc_plafon_saat_ini", "Plafon Saat Ini"),
+        ("acc_total_over_credit", "Total Over Credit"),
+        ("acc_open_order_amount", "Open Order Amount"),
+        ("acc_over_due", "Over Due"),
+        ("acc_rata_rata_omzet", "Rata-rata Omzet Toko"),
+    ]
+
+    if decision == "save_accounting_draft":
+        if stage_order != STAGE_ACCOUNTING:
+            messages.error(request, "Hanya Accounting Cabang pada tahap awal yang dapat menyimpan draft credit.")
+            return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+        fd = dict(submission.form_data or {})
+        for key, _lbl in acc_field_map:
+            raw_val = (request.POST.get(key) or "").strip()
+            if raw_val != "":
+                fd[key] = parse_rupiah_amount(raw_val)
+        submission.form_data = fd
+        submission.save(update_fields=["form_data"])
+
+        AuditLog.objects.create(
+            action="update",
+            object_type="FormSubmission",
+            object_id=submission.id,
+            user=request.user,
+            user_ip=get_client_ip(request),
+            changes={"accounting_draft_saved": True, "stage": "Review Accounting Cabang"},
+        )
+        messages.success(request, "Draft informasi credit Accounting Cabang berhasil disimpan.")
+        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+    if decision == "request_revision":
+        revision_reason = (
+            request.POST.get("revision_reason")
+            or request.POST.get("comments")
+            or ""
+        ).strip()
+        if len(revision_reason) < 10:
+            messages.error(
+                request,
+                "Catatan / alasan pengembalian revisi wajib diisi minimal 10 karakter.",
+            )
+            return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+        handle_request_revision(submission, pending_task, revision_reason, request.user)
+        submitter_name = (
+            submission.submitter.get_full_name() or submission.submitter.username
+            if submission.submitter
+            else "Pemohon"
+        )
+        messages.warning(
+            request,
+            f"Pengajuan {submission.form_data.get('no_pengajuan') or f'#{submission.id}'} dikembalikan ke {submitter_name} untuk revisi.",
+        )
+        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+    if decision == "reject":
+        rejection_reason = (
+            request.POST.get("rejection_reason")
+            or request.POST.get("comments")
+            or ""
+        ).strip()
+        if len(rejection_reason) < 10:
+            messages.error(
+                request,
+                "Alasan penolakan wajib diisi minimal 10 karakter.",
+            )
+            return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+        pending_task.status = "rejected"
+        pending_task.completed_by = request.user
+        pending_task.completed_at = timezone.now()
+        pending_task.comments = rejection_reason
+        pending_task.decision = "reject"
+        pending_task.save()
+
+        workflow = pending_task.workflow_stage.workflow if pending_task.workflow_stage else form_def.workflow
+        handle_rejection(submission, pending_task, workflow)
+
+        AuditLog.objects.create(
+            action="reject",
+            object_type="FormSubmission",
+            object_id=submission.id,
+            user=request.user,
+            user_ip=get_client_ip(request),
+            changes={
+                "task_id": pending_task.id,
+                "stage": pending_task.workflow_stage.name if pending_task.workflow_stage else f"Stage {stage_order}",
+                "rejection_reason": rejection_reason,
+            },
+        )
+        doc_no = (submission.form_data or {}).get("no_pengajuan") or f"#{submission.id}"
+        messages.warning(request, f"Pengajuan {doc_no} telah ditolak.")
+        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+    if decision == "approve_accounting":
+        if stage_order != STAGE_ACCOUNTING:
+            messages.error(request, "Tahap saat ini bukan Review Accounting Cabang.")
+            return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+        fd = dict(submission.form_data or {})
+        missing_labels = []
+        for key, lbl in acc_field_map:
+            raw_val = (request.POST.get(key) or "").strip()
+            if not raw_val or not re.search(r"\d", raw_val):
+                missing_labels.append(lbl)
+            else:
+                fd[key] = parse_rupiah_amount(raw_val)
+
+        if missing_labels:
+            messages.error(
+                request,
+                f"Seluruh 5 informasi credit Accounting Cabang wajib diisi: {', '.join(missing_labels)}.",
+            )
+            return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+        fd["acc_reviewed_by"] = request.user.get_full_name() or request.user.username
+        fd["acc_reviewed_at"] = timezone.now().strftime("%d %b %Y, %H:%M WIB")
+
+        matrix = evaluate_rcl_approval_matrix(fd)
+        fd["rcl_target_final_level"] = matrix["target_final_level"]
+        fd["rcl_target_final_label"] = matrix["target_final_label"]
+        fd["rcl_product_category"] = matrix["product_category_label"]
+        fd["rcl_matrix_reason"] = matrix["matrix_reason"]
+
+        submission.form_data = fd
+        submission.save(update_fields=["form_data"])
+
+        pending_task.status = "approved"
+        pending_task.completed_by = request.user
+        pending_task.completed_at = timezone.now()
+        pending_task.comments = comments or f"Target Approver Akhir: {matrix['target_final_label']}"
+        pending_task.decision = "approve"
+        pending_task.save()
+
+        workflow = pending_task.workflow_stage.workflow if pending_task.workflow_stage else form_def.workflow
+        handle_approval(submission, pending_task, workflow)
+
+        AuditLog.objects.create(
+            action="approve",
+            object_type="FormSubmission",
+            object_id=submission.id,
+            user=request.user,
+            user_ip=get_client_ip(request),
+            changes={
+                "task_id": pending_task.id,
+                "stage": "Review Accounting Cabang",
+                "target_final_level": matrix["target_final_level"],
+                "matrix_reason": matrix["matrix_reason"],
+            },
+        )
+        messages.success(
+            request,
+            f"Data credit Accounting Cabang disimpan. Target Approver Akhir: {matrix['target_final_label']}. Pengajuan diteruskan ke ASM / BM.",
+        )
+        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+    if decision == "approve":
+        if stage_order not in (STAGE_ASM, STAGE_NSM, STAGE_GM):
+            messages.error(request, "Keputusan ini hanya untuk tahap ASM / NSM / GM.")
+            return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+        pending_task.status = "approved"
+        pending_task.completed_by = request.user
+        pending_task.completed_at = timezone.now()
+        pending_task.comments = comments
+        pending_task.decision = "approve"
+        pending_task.save()
+
+        workflow = pending_task.workflow_stage.workflow if pending_task.workflow_stage else form_def.workflow
+        handle_approval(submission, pending_task, workflow)
+
+        AuditLog.objects.create(
+            action="approve",
+            object_type="FormSubmission",
+            object_id=submission.id,
+            user=request.user,
+            user_ip=get_client_ip(request),
+            changes={
+                "task_id": pending_task.id,
+                "stage": pending_task.workflow_stage.name if pending_task.workflow_stage else f"Stage {stage_order}",
+                "comments": comments,
+            },
+        )
+
+        submission.refresh_from_db()
+        doc_no = (submission.form_data or {}).get("no_pengajuan") or f"#{submission.id}"
+        if submission.status == "approved":
+            messages.success(
+                request,
+                f"Pengajuan {doc_no} telah disetujui penuh dan berstatus Siap Release Credit Limit JDE.",
+            )
+        else:
+            next_task = get_pending_rcl_task(submission)
+            next_name = next_task.workflow_stage.name if (next_task and next_task.workflow_stage) else "tahap berikutnya"
+            messages.success(
+                request,
+                f"Persetujuan untuk {doc_no} berhasil dicatat dan diteruskan ke {next_name}.",
+            )
+        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+    messages.error(request, "Aksi tidak dikenali.")
+    return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+
+@login_required
+@xframe_options_sameorigin
+def release_credit_limit_attachment(request, submission_id, index):
+    """Serve Release Credit Limit attachment in inline preview or download mode."""
+    submission = get_object_or_404(FormSubmission, id=submission_id)
+    form_def = submission.form_definition
+    if getattr(form_def, "slug", "") != "release-credit-limit":
+        raise Http404("Lampiran hanya tersedia untuk Release Credit Limit.")
+
+    user_groups = request.user.groups.all()
+    can_view = (
+        request.user.is_superuser
+        or _is_global_admin_user(request.user)
+        or submission.submitter == request.user
+        or user_groups.filter(id__in=form_def.reviewer_groups.all()).exists()
+        or user_groups.filter(id__in=form_def.admin_groups.all()).exists()
+        or user_can_approve(request.user, submission)
+        or submission.approval_tasks.filter(
+            models.Q(assigned_to=request.user)
+            | models.Q(assigned_group__in=user_groups)
+            | models.Q(completed_by=request.user)
+        ).exists()
+    )
+    if not can_view:
+        return HttpResponseForbidden("Anda tidak memiliki akses ke lampiran ini.")
+
+    lampiran = (submission.form_data or {}).get("lampiran_dokumen") or []
+    if not isinstance(lampiran, list) or index < 0 or index >= len(lampiran):
+        raise Http404("Lampiran tidak ditemukan.")
+
+    item = lampiran[index] or {}
+    rel_path = str(item.get("path") or "").lstrip("/\\")
+    if not rel_path:
+        raise Http404("Path lampiran tidak valid.")
+
+    # Guard against path traversal outside MEDIA_ROOT
+    norm_rel = os.path.normpath(rel_path).replace("\\", "/")
+    if norm_rel.startswith("..") or os.path.isabs(norm_rel):
+        raise Http404("Path lampiran tidak valid.")
+
+    filename = item.get("filename") or os.path.basename(norm_rel) or f"lampiran_{index + 1}"
+    mode = (request.GET.get("mode") or "preview").strip().lower()
+    as_attachment = mode == "download"
+
+    if default_storage.exists(norm_rel):
+        file_obj = default_storage.open(norm_rel, "rb")
+    else:
+        media_root = os.path.abspath(str(settings.MEDIA_ROOT))
+        abs_path = os.path.abspath(os.path.join(media_root, norm_rel))
+        if not abs_path.startswith(media_root + os.sep) or not os.path.isfile(abs_path):
+            raise Http404("File lampiran tidak ditemukan di server.")
+        file_obj = open(abs_path, "rb")
+
+    content_type, _ = mimetypes.guess_type(filename or norm_rel)
+    if not content_type:
+        content_type = "application/octet-stream"
+
+    response = FileResponse(
+        file_obj,
+        as_attachment=as_attachment,
+        filename=filename,
+        content_type=content_type,
+    )
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 def _user_can_push_notifications(user) -> bool:
@@ -2488,7 +3178,7 @@ def approval_inbox(request):
     # Filters are exclusive (replace, not additive). Pills are only rendered
     # for roles the user actually has memberships for.
     user_groups = request.user.groups.all()
-    is_super = request.user.is_superuser
+    is_super = _is_global_admin_user(request.user)
 
     reviewer_form_ids = list(
         FormDefinition.objects.filter(reviewer_groups__in=user_groups)
@@ -2551,15 +3241,10 @@ def approval_inbox(request):
             submission__form_definition_id__in=admin_form_ids,
         )
     else:  # "mine"
-        delegated_task_ids = TaskDelegation.objects.filter(
-            delegated_to=request.user,
-            status="pending",
-        ).values_list("task_id", flat=True)
-        base_tasks = ApprovalTask.objects.filter(status="pending").filter(
-            models.Q(assigned_to=request.user)
-            | models.Q(assigned_group__in=user_groups)
-            | models.Q(id__in=delegated_task_ids)
-        ).distinct()
+        base_tasks = _filter_tasks_for_user_scope(
+            ApprovalTask.objects.filter(status="pending"),
+            request.user,
+        )
 
     # --- Category counts (for the filter bar) ---
     raw_counts = (
@@ -2743,6 +3428,9 @@ def approve_submission(request, task_id):
     task = get_object_or_404(ApprovalTask, id=task_id)
     submission = task.submission
     form_def = submission.form_definition
+
+    if getattr(form_def, "slug", "") == "release-credit-limit" and request.method == "GET":
+        return redirect("forms_workflows:submission_detail", submission_id=submission.id)
 
     # For sub-workflow tasks, approval step fields belong to the sub-workflow's
     # form definition, not the parent form.  Use field_form_def for all field
@@ -3848,39 +4536,10 @@ def completed_approvals(request):
     ``?form=<slug>`` query parameter for narrowing the list.
     """
     _history_statuses = ["approved", "pending_approval", "rejected", "withdrawn"]
-    if request.user.is_superuser:
-        base_submissions = FormSubmission.objects.filter(status__in=_history_statuses)
-    else:
-        user_groups = request.user.groups.all()
-        # Include any submission the user has an ApprovalTask for — pending,
-        # approved, or rejected — so that submissions they can see on the
-        # Pending tab also appear here when filtered to "pending_approval".
-        completed_task_sub_ids = (
-            ApprovalTask.objects.filter(
-                models.Q(assigned_to=request.user)
-                | models.Q(assigned_group__in=user_groups),
-                status__in=["pending", "approved", "rejected"],
-            )
-            .values_list("submission_id", flat=True)
-            .distinct()
-        )
-        # reviewer_groups and admin_groups members both see all non-draft
-        # submissions for their forms, including zero-approval-step forms.
-        privileged_form_ids = (
-            FormDefinition.objects.filter(
-                models.Q(reviewer_groups__in=user_groups)
-                | models.Q(admin_groups__in=user_groups)
-            )
-            .values_list("id", flat=True)
-            .distinct()
-        )
-        base_submissions = FormSubmission.objects.filter(
-            models.Q(id__in=completed_task_sub_ids)
-            | models.Q(
-                form_definition__in=privileged_form_ids,
-                status__in=_history_statuses,
-            )
-        ).distinct()
+    user_groups = request.user.groups.all()
+    base_submissions = _filter_completed_submissions_for_user_scope(
+        request.user, _history_statuses
+    )
 
     # --- Category counts (for the filter bar) ---
     raw_counts = (
@@ -3915,17 +4574,10 @@ def completed_approvals(request):
     total_count = sum(c["count"] for c in category_counts)
 
     # --- Pending tasks count for cross-tab badge ---
-    if request.user.is_superuser:
-        pending_tasks_count = ApprovalTask.objects.filter(status="pending").count()
-    else:
-        pending_tasks_count = (
-            ApprovalTask.objects.filter(status="pending")
-            .filter(
-                models.Q(assigned_to=request.user)
-                | models.Q(assigned_group__in=user_groups)
-            )
-            .count()
-        )
+    pending_tasks_count = _filter_tasks_for_user_scope(
+        ApprovalTask.objects.filter(status="pending"),
+        request.user,
+    ).count()
 
     # --- Apply optional category filter ---
     category_slug = request.GET.get("category", "").strip()
@@ -4392,9 +5044,13 @@ def form_next_spk_number(request, slug):
     if not perusahaan or str(perusahaan).strip() in ("", "-- Select --", "—"):
         perusahaan = user_company or comp_prof.get("display_name", "PT Anugrah Cemerlang Abadi")
 
-    # Idempotency guard: jika draft yang sedang dibuka sudah memiliki nomor SPK valid
-    # dan cabang serta brand masih cocok, kembalikan nomor SPK draft tersebut secara locked
-    draft_id_param = request.GET.get("draft_id") or request.GET.get("draft")
+    # Idempotency guard: nomor dikunci permanen jika submission bukan draft,
+    # atau jika masih draft namun cabang, brand, dan kode PT masih sama persis.
+    draft_id_param = (
+        request.GET.get("draft_id")
+        or request.GET.get("draft")
+        or request.GET.get("exclude_id")
+    )
     exclude_id = None
     if draft_id_param:
         try:
@@ -4402,12 +5058,30 @@ def form_next_spk_number(request, slug):
         except (ValueError, TypeError):
             exclude_id = None
 
+    doc_prefix = "CL" if form_def.slug == "release-credit-limit" else "SK"
+
     if exclude_id:
         existing_draft = FormSubmission.objects.filter(id=exclude_id, form_definition=form_def).first()
         if existing_draft and existing_draft.form_data:
-            existing_spk = str(existing_draft.form_data.get("nomor_spk") or "").strip()
+            existing_spk = str(
+                existing_draft.form_data.get("nomor_spk")
+                or existing_draft.form_data.get("no_pengajuan")
+                or ""
+            ).strip()
             if existing_spk and not any(x in existing_spk.upper() for x in ["OTOMATIS", "AUTO-", "____", "{"]):
-                if "No." in existing_spk or "/SK-" not in existing_spk:
+                if existing_draft.status != "draft":
+                    return JsonResponse({
+                        "success": True,
+                        "sequence": None,
+                        "sequence_str": "",
+                        "nomor_spk": existing_spk,
+                        "cabang": cabang,
+                        "brand": brand,
+                        "perusahaan": perusahaan,
+                        "year": year,
+                        "is_locked_draft": True,
+                    })
+                if "No." in existing_spk or f"/{doc_prefix}-" not in existing_spk:
                     import re
                     m_spk = re.search(r"(\d+)", existing_spk)
                     seq_num = int(m_spk.group(1)) if m_spk else 1
@@ -4418,8 +5092,9 @@ def form_next_spk_number(request, slug):
                         date_val=existing_draft.created_at or timezone.now().date(),
                         company_profile=comp_prof,
                         perusahaan=perusahaan,
+                        doc_prefix=doc_prefix,
                     )
-                # Validasi kecocokan segmen kode brand kanonikal dan cabang pada existing_spk
+                # Validasi kecocokan segmen kode brand kanonikal, cabang, dan draft form_data
                 b_str = str(brand or "").strip().upper()
                 if "LADY" in b_str:
                     req_brand_code = "LADY"
@@ -4437,8 +5112,10 @@ def form_next_spk_number(request, slug):
                     req_brand_code = b_str.split()[0] if b_str else ""
 
                 req_cab = str(cabang or "PUSAT").strip().upper().replace(" ", "")
-                cab_ok = f"/{req_cab}/" in existing_spk.upper()
-                brand_ok = bool(req_brand_code and f"/{req_brand_code}/" in existing_spk.upper())
+                saved_cab = str(existing_draft.form_data.get("cabang") or "").strip().upper().replace(" ", "")
+                saved_brand = str(existing_draft.form_data.get("brand") or "").strip().upper()
+                cab_ok = f"/{req_cab}/" in existing_spk.upper() and (not saved_cab or saved_cab == req_cab)
+                brand_ok = bool(req_brand_code and f"/{req_brand_code}/" in existing_spk.upper()) and (not saved_brand or saved_brand == b_str)
 
                 if cab_ok and brand_ok:
                     return JsonResponse({
@@ -4469,6 +5146,7 @@ def form_next_spk_number(request, slug):
         date_val=timezone.now().date(),
         company_profile=comp_prof,
         perusahaan=perusahaan,
+        doc_prefix=doc_prefix,
     )
     return JsonResponse({
         "success": True,
@@ -4904,8 +5582,28 @@ _SEARCH_FORM_DATA_KEYS = (
     "jenis_pengajuan",
     "jenis_kontrak",
     "nomor_pengajuan",
+    "no_pengajuan",
+    "nomor_so",
+    "nama_customer",
     "nama_kegiatan",
 )
+
+
+def _get_submission_doc_number_label(sub) -> str:
+    """Return official document number (nomor_spk / no_pengajuan / etc.) or fallback form name."""
+    fd = getattr(sub, "form_data", None) or {}
+    doc_no = str(
+        fd.get("nomor_spk")
+        or fd.get("no_pengajuan")
+        or fd.get("nomor_pengajuan")
+        or fd.get("nomor_dokumen")
+        or fd.get("ticket_no")
+        or ""
+    ).strip()
+    if doc_no:
+        return doc_no
+    fdef = getattr(sub, "form_definition", None)
+    return getattr(fdef, "name", None) or f"#{sub.id}"
 
 
 def _resolve_search_user_and_group_ids(search: str) -> tuple[list[int], list[int]]:
@@ -6558,34 +7256,7 @@ def completed_approvals_ajax(request):
 
     # --- Base queryset (mirrors permission logic of completed_approvals view) ---
     _history_statuses = ["approved", "pending_approval", "rejected", "withdrawn"]
-    if request.user.is_superuser:
-        qs = FormSubmission.objects.filter(status__in=_history_statuses)
-    else:
-        user_groups = request.user.groups.all()
-        sub_ids = (
-            ApprovalTask.objects.filter(
-                models.Q(assigned_to=request.user)
-                | models.Q(assigned_group__in=user_groups),
-                status__in=["pending", "approved", "rejected"],
-            )
-            .values_list("submission_id", flat=True)
-            .distinct()
-        )
-        privileged_form_ids = (
-            FormDefinition.objects.filter(
-                models.Q(reviewer_groups__in=user_groups)
-                | models.Q(admin_groups__in=user_groups)
-            )
-            .values_list("id", flat=True)
-            .distinct()
-        )
-        qs = FormSubmission.objects.filter(
-            models.Q(id__in=sub_ids)
-            | models.Q(
-                form_definition__in=privileged_form_ids,
-                status__in=_history_statuses,
-            )
-        ).distinct()
+    qs = _filter_completed_submissions_for_user_scope(request.user, _history_statuses)
 
     records_total = qs.count()
 
@@ -6688,7 +7359,7 @@ def completed_approvals_ajax(request):
                 f'<i class="bi bi-eye"></i> View</a>'
             ),
             "category": _cat_html(getattr(sub.form_definition, "category", None)),
-            "form": escape((sub.form_data or {}).get("nomor_spk") or sub.form_definition.name),
+            "form": escape(_get_submission_doc_number_label(sub)),
             "submitter": escape(_submitter_label(sub)),
             "status": _STATUS_BADGE.get(
                 sub.status,
@@ -6740,13 +7411,14 @@ def approval_inbox_ajax(request):
     # active filter pill.
     user_groups = request.user.groups.all()
     user_group_ids = set(user_groups.values_list("id", flat=True))
+    is_super = _is_global_admin_user(request.user)
     if requested_role == "reviewing":
         privileged_form_ids = list(
             FormDefinition.objects.filter(reviewer_groups__in=user_groups)
             .values_list("id", flat=True)
             .distinct()
         )
-        if request.user.is_superuser and not privileged_form_ids:
+        if is_super and not privileged_form_ids:
             privileged_form_ids = list(
                 FormDefinition.objects.filter(reviewer_groups__isnull=False)
                 .values_list("id", flat=True)
@@ -6762,7 +7434,7 @@ def approval_inbox_ajax(request):
             .values_list("id", flat=True)
             .distinct()
         )
-        if request.user.is_superuser and not privileged_form_ids:
+        if is_super and not privileged_form_ids:
             privileged_form_ids = list(
                 FormDefinition.objects.filter(admin_groups__isnull=False)
                 .values_list("id", flat=True)
@@ -6772,18 +7444,13 @@ def approval_inbox_ajax(request):
             status="pending",
             submission__form_definition_id__in=privileged_form_ids,
         )
-    elif request.user.is_superuser:
+    elif is_super:
         qs = ApprovalTask.objects.filter(status="pending")
     else:
-        delegated_task_ids = TaskDelegation.objects.filter(
-            delegated_to=request.user,
-            status="pending",
-        ).values_list("task_id", flat=True)
-        qs = ApprovalTask.objects.filter(status="pending").filter(
-            models.Q(assigned_to=request.user)
-            | models.Q(assigned_group__in=user_groups)
-            | models.Q(id__in=delegated_task_ids)
-        ).distinct()
+        qs = _filter_tasks_for_user_scope(
+            ApprovalTask.objects.filter(status="pending"),
+            request.user,
+        )
 
     qs = qs.exclude(submission__status="draft")
     records_total = qs.count()
@@ -7033,7 +7700,7 @@ def approval_inbox_ajax(request):
             ),
             "category": _cat_html(getattr(sub.form_definition, "category", None)),
             "actions": action_btn,
-            "form": escape((sub.form_data or {}).get("nomor_spk") or sub.form_definition.name),
+            "form": escape(_get_submission_doc_number_label(sub)),
             "submitter": escape(_submitter_label(sub)),
             "step_num": step_val,
             "assigned": assigned_val,
@@ -7211,7 +7878,7 @@ def my_submissions_ajax(request):
             "id": str(sub.id),
             "actions": " ".join(actions_parts),
             "category": _cat_html(cat),
-            "form": escape(sub.form_definition.name),
+            "form": escape(_get_submission_doc_number_label(sub)),
             "status": _STATUS_BADGE.get(
                 sub.status,
                 f'<span class="badge bg-light text-dark">{escape(sub.status)}</span>',
@@ -7601,6 +8268,9 @@ def batch_import_upload(request, slug):
             )
             if form_def.slug == "pengajuan-biaya":
                 submission.form_data = _process_pengajuan_biaya_data(submission.form_data, submission.pk, request)
+                submission.save(update_fields=["form_data"])
+            elif form_def.slug == "release-credit-limit":
+                submission.form_data = _process_release_credit_limit_data(submission.form_data, submission.pk, request, is_submit=True)
                 submission.save(update_fields=["form_data"])
 
             submission.form_data = _re_evaluate_calculated_fields(

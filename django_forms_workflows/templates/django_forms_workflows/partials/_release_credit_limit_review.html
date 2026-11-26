@@ -1,0 +1,851 @@
+{% load forms_workflows_tags %}
+<div class="d-flex flex-column gap-3" id="rclDetailContainer">
+  {# ── Card 1: Data Pengajuan (Flat Enterprise Card + Clean 3-Column Grid + Collapsible Details) ── #}
+  <div class="card border shadow-sm" style="border-radius: 10px; overflow: hidden;">
+    <div class="card-header bg-white py-2.5 px-3 px-md-4 d-flex align-items-center justify-content-between gap-2 border-bottom">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-file-earmark-text text-primary"></i>
+        <span class="fw-bold small text-dark">Data Pengajuan</span>
+        <span class="text-muted" style="font-size: 11.5px;">&middot; Sales Counter (Read-Only)</span>
+      </div>
+      <button
+        type="button"
+        class="btn btn-sm btn-link text-decoration-none text-secondary fw-semibold p-0 d-inline-flex align-items-center gap-1"
+        data-bs-toggle="collapse"
+        data-bs-target="#rclSalesCounterCollapse"
+        aria-expanded="true"
+        aria-controls="rclSalesCounterCollapse"
+        id="btnToggleRclSalesCounter">
+        <span id="rclSalesCounterToggleText" style="font-size: 12px;">Sembunyikan Rincian</span>
+        <i class="bi bi-chevron-up text-secondary" id="rclSalesCounterChevron"></i>
+      </button>
+    </div>
+
+    {# ── Collapsible Sales Counter Grid (Symmetric 3-Column Grid, Clean Dividers) ── #}
+    <div id="rclSalesCounterCollapse" class="collapse show">
+      <div class="card-body p-3 p-md-4 bg-white d-flex flex-column gap-4">
+        {# Section: Informasi Order & Pengajuan (7 Fields in Balanced 3 + 4 Grid) #}
+        <div>
+          <div class="text-uppercase text-muted fw-bold mb-2.5" style="font-size: 11px; letter-spacing: 0.05em;">
+            Informasi Order &amp; Pengajuan
+          </div>
+          <div class="row g-3 small">
+            <div class="col-12 col-md-4">
+              <div class="text-muted" style="font-size: 11.5px;">Cabang</div>
+              <div class="fw-semibold text-dark">{{ form_data.cabang|default:"—" }}</div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="text-muted" style="font-size: 11.5px;">Brand</div>
+              <div class="fw-semibold text-dark">{{ form_data.brand|default:"—" }}</div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="text-muted" style="font-size: 11.5px;">Kategori Produk</div>
+              <div class="fw-semibold text-dark">{{ rcl_ctx.matrix.product_category_label|default:"—" }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="text-muted" style="font-size: 11.5px;">Nomor SO</div>
+              <div class="fw-bold font-monospace text-dark">{{ form_data.nomor_so|default:"—" }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="text-muted" style="font-size: 11.5px;">Jenis SO</div>
+              <div class="fw-semibold text-dark">{{ form_data.jenis_so|default:"—" }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="text-muted" style="font-size: 11.5px;">Total SO</div>
+              <div class="fw-bold font-monospace text-primary">{{ form_data.total_so|default:"0"|rupiah_format }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="text-muted" style="font-size: 11.5px;">Jenis Hold</div>
+              <div class="mt-0.5">
+                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle fw-semibold">
+                  {{ form_data.jenis_hold|default:"—" }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {# Section: Toko & Kontak (Clean 3-Column Grid) #}
+        <div class="pt-3 border-top">
+          <div class="text-uppercase text-muted fw-bold mb-2.5" style="font-size: 11px; letter-spacing: 0.05em;">
+            Informasi Toko &amp; Kontak
+          </div>
+          <div class="row g-3 small">
+            <div class="col-12 col-md-4">
+              <div class="text-muted" style="font-size: 11.5px;">Kode Customer (JDE)</div>
+              <div class="fw-semibold font-monospace text-dark">{{ form_data.kode_customer_jde|default:"—" }}</div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="text-muted" style="font-size: 11.5px;">Nama Customer</div>
+              <div class="fw-semibold text-dark">{{ form_data.nama_customer|default:"—" }}</div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="text-muted" style="font-size: 11.5px;">Nama Toko</div>
+              <div class="fw-semibold text-dark">{{ form_data.nama_toko|default:"—" }}</div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="text-muted" style="font-size: 11.5px;">Nama Toko Parent</div>
+              <div class="text-dark">{{ form_data.nama_toko_parent|default:"—" }}</div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="text-muted" style="font-size: 11.5px;">Nama Pemilik</div>
+              <div class="text-dark">{{ form_data.nama_pemilik|default:"—" }}</div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="text-muted" style="font-size: 11.5px;">No. Telepon</div>
+              <div class="text-dark font-monospace">{{ form_data.no_telepon|default:"—" }}</div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="text-muted" style="font-size: 11.5px;">Email</div>
+              <div class="text-dark text-break">{{ form_data.email|default:"—" }}</div>
+            </div>
+            <div class="col-12 col-md-8">
+              <div class="text-muted" style="font-size: 11.5px;">Keterangan</div>
+              <div class="text-dark">{{ form_data.keterangan|default:"—"|linebreaksbr }}</div>
+            </div>
+          </div>
+        </div>
+
+        {# Section: Lampiran Pendukung (Lihat Inline/Modal Preview vs Unduh Attachment) #}
+        <div class="pt-3 border-top">
+          <div class="text-uppercase text-muted fw-bold mb-2.5" style="font-size: 11px; letter-spacing: 0.05em;">
+            Lampiran Pendukung
+          </div>
+          {% if rcl_ctx and rcl_ctx.lampiran_items %}
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle mb-0 small bg-white">
+              <thead class="table-light">
+                <tr>
+                  <th>Nama Lampiran</th>
+                  <th>Nama File</th>
+                  <th class="text-end" style="width: 180px;">Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for lamp in rcl_ctx.lampiran_items %}
+                <tr>
+                  <td class="fw-medium">{{ lamp.nama_lampiran|default:"Lampiran" }}</td>
+                  <td class="text-muted">{{ lamp.filename|default:"—" }}</td>
+                  <td class="text-end">
+                    {% if lamp.path %}
+                    <div class="d-inline-flex gap-1">
+                      <button
+                        type="button"
+                        class="btn btn-xs btn-outline-secondary py-0 px-2 rcl-btn-preview-attachment"
+                        data-preview-url="{% url 'forms_workflows:rcl_attachment' submission.id lamp.index %}?mode=preview"
+                        data-download-url="{% url 'forms_workflows:rcl_attachment' submission.id lamp.index %}?mode=download"
+                        data-title="{{ lamp.nama_lampiran|default:'Lampiran' }}"
+                        data-filename="{{ lamp.filename|default:'file' }}"
+                        data-ext="{{ lamp.ext }}"
+                        data-preview-kind="{{ lamp.preview_kind }}">
+                        <i class="bi bi-eye"></i> Lihat
+                      </button>
+                      <a
+                        href="{% url 'forms_workflows:rcl_attachment' submission.id lamp.index %}?mode=download"
+                        class="btn btn-xs btn-outline-primary py-0 px-2">
+                        <i class="bi bi-download"></i> Unduh
+                      </a>
+                    </div>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% elif form_data.lampiran_dokumen %}
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle mb-0 small bg-white">
+              <thead class="table-light">
+                <tr>
+                  <th>Nama Lampiran</th>
+                  <th>Nama File</th>
+                  <th class="text-end" style="width: 180px;">Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for lamp in form_data.lampiran_dokumen %}
+                <tr>
+                  <td class="fw-medium">{{ lamp.nama_lampiran|default:"Lampiran" }}</td>
+                  <td class="text-muted">{{ lamp.filename|default:"—" }}</td>
+                  <td class="text-end">
+                    {% if lamp.path %}
+                    <div class="d-inline-flex gap-1">
+                      <button
+                        type="button"
+                        class="btn btn-xs btn-outline-secondary py-0 px-2 rcl-btn-preview-attachment"
+                        data-preview-url="{% url 'forms_workflows:rcl_attachment' submission.id forloop.counter0 %}?mode=preview"
+                        data-download-url="{% url 'forms_workflows:rcl_attachment' submission.id forloop.counter0 %}?mode=download"
+                        data-title="{{ lamp.nama_lampiran|default:'Lampiran' }}"
+                        data-filename="{{ lamp.filename|default:'file' }}"
+                        data-ext=""
+                        data-preview-kind="iframe">
+                        <i class="bi bi-eye"></i> Lihat
+                      </button>
+                      <a
+                        href="{% url 'forms_workflows:rcl_attachment' submission.id forloop.counter0 %}?mode=download"
+                        class="btn btn-xs btn-outline-primary py-0 px-2">
+                        <i class="bi bi-download"></i> Unduh
+                      </a>
+                    </div>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="text-muted small">Tidak ada lampiran yang diunggah.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Card 2: Input Informasi Credit Accounting Cabang (Editable khusus Accounting Cabang Stage 1) ── #}
+  {% if rcl_ctx and rcl_ctx.is_accounting_pending_actor %}
+  <div class="card border shadow-sm" style="border-radius: 10px; overflow: hidden; border-color: #bfdbfe !important;">
+    <div class="card-header py-2.5 px-3 fw-bold small text-dark d-flex align-items-center justify-content-between flex-wrap gap-2" style="background: #eff6ff; border-bottom: 1px solid #bfdbfe;">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-calculator text-primary"></i>
+        <span>Informasi Credit Accounting Cabang</span>
+      </div>
+      <span class="text-muted fw-normal" style="font-size: 11.5px;">* Seluruh 5 nominal wajib diisi sebelum menyetujui</span>
+    </div>
+    <div class="card-body p-3 p-md-4">
+      <div class="alert alert-danger py-2 px-3 small d-none mb-3" id="rclAccValidationAlert" role="alert"></div>
+
+      <form method="post" action="{% url 'forms_workflows:rcl_review_action' submission.id %}" id="rclAccountingReviewForm">
+        {% csrf_token %}
+        <div class="row g-3">
+          <div class="col-12 col-md-4">
+            <label for="id_acc_plafon_saat_ini" class="form-label fw-semibold small text-dark">
+              Plafon Saat Ini <span class="text-danger">*</span>
+            </label>
+            <div class="input-group">
+              <span class="input-group-text bg-light fw-semibold text-secondary">Rp</span>
+              <input type="text" class="form-control rcl-rupiah-input font-monospace" id="id_acc_plafon_saat_ini" name="acc_plafon_saat_ini" value="{{ rcl_ctx.accounting_data.plafon_saat_ini_input }}" data-field-label="Plafon Saat Ini" placeholder="0" autocomplete="off">
+            </div>
+          </div>
+          <div class="col-12 col-md-4">
+            <label for="id_acc_total_over_credit" class="form-label fw-semibold small text-dark">
+              Total Over Credit <span class="text-danger">*</span>
+            </label>
+            <div class="input-group">
+              <span class="input-group-text bg-light fw-semibold text-secondary">Rp</span>
+              <input type="text" class="form-control rcl-rupiah-input font-monospace" id="id_acc_total_over_credit" name="acc_total_over_credit" value="{{ rcl_ctx.accounting_data.total_over_credit_input }}" data-field-label="Total Over Credit" placeholder="0" autocomplete="off">
+            </div>
+          </div>
+          <div class="col-12 col-md-4">
+            <label for="id_acc_open_order_amount" class="form-label fw-semibold small text-dark">
+              Open Order Amount <span class="text-danger">*</span>
+            </label>
+            <div class="input-group">
+              <span class="input-group-text bg-light fw-semibold text-secondary">Rp</span>
+              <input type="text" class="form-control rcl-rupiah-input font-monospace" id="id_acc_open_order_amount" name="acc_open_order_amount" value="{{ rcl_ctx.accounting_data.open_order_amount_input }}" data-field-label="Open Order Amount" placeholder="0" autocomplete="off">
+            </div>
+          </div>
+          <div class="col-12 col-md-6">
+            <label for="id_acc_over_due" class="form-label fw-semibold small text-dark">
+              Over Due <span class="text-danger">*</span>
+            </label>
+            <div class="input-group">
+              <span class="input-group-text bg-light fw-semibold text-secondary">Rp</span>
+              <input type="text" class="form-control rcl-rupiah-input font-monospace" id="id_acc_over_due" name="acc_over_due" value="{{ rcl_ctx.accounting_data.over_due_input }}" data-field-label="Over Due" placeholder="0" autocomplete="off">
+            </div>
+          </div>
+          <div class="col-12 col-md-6">
+            <label for="id_acc_rata_rata_omzet" class="form-label fw-semibold small text-dark">
+              Rata-rata Omzet Toko <span class="text-danger">*</span>
+            </label>
+            <div class="input-group">
+              <span class="input-group-text bg-light fw-semibold text-secondary">Rp</span>
+              <input type="text" class="form-control rcl-rupiah-input font-monospace" id="id_acc_rata_rata_omzet" name="acc_rata_rata_omzet" value="{{ rcl_ctx.accounting_data.rata_rata_omzet_input }}" data-field-label="Rata-rata Omzet Toko" placeholder="0" autocomplete="off">
+            </div>
+          </div>
+        </div>
+
+        {# Live Preview Target Approver Akhir #}
+        <div class="p-3 rounded border mt-3 mb-3" id="rclMatrixPreviewBox" style="background: #f8fafc;">
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div>
+              <div class="text-muted small fw-semibold" style="font-size: 11px; text-transform: uppercase;">Estimasi Jalur Approver Akhir</div>
+              <div class="small text-dark mt-0.5" id="rclMatrixReason">{{ rcl_ctx.matrix.matrix_reason }}</div>
+            </div>
+            <span class="badge bg-primary fs-6 px-3 py-1.5" id="rclMatrixTargetBadge">
+              {{ rcl_ctx.matrix.target_final_label }}
+            </span>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label for="id_acc_comments" class="form-label fw-semibold small text-dark">Catatan Accounting Cabang <span class="text-muted fw-normal">(Opsional)</span></label>
+          <textarea class="form-control form-control-sm" id="id_acc_comments" name="comments" rows="2" placeholder="Tambahkan catatan validasi JDE jika diperlukan..."></textarea>
+        </div>
+
+        {# Footer Aksi Accounting Cabang #}
+        <div class="d-flex flex-column flex-md-row align-items-stretch align-items-md-center justify-content-between gap-2 pt-3 border-top">
+          <a href="{% url 'forms_workflows:form_submission_hub' submission.form_definition.slug %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center gap-1">
+            <i class="bi bi-arrow-left"></i>
+            <span>Kembali</span>
+          </a>
+          <div class="d-flex flex-wrap align-items-center justify-content-end gap-2">
+            <button type="submit" name="decision" value="save_accounting_draft" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1" formnovalidate>
+              <i class="bi bi-save"></i>
+              <span>Simpan Draft</span>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1" data-bs-toggle="modal" data-bs-target="#rclRejectModal">
+              <i class="bi bi-x-circle"></i>
+              <span>Tolak</span>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-warning text-dark d-inline-flex align-items-center gap-1" data-bs-toggle="modal" data-bs-target="#rclAccRevisionModal">
+              <i class="bi bi-arrow-counterclockwise"></i>
+              <span>Kembalikan Revisi</span>
+            </button>
+            <button type="button" id="btnOpenAccApproveConfirm" class="btn btn-sm btn-success fw-semibold d-inline-flex align-items-center gap-1 shadow-sm">
+              <i class="bi bi-check2-circle"></i>
+              <span>Setujui &amp; Lanjutkan</span>
+            </button>
+          </div>
+        </div>
+
+        {# Modal Kembalikan Revisi (Accounting Cabang) #}
+        <div class="modal fade" id="rclAccRevisionModal" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border shadow">
+              <div class="modal-header" style="background: #ffffff; border-bottom: 1px solid #e2e8f0; padding: 16px 20px;">
+                <h6 class="modal-title mb-0" style="font-size: 16px; font-weight: 600; color: #0f172a;">Kembalikan Pengajuan untuk Revisi</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body" style="padding: 20px;">
+                <p class="small text-secondary mb-3">Pengajuan dikembalikan ke pemohon agar data dapat diperbaiki.</p>
+                <label for="id_acc_revision_reason" class="form-label small fw-semibold text-dark">Alasan Revisi <span class="text-danger">*</span></label>
+                <textarea class="form-control rcl-modal-textarea" id="id_acc_revision_reason" name="revision_reason" rows="3" placeholder="Tuliskan catatan perbaikan (minimal 10 karakter)..."></textarea>
+                <div class="invalid-feedback">Alasan pengembalian revisi wajib diisi minimal 10 karakter.</div>
+              </div>
+              <div class="modal-footer" style="padding: 14px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-sm btn-warning fw-semibold text-dark rcl-modal-submit-btn" data-form-id="rclAccountingReviewForm" data-decision="request_revision" data-reason-input="id_acc_revision_reason">
+                  Kirim Pengembalian Revisi
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# ── Card 2 (Read-Only): Informasi Credit Accounting Cabang (ASM / NSM / GM / Pemohon) ── #}
+  {% elif rcl_ctx and rcl_ctx.accounting_data.has_values %}
+  <div class="card border shadow-sm" style="border-radius: 10px; overflow: hidden;">
+    <div class="card-header bg-white py-2.5 px-3 px-md-4 fw-bold small text-dark d-flex align-items-center justify-content-between flex-wrap gap-2 border-bottom">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-calculator text-primary"></i>
+        <span>Informasi Credit Accounting Cabang</span>
+        <span class="text-muted fw-normal" style="font-size: 11.5px;">&middot; Read-Only</span>
+      </div>
+    </div>
+    <div class="card-body p-3 p-md-4">
+      <div class="row row-cols-2 row-cols-sm-3 row-cols-lg-5 g-3 small">
+        <div class="col">
+          <div class="text-muted" style="font-size: 11.5px;">Plafon Saat Ini</div>
+          <div class="fw-bold text-dark mt-0.5" style="font-size: 14px;">{{ rcl_ctx.accounting_data.plafon_saat_ini_display }}</div>
+        </div>
+        <div class="col">
+          <div class="text-muted" style="font-size: 11.5px;">Total Over Credit</div>
+          <div class="fw-bold text-dark mt-0.5" style="font-size: 14px;">{{ rcl_ctx.accounting_data.total_over_credit_display }}</div>
+        </div>
+        <div class="col">
+          <div class="text-muted" style="font-size: 11.5px;">Open Order Amount</div>
+          <div class="fw-bold text-dark mt-0.5" style="font-size: 14px;">{{ rcl_ctx.accounting_data.open_order_amount_display }}</div>
+        </div>
+        <div class="col">
+          <div class="text-muted" style="font-size: 11.5px;">Over Due</div>
+          <div class="fw-bold text-dark mt-0.5" style="font-size: 14px;">{{ rcl_ctx.accounting_data.over_due_display }}</div>
+        </div>
+        <div class="col">
+          <div class="text-muted" style="font-size: 11.5px;">Rata-rata Omzet Toko</div>
+          <div class="fw-bold text-dark mt-0.5" style="font-size: 14px;">{{ rcl_ctx.accounting_data.rata_rata_omzet_display }}</div>
+        </div>
+      </div>
+      <div class="mt-3 pt-2.5 border-top d-flex align-items-center justify-content-between flex-wrap gap-2 small text-muted">
+        <span>{{ rcl_ctx.matrix.matrix_reason }}</span>
+        {% if rcl_ctx.accounting_data.reviewed_by %}
+          <span>Diperiksa oleh: <strong class="text-dark">{{ rcl_ctx.accounting_data.reviewed_by }}</strong>{% if rcl_ctx.accounting_data.reviewed_at %} ({{ rcl_ctx.accounting_data.reviewed_at }}){% endif %}</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Card 3: Panel Keputusan Approver Aktif (ASM / BM, NSM, GM) ── #}
+  {% if rcl_ctx and rcl_ctx.is_approver_pending_actor %}
+  <div class="card border shadow-sm" style="border-radius: 10px; overflow: hidden; border-color: #86efac !important;">
+    <div class="card-header py-2.5 px-3 fw-bold small text-dark d-flex align-items-center justify-content-between flex-wrap gap-2" style="background: #f0fdf4; border-bottom: 1px solid #bbf7d0;">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-check2-square text-success"></i>
+        <span>Keputusan Persetujuan: {{ rcl_ctx.pending_task.workflow_stage.name|default:"Approver" }}</span>
+      </div>
+      <span class="badge bg-success-subtle text-success border border-success-subtle">Menunggu Keputusan Anda</span>
+    </div>
+    <div class="card-body p-3 p-md-4">
+      <form method="post" action="{% url 'forms_workflows:rcl_review_action' submission.id %}" id="rclApproverDecisionForm">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label for="id_approver_comments" class="form-label fw-semibold small text-dark">
+            Catatan Review <span class="text-muted fw-normal">(Opsional untuk persetujuan)</span>
+          </label>
+          <textarea class="form-control" id="id_approver_comments" name="comments" rows="3" placeholder="Tuliskan catatan review atau arahan persetujuan..."></textarea>
+        </div>
+        <div class="d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-2 pt-2 border-top">
+          <a href="{% url 'forms_workflows:form_submission_hub' submission.form_definition.slug %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center gap-1">
+            <i class="bi bi-arrow-left"></i>
+            <span>Kembali</span>
+          </a>
+          <div class="d-flex flex-wrap align-items-center justify-content-end gap-2">
+            <button type="button" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1" data-bs-toggle="modal" data-bs-target="#rclRejectModal">
+              <i class="bi bi-x-circle"></i>
+              <span>Tolak</span>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-warning text-dark d-inline-flex align-items-center gap-1" data-bs-toggle="modal" data-bs-target="#rclApproverRevisionModal">
+              <i class="bi bi-arrow-counterclockwise"></i>
+              <span>Kembalikan Revisi</span>
+            </button>
+            <button type="button" id="btnOpenApproverConfirm" class="btn btn-sm btn-success fw-semibold px-3 d-inline-flex align-items-center gap-1 shadow-sm">
+              <i class="bi bi-check2-circle"></i>
+              <span>Setujui</span>
+            </button>
+          </div>
+        </div>
+
+        {# Modal Kembalikan Revisi (Approver) #}
+        <div class="modal fade" id="rclApproverRevisionModal" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border shadow">
+              <div class="modal-header" style="background: #ffffff; border-bottom: 1px solid #e2e8f0; padding: 16px 20px;">
+                <h6 class="modal-title mb-0" style="font-size: 16px; font-weight: 600; color: #0f172a;">Kembalikan Pengajuan untuk Revisi</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body" style="padding: 20px;">
+                <p class="small text-secondary mb-3">Pengajuan dikembalikan ke pemohon agar data dapat diperbaiki.</p>
+                <label for="id_app_revision_reason" class="form-label small fw-semibold text-dark">Alasan Revisi <span class="text-danger">*</span></label>
+                <textarea class="form-control rcl-modal-textarea" id="id_app_revision_reason" name="revision_reason" rows="3" placeholder="Tuliskan catatan perbaikan (minimal 10 karakter)..."></textarea>
+                <div class="invalid-feedback">Alasan pengembalian revisi wajib diisi minimal 10 karakter.</div>
+              </div>
+              <div class="modal-footer" style="padding: 14px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-sm btn-warning fw-semibold text-dark rcl-modal-submit-btn" data-form-id="rclApproverDecisionForm" data-decision="request_revision" data-reason-input="id_app_revision_reason">
+                  Kirim Pengembalian Revisi
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{# ── Modal Preview Lampiran (#rclAttachmentPreviewModal) ── #}
+<div class="modal fade" id="rclAttachmentPreviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content border shadow">
+      <div class="modal-header py-2.5 px-3 bg-light border-bottom">
+        <div class="d-flex flex-column">
+          <h6 class="modal-title fw-bold text-dark mb-0" id="rclAttachmentModalTitle">Pratinjau Lampiran</h6>
+          <span class="text-muted font-monospace" style="font-size: 11.5px;" id="rclAttachmentModalFilename"></span>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-0 bg-light" style="min-height: 420px;">
+        <div id="rclAttachmentIframeWrap" class="w-100 d-none" style="height: 75vh;">
+          <iframe id="rclAttachmentIframe" src="about:blank" class="w-100 h-100 border-0 bg-white" title="Pratinjau Lampiran"></iframe>
+        </div>
+        <div id="rclAttachmentImageWrap" class="d-none p-3 text-center bg-dark bg-opacity-10" style="max-height: 75vh; overflow: auto;">
+          <img id="rclAttachmentImg" src="" alt="Pratinjau Lampiran" class="img-fluid rounded shadow-sm bg-white" style="max-height: 68vh; object-fit: contain;">
+        </div>
+        <div id="rclAttachmentUnsupportedWrap" class="d-none p-5 text-center bg-white" style="min-height: 360px;">
+          <div class="mx-auto" style="max-width: 460px;">
+            <div class="mb-3 text-primary" style="font-size: 42px;">
+              <i class="bi bi-file-earmark-spreadsheet"></i>
+            </div>
+            <h6 class="fw-bold text-dark mb-1" id="rclAttachmentUnsupportedTitle">Dokumen Lampiran</h6>
+            <div class="font-monospace small text-secondary mb-3" id="rclAttachmentUnsupportedFilename"></div>
+            <p class="small text-muted mb-4">
+              Format file (<span class="fw-semibold font-monospace" id="rclAttachmentUnsupportedExt">-</span>) tidak didukung pratinjau langsung di browser. Silakan unduh file untuk membukanya dengan aplikasi terkait.
+            </p>
+            <a href="#" id="rclAttachmentUnsupportedDownloadBtn" class="btn btn-primary btn-sm fw-semibold px-3 d-inline-flex align-items-center gap-1.5">
+              <i class="bi bi-download"></i>
+              <span>Unduh untuk Membuka</span>
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer py-2 px-3 bg-light border-top d-flex justify-content-between">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Tutup</button>
+        <div class="d-flex gap-2">
+          <a href="#" target="_blank" rel="noopener" id="rclAttachmentOpenTabBtn" class="btn btn-sm btn-outline-secondary d-none align-items-center gap-1">
+            <i class="bi bi-box-arrow-up-right"></i>
+            <span>Buka di Tab Baru</span>
+          </a>
+          <a href="#" id="rclAttachmentModalDownloadBtn" class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1">
+            <i class="bi bi-download"></i>
+            <span>Unduh File</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Modal Konfirmasi Persetujuan (#rclApproveConfirmModal) ── #}
+{% if rcl_ctx and rcl_ctx.is_accounting_pending_actor or rcl_ctx and rcl_ctx.is_approver_pending_actor %}
+<style>
+  .rcl-modal-textarea {
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 13.5px;
+    padding: 10px 12px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .rcl-modal-textarea:focus {
+    border-color: #64748b;
+    box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.14);
+  }
+</style>
+<div class="modal fade" id="rclApproveConfirmModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border shadow">
+      <div class="modal-header" style="background: #ffffff; border-bottom: 1px solid #e2e8f0; padding: 16px 20px;">
+        <h6 class="modal-title mb-0" style="font-size: 16px; font-weight: 600; color: #0f172a;">
+          Konfirmasi Persetujuan
+        </h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body small" style="padding: 20px;">
+        <p class="text-secondary mb-3">Pastikan data berikut sesuai sebelum mencatat persetujuan Anda.</p>
+        <div class="d-flex flex-column">
+          <div class="d-flex justify-content-between align-items-baseline gap-3" style="border-bottom: 1px solid #f1f5f9; padding: 8px 0;">
+            <span class="text-muted flex-shrink-0">No. Pengajuan</span>
+            <span class="fw-semibold text-dark text-end">{{ form_data.no_pengajuan|default:"—" }}</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-baseline gap-3" style="border-bottom: 1px solid #f1f5f9; padding: 8px 0;">
+            <span class="text-muted flex-shrink-0">Toko / Customer</span>
+            <span class="fw-semibold text-dark text-end">{% if form_data.nama_toko %}{{ form_data.nama_toko }}{% elif form_data.nama_customer %}{{ form_data.nama_customer }}{% else %}—{% endif %}</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-baseline gap-3" style="border-bottom: 1px solid #f1f5f9; padding: 8px 0;">
+            <span class="text-muted flex-shrink-0">Total SO</span>
+            <span class="fw-semibold text-dark text-end">{{ form_data.total_so|default:"0"|rupiah_format }}</span>
+          </div>
+          <div class="d-flex justify-content-between align-items-baseline gap-3" style="padding: 8px 0 2px;">
+            <span class="text-muted flex-shrink-0">Langkah Berikutnya</span>
+            <span class="fw-semibold text-dark text-end text-nowrap" id="rclConfirmNextStageLabel">{{ rcl_ctx.next_stage_preview_label }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="padding: 14px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0;">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+        {% if rcl_ctx.is_accounting_pending_actor %}
+        <button type="button" class="btn btn-sm btn-success fw-semibold rcl-confirm-approve-btn" data-form-id="rclAccountingReviewForm" data-decision="approve_accounting">
+          Ya, Setujui &amp; Lanjutkan
+        </button>
+        {% else %}
+        <button type="button" class="btn btn-sm btn-success fw-semibold rcl-confirm-approve-btn" data-form-id="rclApproverDecisionForm" data-decision="approve">
+          Ya, Setujui
+        </button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Modal Konfirmasi Penolakan Permanen (#rclRejectModal) ── #}
+<div class="modal fade" id="rclRejectModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border shadow">
+      <form method="post" action="{% url 'forms_workflows:rcl_review_action' submission.id %}" id="rclRejectDecisionForm">
+        {% csrf_token %}
+        <input type="hidden" name="decision" value="reject">
+        <div class="modal-header" style="background: #ffffff; border-bottom: 1px solid #e2e8f0; padding: 16px 20px;">
+          <h6 class="modal-title mb-0" style="font-size: 16px; font-weight: 600; color: #0f172a;">
+            Tolak Pengajuan
+          </h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" style="padding: 20px;">
+          <p class="small text-secondary mb-3">
+            Penolakan akan menghentikan proses persetujuan untuk dokumen <strong class="text-dark">{{ form_data.no_pengajuan|default:"#" }}</strong>.
+          </p>
+          <label for="id_rcl_rejection_reason" class="form-label small fw-semibold text-dark">Alasan Penolakan <span class="text-danger">*</span></label>
+          <textarea class="form-control rcl-modal-textarea" id="id_rcl_rejection_reason" name="rejection_reason" rows="3" placeholder="Tuliskan alasan penolakan (minimal 10 karakter)..."></textarea>
+          <div class="invalid-feedback">Alasan penolakan wajib diisi minimal 10 karakter.</div>
+        </div>
+        <div class="modal-footer" style="padding: 14px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0;">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+          <button type="submit" id="btnConfirmRejectRcl" class="btn btn-sm btn-danger fw-semibold">
+            Ya, Tolak Pengajuan
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script>
+(function () {
+  // Collapse chevron + toggle label for Data Pengajuan Sales Counter
+  const collapseEl = document.getElementById('rclSalesCounterCollapse');
+  const chevronEl = document.getElementById('rclSalesCounterChevron');
+  const toggleTextEl = document.getElementById('rclSalesCounterToggleText');
+  if (collapseEl && chevronEl) {
+    collapseEl.addEventListener('hide.bs.collapse', function () {
+      chevronEl.classList.remove('bi-chevron-up');
+      chevronEl.classList.add('bi-chevron-down');
+      if (toggleTextEl) toggleTextEl.textContent = 'Tampilkan Rincian';
+    });
+    collapseEl.addEventListener('show.bs.collapse', function () {
+      chevronEl.classList.remove('bi-chevron-down');
+      chevronEl.classList.add('bi-chevron-up');
+      if (toggleTextEl) toggleTextEl.textContent = 'Sembunyikan Rincian';
+    });
+  }
+
+  // Attachment preview modal handler (Lihat vs Unduh)
+  const previewModalEl = document.getElementById('rclAttachmentPreviewModal');
+  if (previewModalEl) {
+    const iframeWrap = document.getElementById('rclAttachmentIframeWrap');
+    const iframeEl = document.getElementById('rclAttachmentIframe');
+    const imgWrap = document.getElementById('rclAttachmentImageWrap');
+    const imgEl = document.getElementById('rclAttachmentImg');
+    const unsupWrap = document.getElementById('rclAttachmentUnsupportedWrap');
+    const titleEl = document.getElementById('rclAttachmentModalTitle');
+    const fileEl = document.getElementById('rclAttachmentModalFilename');
+    const openTabBtn = document.getElementById('rclAttachmentOpenTabBtn');
+    const downloadBtn = document.getElementById('rclAttachmentModalDownloadBtn');
+    const unsupTitleEl = document.getElementById('rclAttachmentUnsupportedTitle');
+    const unsupFileEl = document.getElementById('rclAttachmentUnsupportedFilename');
+    const unsupExtEl = document.getElementById('rclAttachmentUnsupportedExt');
+    const unsupDownloadBtn = document.getElementById('rclAttachmentUnsupportedDownloadBtn');
+
+    document.querySelectorAll('.rcl-btn-preview-attachment').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        const previewUrl = btn.getAttribute('data-preview-url') || '#';
+        const downloadUrl = btn.getAttribute('data-download-url') || '#';
+        const title = btn.getAttribute('data-title') || 'Pratinjau Lampiran';
+        const filename = btn.getAttribute('data-filename') || '';
+        const ext = (btn.getAttribute('data-ext') || '').toUpperCase() || 'FILE';
+        const kind = btn.getAttribute('data-preview-kind') || 'iframe';
+
+        titleEl.textContent = title;
+        fileEl.textContent = filename;
+        downloadBtn.setAttribute('href', downloadUrl);
+
+        iframeWrap.classList.add('d-none');
+        imgWrap.classList.add('d-none');
+        unsupWrap.classList.add('d-none');
+        iframeEl.src = 'about:blank';
+        imgEl.src = '';
+
+        if (kind === 'image') {
+          imgEl.src = previewUrl;
+          imgWrap.classList.remove('d-none');
+          openTabBtn.setAttribute('href', previewUrl);
+          openTabBtn.classList.remove('d-none');
+          openTabBtn.classList.add('d-inline-flex');
+        } else if (kind === 'unsupported') {
+          unsupTitleEl.textContent = title;
+          unsupFileEl.textContent = filename;
+          unsupExtEl.textContent = ext;
+          unsupDownloadBtn.setAttribute('href', downloadUrl);
+          unsupWrap.classList.remove('d-none');
+          openTabBtn.classList.add('d-none');
+          openTabBtn.classList.remove('d-inline-flex');
+        } else {
+          iframeEl.src = previewUrl;
+          iframeWrap.classList.remove('d-none');
+          openTabBtn.setAttribute('href', previewUrl);
+          openTabBtn.classList.remove('d-none');
+          openTabBtn.classList.add('d-inline-flex');
+        }
+
+        bootstrap.Modal.getOrCreateInstance(previewModalEl).show();
+      });
+    });
+
+    previewModalEl.addEventListener('hidden.bs.modal', function () {
+      iframeEl.src = 'about:blank';
+      imgEl.src = '';
+    });
+  }
+
+  // Rupiah thousand separator formatting & live matrix preview for Accounting Cabang inputs
+  function fmtDigits(val) {
+    const digits = String(val || '').replace(/[^\d]/g, '');
+    if (!digits) return '';
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  }
+  const rupiahInputs = document.querySelectorAll('#rclAccountingReviewForm .rcl-rupiah-input');
+  rupiahInputs.forEach(function (inp) {
+    if (inp.value) inp.value = fmtDigits(inp.value);
+    inp.addEventListener('input', function () {
+      this.value = fmtDigits(this.value);
+      this.classList.remove('is-invalid');
+    });
+  });
+
+  const omzetInput = document.getElementById('id_acc_rata_rata_omzet');
+  const targetBadge = document.getElementById('rclMatrixTargetBadge');
+  const reasonEl = document.getElementById('rclMatrixReason');
+  let matrixAbort = null;
+
+  async function refreshMatrixPreview() {
+    if (!omzetInput || !targetBadge || !reasonEl) return;
+    if (matrixAbort) matrixAbort.abort();
+    matrixAbort = new AbortController();
+    const params = new URLSearchParams({
+      jenis_hold: "{{ form_data.jenis_hold|default:'C1'|escapejs }}",
+      brand: "{{ form_data.brand|default:''|escapejs }}",
+      total_so: "{{ form_data.total_so|default:'0'|escapejs }}",
+      rata_rata_omzet: (omzetInput.value || '0').replace(/[^\d]/g, ''),
+    });
+    try {
+      const resp = await fetch(`/forms/release-credit-limit/evaluate-matrix/?${params.toString()}`, {
+        signal: matrixAbort.signal,
+      });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (data && data.success) {
+        targetBadge.textContent = data.target_final_label;
+        reasonEl.textContent = data.matrix_reason;
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+    }
+  }
+
+  if (omzetInput) {
+    omzetInput.addEventListener('input', refreshMatrixPreview);
+    omzetInput.addEventListener('change', refreshMatrixPreview);
+  }
+
+  function submitFormWithDecision(form, decisionValue, triggerBtn) {
+    if (!form) return;
+    let hidden = form.querySelector('input[type="hidden"][name="decision"]');
+    if (!hidden) {
+      hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = 'decision';
+      form.appendChild(hidden);
+    }
+    hidden.value = decisionValue;
+    if (triggerBtn) {
+      triggerBtn.disabled = true;
+      triggerBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Memproses...';
+    }
+    form.submit();
+  }
+
+  // Stage 1 (Accounting Cabang): Validate 5 required Rupiah fields before opening Approve Confirm Modal
+  const openAccApproveBtn = document.getElementById('btnOpenAccApproveConfirm');
+  const accAlertEl = document.getElementById('rclAccValidationAlert');
+  const approveModalEl = document.getElementById('rclApproveConfirmModal');
+  if (openAccApproveBtn && approveModalEl) {
+    openAccApproveBtn.addEventListener('click', function () {
+      const missing = [];
+      let firstInvalid = null;
+      rupiahInputs.forEach(function (inp) {
+        const digits = String(inp.value || '').replace(/[^\d]/g, '');
+        if (!digits) {
+          inp.classList.add('is-invalid');
+          missing.push(inp.getAttribute('data-field-label') || 'Field wajib');
+          if (!firstInvalid) firstInvalid = inp;
+        } else {
+          inp.classList.remove('is-invalid');
+        }
+      });
+      if (missing.length > 0) {
+        if (accAlertEl) {
+          accAlertEl.textContent = 'Harap lengkapi 5 nominal credit terlebih dahulu sebelum menyetujui: ' + missing.join(', ') + '.';
+          accAlertEl.classList.remove('d-none');
+        }
+        if (firstInvalid) firstInvalid.focus();
+        return;
+      }
+      if (accAlertEl) accAlertEl.classList.add('d-none');
+
+      const nextStageLabelEl = document.getElementById('rclConfirmNextStageLabel');
+      if (nextStageLabelEl && targetBadge && targetBadge.textContent.trim()) {
+        nextStageLabelEl.textContent = 'Approval ASM / BM (Akhir: ' + targetBadge.textContent.trim() + ')';
+      }
+      bootstrap.Modal.getOrCreateInstance(approveModalEl).show();
+    });
+  }
+
+  // Stage 2-4 (Approver): Open Approve Confirm Modal
+  const openApproverConfirmBtn = document.getElementById('btnOpenApproverConfirm');
+  if (openApproverConfirmBtn && approveModalEl) {
+    openApproverConfirmBtn.addEventListener('click', function () {
+      bootstrap.Modal.getOrCreateInstance(approveModalEl).show();
+    });
+  }
+
+  // Confirm Approve button inside modal
+  document.querySelectorAll('.rcl-confirm-approve-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const form = document.getElementById(btn.getAttribute('data-form-id'));
+      const decision = btn.getAttribute('data-decision');
+      submitFormWithDecision(form, decision, btn);
+    });
+  });
+
+  // Modal revision submit buttons with min 10-char validation + anti double-submit
+  document.querySelectorAll('.rcl-modal-submit-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const form = document.getElementById(btn.getAttribute('data-form-id'));
+      const decision = btn.getAttribute('data-decision');
+      const reasonInput = document.getElementById(btn.getAttribute('data-reason-input'));
+      if (reasonInput) {
+        const val = (reasonInput.value || '').trim();
+        if (val.length < 10) {
+          reasonInput.classList.add('is-invalid');
+          reasonInput.focus();
+          return;
+        }
+        reasonInput.classList.remove('is-invalid');
+      }
+      submitFormWithDecision(form, decision, btn);
+    });
+  });
+
+  // Reject form min 10-char validation + anti double-submit
+  const rejectForm = document.getElementById('rclRejectDecisionForm');
+  const rejectReasonEl = document.getElementById('id_rcl_rejection_reason');
+  const rejectConfirmBtn = document.getElementById('btnConfirmRejectRcl');
+  if (rejectForm && rejectReasonEl) {
+    rejectReasonEl.addEventListener('input', function () {
+      this.classList.remove('is-invalid');
+    });
+    rejectForm.addEventListener('submit', function (e) {
+      const val = (rejectReasonEl.value || '').trim();
+      if (val.length < 10) {
+        e.preventDefault();
+        rejectReasonEl.classList.add('is-invalid');
+        rejectReasonEl.focus();
+        return;
+      }
+      if (rejectConfirmBtn) {
+        rejectConfirmBtn.disabled = true;
+        rejectConfirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Memproses...';
+      }
+    });
+  }
+})();
+</script>

@@ -246,6 +246,20 @@ def is_user_eligible_for_submission(
     user_ep = getattr(user, "employee_profile", None)
     user_branch = user_ep.branch if user_ep else None
 
+    # Release Credit Limit Stage 1 (Accounting Cabang) is strictly branch-scoped
+    sub_slug = getattr(getattr(submission, "form_definition", None), "slug", "") if submission else ""
+    group_name_lower = (
+        group_name_or_obj.name
+        if hasattr(group_name_or_obj, "name")
+        else str(group_name_or_obj or "")
+    ).strip().lower()
+    if sub_slug == "release-credit-limit" and "accounting" in group_name_lower:
+        if not user_branch:
+            return bool(getattr(user, "is_superuser", False) or getattr(user, "is_staff", False))
+        if sub_branch:
+            return branch_matches(sub_branch, user_branch)
+        return True
+
     # Central groups oversee submissions across all branches
     if is_central_group(group_name_or_obj):
         return True

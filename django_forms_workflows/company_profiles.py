@@ -738,6 +738,7 @@ def format_official_spk_number(
     company_profile=None,
     perusahaan=None,
     submission_id=None,
+    doc_prefix: str = "SK",
     **kwargs,
 ) -> str:
     """
@@ -813,7 +814,36 @@ def format_official_spk_number(
     m_roman = ROMAN_MONTHS[m_int] if m_int < len(ROMAN_MONTHS) else "X"
     y_str = str(date_val.year)
 
-    return f"{nomor_str}/SK-{pt_code}/{cabang_str}/{brand_clean}/{m_roman}/{y_str}"
+    prefix = str(doc_prefix or "SK").strip().upper()
+    return f"{nomor_str}/{prefix}-{pt_code}/{cabang_str}/{brand_clean}/{m_roman}/{y_str}"
+
+
+def format_official_cl_number(
+    nomor,
+    brand=None,
+    cabang=None,
+    date_val=None,
+    company_profile=None,
+    perusahaan=None,
+    submission_id=None,
+    **kwargs,
+) -> str:
+    """
+    Format official Release Credit Limit number:
+    {SEQ:3}/CL-{KODE_PT}/{CABANG}/{BRAND}/{BULAN_ROMAWI}/{TAHUN}
+    Example: 001/CL-RAS/PUSAT/LADY/XI/2026
+    """
+    return format_official_spk_number(
+        nomor=nomor,
+        brand=brand,
+        cabang=cabang,
+        date_val=date_val,
+        company_profile=company_profile,
+        perusahaan=perusahaan,
+        submission_id=submission_id,
+        doc_prefix="CL",
+        **kwargs,
+    )
 
 
 def get_next_spk_sequence(
@@ -893,7 +923,12 @@ def get_next_spk_sequence(
     max_seq = 0
     for sub in submissions:
         data = sub.form_data or {}
-        spk_str = str(data.get("nomor_spk") or "").strip()
+        spk_str = str(
+            data.get("nomor_spk")
+            or data.get("no_pengajuan")
+            or data.get("nomor_pengajuan")
+            or ""
+        ).strip()
         if not spk_str or "OTOMATIS" in spk_str.upper() or "____" in spk_str:
             continue
 
@@ -917,7 +952,11 @@ def get_next_spk_sequence(
 
         # Cocokkan entitas perusahaan (jika pt_code ditentukan)
         if pt_code:
-            pt_matches = (f"/SK-{pt_code}/" in spk_str.upper()) or (f"-{pt_code}-" in spk_str.upper())
+            pt_matches = (
+                (f"/SK-{pt_code}/" in spk_str.upper())
+                or (f"/CL-{pt_code}/" in spk_str.upper())
+                or (f"-{pt_code}-" in spk_str.upper())
+            )
             if not pt_matches:
                 continue
 

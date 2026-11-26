@@ -16,6 +16,16 @@
         const form = document.querySelector('form[data-form-enhancements="true"]') || document.querySelector('form');
         if (!form) return;
 
+        const formSlug = form.dataset.formSlug || (() => {
+            const m = window.location.pathname.match(/\/forms\/([^\/]+)/);
+            return m ? m[1] : '';
+        })();
+
+        // Strictly isolate Kontrak Toko wizard & widgets: never run on other form slugs (e.g. release-credit-limit)
+        if (formSlug && formSlug !== 'permohonan-kontrak' && formSlug !== 'approvals' && formSlug !== 'submissions') {
+            return;
+        }
+
         // Check if any of the target fields exist
         const hasAsset = form.querySelector('[name="asset_toko"]');
         const hasMarket = form.querySelector('[name="market_share"]');
@@ -24,16 +34,11 @@
         const hasTier = form.querySelector('[name="tier_support"]');
         const hasJDE = form.querySelector('[name="kode_customer_jde"]');
 
-        if (!hasAsset && !hasMarket && !hasTarget && !hasDiscount && !hasTier && !hasJDE) {
+        if (!hasAsset && !hasMarket && !hasTarget && !hasDiscount && !hasTier && !(formSlug === 'permohonan-kontrak' && hasJDE)) {
             return;
         }
 
         console.log('[KontrakGridWidget] Initializing Permohonan Kontrak widgets...');
-
-        const formSlug = form.dataset.formSlug || (() => {
-            const m = window.location.pathname.match(/\/forms\/([^\/]+)/);
-            return m ? m[1] : 'permohonan-kontrak';
-        })();
 
         let hasRestoredDraft = false;
 

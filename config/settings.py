@@ -32,6 +32,9 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', '*').split(',') if h.strip()]
 
+SITE_BASE_URL = os.getenv('SITE_BASE_URL', 'http://127.0.0.1:8069').rstrip('/')
+FORMS_WORKFLOWS_BASE_URL = os.getenv('FORMS_WORKFLOWS_BASE_URL', SITE_BASE_URL).rstrip('/')
+
 
 # Application definition
 
@@ -205,6 +208,7 @@ CELERY_TASK_EAGER_PROPAGATES = False
 CELERY_BROKER_URL = 'memory://'
 CELERY_RESULT_BACKEND = 'cache+memory://'
 CELERY_TIMEZONE = TIME_ZONE
+ASYNC_EAGER_NOTIFICATIONS_IN_THREAD = os.getenv('ASYNC_EAGER_NOTIFICATIONS_IN_THREAD', 'True').lower() in ('true', '1', 'yes')
 
 # HRIS Employee API Configuration
 HRIS_API_URL = os.getenv('HRIS_API_URL', 'https://dev-api.royalcorp.co.id/api/v1/externalapi/employeesV2')
