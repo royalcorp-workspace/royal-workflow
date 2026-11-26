@@ -886,9 +886,69 @@
             return s;
         }
 
+        function cleanJdeValue(val) {
+            if (val === null || val === undefined) return '';
+            const s = String(val).trim();
+            if (!s || s === '-' || s === '—') return '';
+            return s;
+        }
+
+        function resetJdeAutofillFields(targetForm) {
+            const autofillFields = [
+                'nama_toko',
+                'alamat_toko',
+                'no_telepon',
+                'kota',
+                'nama_pemilik',
+                'nomor_npwp',
+                'nomor_nik',
+                'email',
+                'top',
+            ];
+            autofillFields.forEach(fname => {
+                setFieldValue(targetForm, fname, '');
+                const el = targetForm.querySelector(`[name="${fname}"]`);
+                if (el) {
+                    el.classList.remove('is-valid', 'is-invalid');
+                }
+            });
+
+            const npwpInput = targetForm.querySelector('[name="nomor_npwp"]');
+            if (npwpInput) {
+                delete npwpInput.dataset.jdeOriginalNpwp;
+                delete npwpInput.dataset.jdeStatusNpwp;
+            }
+            const oldBadge = targetForm.querySelector('.jde-npwp-status-badge');
+            if (oldBadge) oldBadge.remove();
+
+            unlockTopField(targetForm);
+            unlockNpwpField(targetForm);
+
+            const assetField = targetForm.querySelector('[name="asset_toko"]');
+            if (assetField && assetField.dataset.autoFromJde === 'true') {
+                assetField.value = '[]';
+                delete assetField.dataset.autoFromJde;
+                if (window.renderAssetGrid) window.renderAssetGrid();
+            }
+
+            if (typeof targetForm._validateNomorNpwp === 'function') {
+                targetForm._validateNomorNpwp(false);
+            }
+            if (typeof targetForm._validateNomorNik === 'function') {
+                targetForm._validateNomorNik(false);
+            }
+            if (typeof targetForm._validateEmail === 'function') {
+                targetForm._validateEmail(false);
+            }
+        }
+
         async function doLookup() {
             const code = jdeInput.value.trim();
             if (!code) {
+                if (jdeInput.dataset.lastLookedUpCode) {
+                    resetJdeAutofillFields(form);
+                    delete jdeInput.dataset.lastLookedUpCode;
+                }
                 alertBox.className = 'jde-lookup-alert alert alert-warning d-block';
                 alertBox.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i> Silakan masukkan Kode Customer JDE (contoh: 100228).';
                 return;
@@ -904,33 +964,32 @@
                 if (res.ok && data.success && data.customer) {
                     const c = data.customer;
                     const cleanAlamat = normalizeJdeAddress(c.alamat_toko || c.alamat_lengkap);
+                    const cleanNamaToko = cleanJdeValue(c.nama_toko);
+                    const cleanTelp = cleanJdeValue(c.no_telepon);
+                    const cleanKota = cleanJdeValue(c.kota);
+                    const cleanPemilik = cleanJdeValue(c.nama_pemilik);
+                    const npwpVal = cleanJdeValue(c.nomor_npwp || c.npwp);
+                    const nikVal = cleanJdeValue(c.nomor_nik || c.nik);
+                    const emailVal = cleanJdeValue(c.email);
+                    const topVal = c.top_days ? String(c.top_days) : '';
 
-                    setFieldValue(form, 'nama_toko', c.nama_toko);
+                    // Overwrite penuh seluruh field master & opsional (kosongkan jika data customer baru tidak tersedia)
+                    setFieldValue(form, 'nama_toko', cleanNamaToko);
                     setFieldValue(form, 'alamat_toko', cleanAlamat);
-                    setFieldValue(form, 'no_telepon', c.no_telepon);
-                    setFieldValue(form, 'kota', c.kota);
+                    setFieldValue(form, 'no_telepon', cleanTelp);
+                    setFieldValue(form, 'kota', cleanKota);
+                    setFieldValue(form, 'nama_pemilik', cleanPemilik);
 
-                    // Nama pemilik: jika JDE mengirim ada nilai diisi, jika tidak jangan timpa ketikan user
-                    if (c.nama_pemilik && c.nama_pemilik !== '-' && c.nama_pemilik !== '—') {
-                        setFieldValue(form, 'nama_pemilik', c.nama_pemilik);
-                    } else {
-                        const pemInput = form.querySelector('[name="nama_pemilik"]');
-                        if (pemInput && !pemInput.value.trim()) {
-                            setTimeout(() => {
-                                try { pemInput.focus(); } catch (e) {}
-                            }, 150);
-                        }
-                    }
-
-                    // Nomor NPWP & Status JDE (TETAP EDITABLE)
-                    const npwpVal = c.nomor_npwp || c.npwp || '';
                     const npwpInput = form.querySelector('[name="nomor_npwp"]');
                     if (npwpInput) {
                         if (npwpVal) {
                             npwpInput.dataset.jdeOriginalNpwp = npwpVal.replace(/\D/g, '');
                             npwpInput.dataset.jdeStatusNpwp = c.status_npwp || 'Valid';
-                            setFieldValue(form, 'nomor_npwp', npwpVal);
+                        } else {
+                            delete npwpInput.dataset.jdeOriginalNpwp;
+                            delete npwpInput.dataset.jdeStatusNpwp;
                         }
+                        setFieldValue(form, 'nomor_npwp', npwpVal);
                         if (typeof form._validateNomorNpwp === 'function') {
                             form._validateNomorNpwp(false);
                         }
@@ -938,30 +997,20 @@
                     const oldBadge = form.querySelector('.jde-npwp-status-badge');
                     if (oldBadge) oldBadge.remove();
 
-                    // Nomor NIK (KTP): Autofill dari JDE dan langsung validasi real-time
-                    const nikVal = c.nomor_nik || c.nik;
-                    if (nikVal && nikVal !== '-' && nikVal !== '—') {
-                        setFieldValue(form, 'nomor_nik', nikVal);
-                        if (typeof form._validateNomorNik === 'function') {
-                            form._validateNomorNik(false);
-                        }
+                    setFieldValue(form, 'nomor_nik', nikVal);
+                    if (typeof form._validateNomorNik === 'function') {
+                        form._validateNomorNik(false);
                     }
 
-                    // Email Toko / Pemilik: Autofill dari JDE dan langsung validasi real-time
-                    if (c.email && c.email !== '-' && c.email !== '—') {
-                        setFieldValue(form, 'email', c.email);
-                        if (typeof form._validateEmail === 'function') {
-                            form._validateEmail(false);
-                        }
+                    setFieldValue(form, 'email', emailVal);
+                    if (typeof form._validateEmail === 'function') {
+                        form._validateEmail(false);
                     }
 
-                    // Auto prefill TOP (Term of Payment) di Step 2 jika ada data payment terms dari JDE
-                    if (c.top_days) {
-                        const topInput = form.querySelector('[name="top"]');
-                        if (topInput) {
-                            setFieldValue(form, 'top', c.top_days);
-                            lockTopField(form);
-                        }
+                    // Auto prefill / clear TOP (Term of Payment) di Step 2
+                    setFieldValue(form, 'top', topVal);
+                    if (topVal) {
+                        lockTopField(form);
                     } else {
                         unlockTopField(form);
                     }
@@ -973,28 +1022,40 @@
                     unlockNpwpField(form);
 
                     // Evaluasi status kunci TOP
-                    if (c.top_days) {
+                    if (topVal) {
                         lockTopField(form);
                     } else {
                         unlockTopField(form);
                     }
 
-                    alertBox.className = 'jde-lookup-alert alert alert-success d-block';
-                    alertBox.innerHTML = `<i class="bi bi-check-circle me-1"></i> Data JDE Ditemukan: <strong>${escapeHtml(c.nama_toko)}</strong> (${escapeHtml(c.kota || 'Kota')})`;
+                    jdeInput.dataset.lastLookedUpCode = code;
 
-                    // Also prepopulate asset_toko first row if empty
+                    alertBox.className = 'jde-lookup-alert alert alert-success d-block';
+                    alertBox.innerHTML = `<i class="bi bi-check-circle me-1"></i> Data JDE Ditemukan: <strong>${escapeHtml(cleanNamaToko || code)}</strong> (${escapeHtml(cleanKota || 'Kota')})`;
+
+                    // Prepopulate atau perbarui asset_toko baris 1 jika kosong atau berasal dari JDE sebelumnya
                     const assetField = form.querySelector('[name="asset_toko"]');
-                    if (assetField && (!assetField.value || assetField.value === '[]')) {
-                        const initAsset = [{
-                            no: 1,
-                            keterangan: c.nama_toko,
-                            alamat: cleanAlamat,
-                            status: 'Pribadi'
-                        }];
-                        assetField.value = JSON.stringify(initAsset);
+                    if (assetField && (!assetField.value || assetField.value === '[]' || assetField.dataset.autoFromJde === 'true')) {
+                        if (cleanNamaToko || cleanAlamat) {
+                            const initAsset = [{
+                                no: 1,
+                                keterangan: cleanNamaToko,
+                                alamat: cleanAlamat,
+                                status: 'Pribadi'
+                            }];
+                            assetField.value = JSON.stringify(initAsset);
+                            assetField.dataset.autoFromJde = 'true';
+                        } else {
+                            assetField.value = '[]';
+                            delete assetField.dataset.autoFromJde;
+                        }
                         if (window.renderAssetGrid) window.renderAssetGrid();
                     }
                 } else {
+                    if (jdeInput.dataset.lastLookedUpCode && jdeInput.dataset.lastLookedUpCode !== code) {
+                        resetJdeAutofillFields(form);
+                        delete jdeInput.dataset.lastLookedUpCode;
+                    }
                     unlockTopField(form);
                     unlockNpwpField(form);
                     alertBox.className = 'jde-lookup-alert alert alert-danger d-block';
@@ -1002,6 +1063,10 @@
                 }
             } catch (err) {
                 console.error('Error lookup JDE:', err);
+                if (jdeInput.dataset.lastLookedUpCode && jdeInput.dataset.lastLookedUpCode !== code) {
+                    resetJdeAutofillFields(form);
+                    delete jdeInput.dataset.lastLookedUpCode;
+                }
                 unlockTopField(form);
                 unlockNpwpField(form);
                 alertBox.className = 'jde-lookup-alert alert alert-danger d-block';
@@ -1013,6 +1078,14 @@
         }
 
         btn.addEventListener('click', doLookup);
+        jdeInput.addEventListener('input', function () {
+            if (!jdeInput.value.trim() && jdeInput.dataset.lastLookedUpCode) {
+                resetJdeAutofillFields(form);
+                delete jdeInput.dataset.lastLookedUpCode;
+                alertBox.className = 'jde-lookup-alert alert';
+                alertBox.innerHTML = '';
+            }
+        });
         jdeInput.addEventListener('keydown', function (e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -1038,13 +1111,14 @@
     }
 
     function setFieldValue(form, fieldName, value) {
-        if (!value) return;
-        if (fieldName === 'no_telepon') {
-            value = formatIndonesianMobile(value);
+        const normalized = (value === null || value === undefined) ? '' : String(value).trim();
+        let finalValue = (normalized === '-' || normalized === '—') ? '' : normalized;
+        if (fieldName === 'no_telepon' && finalValue) {
+            finalValue = formatIndonesianMobile(finalValue);
         }
         const el = form.querySelector(`[name="${fieldName}"]`);
         if (el) {
-            el.value = value;
+            el.value = finalValue;
             el.dispatchEvent(new Event('input', { bubbles: true }));
             el.dispatchEvent(new Event('change', { bubbles: true }));
             if (window.jQuery) {

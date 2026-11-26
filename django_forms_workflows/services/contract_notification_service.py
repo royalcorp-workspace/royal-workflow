@@ -10,6 +10,7 @@ Handles business-specific notifications across the contract lifecycle:
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import os
 import re
@@ -197,7 +198,7 @@ def send_store_signing_invitation(submission, token) -> bool:
     signing_url = f"{base_url}/spk/sign/{token.token}/"
     subject = f"Undangan Penandatanganan Kontrak Digital SPK - {nama_toko} ({nomor_spk})"
 
-    doc_info = extract_document_info(submission)
+    doc_info = extract_document_info(submission, task=token.task)
     ctx = {
         "submission": submission,
         "token": token,
@@ -243,7 +244,13 @@ def send_store_signature_completed_notifications(submission, token) -> None:
     signer_title = token.signer_title or "Pemilik"
 
     base_url = _resolve_base_url()
-    doc_info = extract_document_info(submission)
+
+    task = token.task
+    if not task or task.status != "pending":
+        task = submission.approval_tasks.filter(
+            status="pending", workflow_stage__order=4
+        ).first()
+    doc_info = extract_document_info(submission, task=task)
 
     # 1. Notify Direksi & Sales Support Group
     direksi_group = Group.objects.filter(name="Direksi").first()
@@ -258,12 +265,6 @@ def send_store_signature_completed_notifications(submission, token) -> None:
             sales_support_group.user_set.filter(is_active=True).exclude(email="").values_list("email", flat=True)
         )
     internal_emails = list(dict.fromkeys(internal_emails))
-
-    task = token.task
-    if not task or task.status != "pending":
-        task = submission.approval_tasks.filter(
-            status="pending", workflow_stage__order=4
-        ).first()
 
     review_url = (
         f"{base_url}/forms/approvals/{task.id}/approve/"
@@ -423,25 +424,28 @@ def send_final_spk_approved_notifications(submission, stamped_pdf_path: str | No
 
 # Background dispatcher wrappers to prevent blocking HTTP request thread
 def dispatch_store_signing_invitation_async(submission, token) -> None:
+    ctx = contextvars.copy_context()
     threading.Thread(
-        target=send_store_signing_invitation,
-        args=(submission, token),
+        target=ctx.run,
+        args=(send_store_signing_invitation, submission, token),
         daemon=True,
     ).start()
 
 
 def dispatch_store_signature_completed_async(submission, token) -> None:
+    ctx = contextvars.copy_context()
     threading.Thread(
-        target=send_store_signature_completed_notifications,
-        args=(submission, token),
+        target=ctx.run,
+        args=(send_store_signature_completed_notifications, submission, token),
         daemon=True,
     ).start()
 
 
 def dispatch_final_spk_approved_async(submission, stamped_pdf_path: str | None = None) -> None:
+    ctx = contextvars.copy_context()
     threading.Thread(
-        target=send_final_spk_approved_notifications,
-        args=(submission, stamped_pdf_path),
+        target=ctx.run,
+        args=(send_final_spk_approved_notifications, submission, stamped_pdf_path),
         daemon=True,
     ).start()
 
@@ -654,7 +658,7 @@ def send_manual_stage_reminder(submission, sender_user, custom_note: str = "") -
             "recipient_emails": [],
         }
 
-    doc_info = extract_document_info(submission)
+    doc_info = extract_document_info(submission, task=target.get("task"))
 
     if is_store:
         subject = f"[Pengingat TTD Digital] Mohon Tandatangani SPK {nomor_spk} - {nama_toko}"
@@ -710,9 +714,10 @@ def send_manual_stage_reminder(submission, sender_user, custom_note: str = "") -
         from .telegram_service import dispatch_telegram_workflow_event
         task = target.get("task")
         if task:
+            tg_ctx = contextvars.copy_context()
             threading.Thread(
-                target=dispatch_telegram_workflow_event,
-                args=(submission.id, "approval_request", task.id),
+                target=tg_ctx.run,
+                args=(dispatch_telegram_workflow_event, submission.id, "approval_request", task.id),
                 daemon=True,
             ).start()
     except Exception as tel_err:

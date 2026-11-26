@@ -61,24 +61,10 @@ except Exception:  # pragma: no cover
 
 
 def _base_url() -> str:
-    """Return the base URL (scheme + domain) for building absolute links in emails.
+    """Return the active base URL (scheme + domain) via notification_formatter."""
+    from .services.notification_formatter import _resolve_base_url
 
-    Checks, in order:
-    1. ``settings.FORMS_WORKFLOWS_BASE_URL``
-    2. ``settings.SITE_BASE_URL``
-    3. First entry in ``settings.CSRF_TRUSTED_ORIGINS``
-    """
-    url = (
-        getattr(settings, "FORMS_WORKFLOWS_BASE_URL", None)
-        or getattr(settings, "SITE_BASE_URL", None)
-        or os.getenv("SITE_URL", "")
-    )
-    if url:
-        return url
-    origins = getattr(settings, "CSRF_TRUSTED_ORIGINS", None)
-    if origins:
-        return origins[0]
-    return "http://127.0.0.1:8069"
+    return _resolve_base_url()
 
 
 def _abs(url_path: str) -> str:
@@ -146,12 +132,24 @@ def _send_html_email(
 
     if submission_obj and "doc_info" not in context:
         from .services.notification_formatter import build_standard_notification_context
+        _is_approver_evt = notification_type in (
+            "approval_request",
+            "approval_reminder",
+            "escalation",
+            "stage_decision",
+            "task.created",
+        )
+        _custom_url = (
+            (context.get("approval_url") or context.get("submission_url"))
+            if _is_approver_evt
+            else (context.get("submission_url") or context.get("approval_url"))
+        )
         std_ctx = build_standard_notification_context(
             submission=submission_obj,
             event=notification_type,
             task=context.get("task"),
             approver=context.get("approver"),
-            custom_action_url=context.get("approval_url") or context.get("submission_url"),
+            custom_action_url=_custom_url,
         )
         for k, v in std_ctx.items():
             context.setdefault(k, v)
@@ -265,12 +263,24 @@ def _send_html_email_from_string(
     )
 
     if submission_obj and "doc_info" not in context:
+        _is_approver_evt = notification_type in (
+            "approval_request",
+            "approval_reminder",
+            "escalation",
+            "stage_decision",
+            "task.created",
+        )
+        _custom_url = (
+            (context.get("approval_url") or context.get("submission_url"))
+            if _is_approver_evt
+            else (context.get("submission_url") or context.get("approval_url"))
+        )
         std_ctx = build_standard_notification_context(
             submission=submission_obj,
             event=notification_type,
             task=context.get("task"),
             approver=context.get("approver"),
-            custom_action_url=context.get("approval_url") or context.get("submission_url"),
+            custom_action_url=_custom_url,
         )
         for k, v in std_ctx.items():
             context.setdefault(k, v)
@@ -1452,8 +1462,9 @@ def _build_form_field_notification_context(
     if getattr(submission, "status", "") == "needs_revision":
         fdef = getattr(submission, "form_definition", None)
         if fdef and getattr(fdef, "slug", ""):
+            step_qs = "&step=1" if fdef.slug == "permohonan-kontrak" else ""
             rev_url = _abs(
-                f"{reverse('forms_workflows:form_submit', args=[fdef.slug])}?revision={submission.id}"
+                f"{reverse('forms_workflows:form_submit', args=[fdef.slug])}?revision={submission.id}{step_qs}"
             )
             return rev_url, rev_url
 

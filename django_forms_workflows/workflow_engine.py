@@ -66,14 +66,17 @@ def _should_dispatch_eager_in_thread() -> bool:
 
 
 def _spawn_background_task(fn, *args, label: str = "wf-bg") -> None:
-    """Run a notification/webhook callable on a daemon thread with safe DB connection cleanup."""
+    """Run a notification/webhook callable on a daemon thread preserving ContextVars."""
+    import contextvars
     import threading
     from django.db import close_old_connections
+
+    ctx = contextvars.copy_context()
 
     def _runner() -> None:
         close_old_connections()
         try:
-            fn(*args)
+            ctx.run(fn, *args)
         except Exception:
             logger.exception("Background task '%s' failed with args=%s", label, args)
         finally:

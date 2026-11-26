@@ -150,22 +150,31 @@
 
       <div class="section-title">Informasi Dokumen</div>
       <table class="info-table">
-        <tr>
-          <td class="label">Jenis Dokumen</td>
-          <td class="value">: {{ doc_info.jenis_dokumen }}</td>
-        </tr>
-        <tr>
-          <td class="label">No. Pengajuan</td>
-          <td class="value">: {{ doc_info.nomor_pengajuan }}</td>
-        </tr>
-        <tr>
-          <td class="label">Unit Kerja</td>
-          <td class="value">: {{ doc_info.unit_kerja }}</td>
-        </tr>
-        <tr>
-          <td class="label">Pemohon</td>
-          <td class="value">: {{ doc_info.pemohon }}</td>
-        </tr>
+        {% if doc_info.extra_rows %}
+          {% for row_label, row_val in doc_info.extra_rows %}
+          <tr>
+            <td class="label">{{ row_label }}</td>
+            <td class="value">: {{ row_val }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td class="label">Jenis Dokumen</td>
+            <td class="value">: {{ doc_info.jenis_dokumen }}</td>
+          </tr>
+          <tr>
+            <td class="label">No. Pengajuan</td>
+            <td class="value">: {{ doc_info.nomor_pengajuan }}</td>
+          </tr>
+          <tr>
+            <td class="label">Unit Kerja</td>
+            <td class="value">: {{ doc_info.unit_kerja }}</td>
+          </tr>
+          <tr>
+            <td class="label">Pemohon</td>
+            <td class="value">: {{ doc_info.pemohon }}</td>
+          </tr>
+        {% endif %}
       </table>
 
       <div class="section-title">Tujuan Pengajuan</div>
