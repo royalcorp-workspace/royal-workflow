@@ -404,16 +404,16 @@
           {% endwith %}
           {% if can_push_notification %}
             <button type="button" 
+                    id="btnPushNotifTrigger"
                     class="btn btn-sm btn-outline-warning text-dark d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0"
                     data-bs-toggle="modal" 
                     data-bs-target="#pushNotificationModal"
+                    data-cooldown-remaining="{{ push_cooldown_remaining|default:0 }}"
                     title="Kirim pengingat manual ke PIC stage aktif saat ini"
                     {% if push_cooldown_remaining > 0 %}disabled{% endif %}>
               <i class="bi bi-bell-fill text-warning"></i>
               <span>Push Notifikasi</span>
-              {% if push_cooldown_remaining > 0 %}
-                <span class="badge bg-secondary ms-1">{{ push_cooldown_remaining }}s</span>
-              {% endif %}
+              <span id="pushNotifCooldownBadge" class="badge bg-secondary ms-1{% if not push_cooldown_remaining or push_cooldown_remaining <= 0 %} d-none{% endif %}">{% if push_cooldown_remaining > 0 %}{{ push_cooldown_remaining }}s{% endif %}</span>
             </button>
           {% endif %}
           {% if is_approver_user %}
@@ -1388,6 +1388,7 @@
                 <i class="bi bi-info-circle-fill text-info me-1"></i>
                 Tindakan ini <strong>tidak mengubah</strong> status pengajuan, urutan stage, maupun persetujuan task. Pengingat hanya akan dikirimkan via email resmi dan notifikasi internal.
               </div>
+              <div class="alert alert-danger py-2 px-3 small mt-3 mb-0 d-none" id="pushNotifModalAlert" role="alert"></div>
             </div>
 
             <div class="modal-footer border-0 bg-light px-4 py-3 d-flex justify-content-between" style="border-bottom-left-radius: 10px; border-bottom-right-radius: 10px;">
@@ -1396,7 +1397,7 @@
               </button>
               <button type="submit" class="btn btn-warning btn-sm px-3.5 fw-semibold d-inline-flex align-items-center gap-1.5" id="btnConfirmPushNotif" {% if push_cooldown_remaining > 0 %}disabled{% endif %}>
                 <i class="bi bi-send-fill"></i>
-                <span>{% if push_cooldown_remaining > 0 %}Tunggu {{ push_cooldown_remaining }}s{% else %}Kirim Pengingat Sekarang{% endif %}</span>
+                <span id="btnConfirmPushNotifLabel">{% if push_cooldown_remaining > 0 %}Tunggu {{ push_cooldown_remaining }}s{% else %}Kirim Pengingat Sekarang{% endif %}</span>
               </button>
             </div>
           </form>
@@ -1514,13 +1515,160 @@
       window.setAuditFilter('active', btnActive);
     }
 
-    // Anti-double click for push notification
+    // Realtime cooldown countdown & smooth AJAX submit for Push Notifikasi
+    const pushTriggerBtn = document.getElementById('btnPushNotifTrigger');
+    const pushCooldownBadge = document.getElementById('pushNotifCooldownBadge');
     const pushForm = document.getElementById('pushNotificationForm');
+    const pushModalEl = document.getElementById('pushNotificationModal');
     const pushBtn = document.getElementById('btnConfirmPushNotif');
+    const pushBtnLabel = document.getElementById('btnConfirmPushNotifLabel');
+    const pushModalAlert = document.getElementById('pushNotifModalAlert');
+
+    let pushCooldownTimerId = null;
+
+    function showPushNotifFeedbackBanner(messageText, variant) {
+      const wrapper = document.querySelector('.document-wrapper');
+      if (!wrapper) return;
+      const existing = document.getElementById('pushNotifFeedbackAlert');
+      if (existing) existing.remove();
+      const alertEl = document.createElement('div');
+      alertEl.id = 'pushNotifFeedbackAlert';
+      alertEl.className = 'alert alert-' + (variant || 'success') + ' alert-dismissible fade show py-2.5 px-3 small mb-3 shadow-sm';
+      alertEl.setAttribute('role', 'alert');
+      const iconCls = variant === 'warning' ? 'bi-exclamation-triangle-fill' : 'bi-check-circle-fill';
+      const icon = document.createElement('i');
+      icon.className = 'bi ' + iconCls + ' me-2';
+      const msgSpan = document.createElement('span');
+      msgSpan.textContent = messageText;
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'btn-close btn-sm';
+      closeBtn.setAttribute('data-bs-dismiss', 'alert');
+      closeBtn.setAttribute('aria-label', 'Tutup');
+      alertEl.appendChild(icon);
+      alertEl.appendChild(msgSpan);
+      alertEl.appendChild(closeBtn);
+      wrapper.insertBefore(alertEl, wrapper.firstElementChild);
+    }
+
+    function applyPushCooldownUi(remaining) {
+      if (pushTriggerBtn) {
+        pushTriggerBtn.dataset.cooldownRemaining = String(remaining);
+        pushTriggerBtn.disabled = remaining > 0;
+      }
+      if (pushCooldownBadge) {
+        if (remaining > 0) {
+          pushCooldownBadge.textContent = remaining + 's';
+          pushCooldownBadge.classList.remove('d-none');
+        } else {
+          pushCooldownBadge.textContent = '';
+          pushCooldownBadge.classList.add('d-none');
+        }
+      }
+      if (pushBtn) {
+        pushBtn.disabled = remaining > 0;
+        if (remaining > 0) {
+          pushBtn.innerHTML = '<i class="bi bi-send-fill"></i> <span id="btnConfirmPushNotifLabel">Tunggu ' + remaining + 's</span>';
+        } else {
+          pushBtn.innerHTML = '<i class="bi bi-send-fill"></i> <span id="btnConfirmPushNotifLabel">Kirim Pengingat Sekarang</span>';
+        }
+      } else if (pushBtnLabel) {
+        pushBtnLabel.textContent = remaining > 0 ? ('Tunggu ' + remaining + 's') : 'Kirim Pengingat Sekarang';
+      }
+    }
+
+    function startPushCooldownCountdown(initialSeconds) {
+      if (pushCooldownTimerId !== null) {
+        clearInterval(pushCooldownTimerId);
+        pushCooldownTimerId = null;
+      }
+      const secs = Math.max(0, parseInt(initialSeconds, 10) || 0);
+      if (secs <= 0) {
+        applyPushCooldownUi(0);
+        return;
+      }
+      const targetEndMs = Date.now() + secs * 1000;
+      let lastRendered = -1;
+
+      function tick() {
+        const remaining = Math.max(0, Math.ceil((targetEndMs - Date.now()) / 1000));
+        if (remaining !== lastRendered) {
+          lastRendered = remaining;
+          applyPushCooldownUi(remaining);
+        }
+        if (remaining <= 0 && pushCooldownTimerId !== null) {
+          clearInterval(pushCooldownTimerId);
+          pushCooldownTimerId = null;
+        }
+      }
+
+      tick();
+      pushCooldownTimerId = setInterval(tick, 250);
+    }
+
+    if (pushTriggerBtn) {
+      const initialCooldown = parseInt(pushTriggerBtn.dataset.cooldownRemaining || '0', 10) || 0;
+      if (initialCooldown > 0) {
+        startPushCooldownCountdown(initialCooldown);
+      }
+    }
+
     if (pushForm && pushBtn) {
-      pushForm.addEventListener('submit', function() {
+      pushForm.addEventListener('submit', async function(e) {
+        if (!window.fetch) {
+          pushBtn.disabled = true;
+          pushBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span> Mengirim Pengingat...';
+          return;
+        }
+        e.preventDefault();
+        if (pushModalAlert) {
+          pushModalAlert.classList.add('d-none');
+          pushModalAlert.textContent = '';
+        }
         pushBtn.disabled = true;
         pushBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span> Mengirim Pengingat...';
+
+        try {
+          const resp = await fetch(pushForm.getAttribute('action'), {
+            method: 'POST',
+            headers: {
+              'X-Requested-With': 'XMLHttpRequest',
+              'Accept': 'application/json',
+            },
+            body: new FormData(pushForm),
+          });
+          const data = await resp.json().catch(() => null);
+          if (!data) {
+            pushForm.submit();
+            return;
+          }
+
+          if (resp.ok && data.success) {
+            if (pushModalEl && window.bootstrap && bootstrap.Modal) {
+              bootstrap.Modal.getOrCreateInstance(pushModalEl).hide();
+            }
+            showPushNotifFeedbackBanner(data.message || 'Push notifikasi pengingat berhasil dikirimkan.', 'success');
+            startPushCooldownCountdown(data.cooldown_remaining || 60);
+          } else if (resp.status === 429 || data.cooldown) {
+            if (pushModalEl && window.bootstrap && bootstrap.Modal) {
+              bootstrap.Modal.getOrCreateInstance(pushModalEl).hide();
+            }
+            showPushNotifFeedbackBanner(data.message || 'Mohon tunggu sebelum mengirim pengingat berikutnya.', 'warning');
+            startPushCooldownCountdown(data.cooldown_remaining || 60);
+          } else {
+            if (pushModalAlert) {
+              pushModalAlert.textContent = data.message || 'Gagal mengirimkan push notifikasi pengingat.';
+              pushModalAlert.classList.remove('d-none');
+            }
+            applyPushCooldownUi(0);
+          }
+        } catch (err) {
+          if (pushModalAlert) {
+            pushModalAlert.textContent = 'Terjadi gangguan jaringan saat menghubungi server.';
+            pushModalAlert.classList.remove('d-none');
+          }
+          applyPushCooldownUi(0);
+        }
       });
     }
   });

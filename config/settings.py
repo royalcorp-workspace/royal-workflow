@@ -32,8 +32,18 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', '*').split(',') if h.strip()]
 
-SITE_BASE_URL = os.getenv('SITE_BASE_URL', 'http://127.0.0.1:8069').rstrip('/')
-FORMS_WORKFLOWS_BASE_URL = os.getenv('FORMS_WORKFLOWS_BASE_URL', SITE_BASE_URL).rstrip('/')
+USE_X_FORWARDED_HOST = os.getenv('USE_X_FORWARDED_HOST', 'True').lower() in ('true', '1', 'yes')
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+_explicit_base_url = (
+    os.getenv('FORMS_WORKFLOWS_BASE_URL')
+    or os.getenv('SITE_BASE_URL')
+    or os.getenv('APP_BASE_URL')
+    or os.getenv('SITE_URL')
+    or ''
+).strip().rstrip('/')
+SITE_BASE_URL = _explicit_base_url
+FORMS_WORKFLOWS_BASE_URL = _explicit_base_url
 
 
 # Application definition
@@ -54,6 +64,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'config.middleware.ActiveRequestBaseUrlMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',

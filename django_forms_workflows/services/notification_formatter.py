@@ -11,24 +11,102 @@ Standardizes email and Telegram notifications according to the enterprise templa
 
 from __future__ import annotations
 
+import contextvars
 import os
 import re
 from typing import Any
+from urllib.parse import urlparse
+
 from django.conf import settings
 from django.urls import reverse
 from django.utils import timezone
 
+_ACTIVE_REQUEST_BASE_URL: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "active_request_base_url", default=""
+)
+
+
+def set_active_request_base_url(url: str) -> contextvars.Token:
+    """Bind the active HTTP request scheme://host for background notifications."""
+    return _ACTIVE_REQUEST_BASE_URL.set((url or "").strip().rstrip("/"))
+
+
+def reset_active_request_base_url(token: contextvars.Token) -> None:
+    """Restore previous request base URL ContextVar."""
+    _ACTIVE_REQUEST_BASE_URL.reset(token)
+
+
+def get_active_request_base_url() -> str:
+    """Return captured request scheme://host if running inside/from an HTTP request."""
+    return (_ACTIVE_REQUEST_BASE_URL.get() or "").strip().rstrip("/")
+
+
+def _is_loopback_url(url: str) -> bool:
+    """Return True if URL points to localhost / 127.0.0.1 / ::1."""
+    if not url:
+        return False
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        host = ""
+    return host in ("localhost", "127.0.0.1", "::1", "0.0.0.0")
+
 
 def _resolve_base_url() -> str:
-    """Resolve base URL for links in notifications."""
-    url = getattr(settings, "FORMS_WORKFLOWS_BASE_URL", None) or getattr(
-        settings, "SITE_BASE_URL", None
-    ) or os.getenv("SITE_URL", "")
-    if url:
-        return url.rstrip("/")
-    origins = getattr(settings, "CSRF_TRUSTED_ORIGINS", None)
-    if origins:
-        return origins[0].rstrip("/")
+    """Resolve base URL dynamically for email/notification links.
+
+    Priority:
+    1. Explicit non-loopback env/settings URL
+       (FORMS_WORKFLOWS_BASE_URL, SITE_BASE_URL, APP_BASE_URL, SITE_URL).
+    2. Active HTTP request origin captured via ContextVar (propagated to threads).
+    3. Explicit loopback env/settings URL if set without a non-loopback request.
+    4. First valid origin in settings.CSRF_TRUSTED_ORIGINS.
+    5. First non-wildcard, non-loopback host in settings.ALLOWED_HOSTS.
+    6. Local fallback http://127.0.0.1:8069 (CLI/cron with no config).
+    """
+    explicit_candidates = [
+        getattr(settings, "FORMS_WORKFLOWS_BASE_URL", None),
+        getattr(settings, "SITE_BASE_URL", None),
+        os.getenv("FORMS_WORKFLOWS_BASE_URL", ""),
+        os.getenv("SITE_BASE_URL", ""),
+        os.getenv("APP_BASE_URL", ""),
+        os.getenv("SITE_URL", ""),
+    ]
+    explicit_url = ""
+    for cand in explicit_candidates:
+        val = str(cand or "").strip().rstrip("/")
+        if val:
+            explicit_url = val
+            break
+
+    if explicit_url and not _is_loopback_url(explicit_url):
+        return explicit_url
+
+    req_origin = get_active_request_base_url()
+    if req_origin and (not explicit_url or not _is_loopback_url(req_origin)):
+        return req_origin
+
+    if explicit_url:
+        return explicit_url
+
+    origins = getattr(settings, "CSRF_TRUSTED_ORIGINS", None) or []
+    for origin in origins:
+        cleaned = str(origin or "").strip().rstrip("/")
+        if cleaned and "*" not in cleaned:
+            return cleaned
+
+    allowed_hosts = getattr(settings, "ALLOWED_HOSTS", None) or []
+    for host in allowed_hosts:
+        h = str(host or "").strip()
+        if not h or h == "*" or h.startswith("."):
+            continue
+        hostname = h.split(":")[0].lower()
+        if hostname in ("localhost", "127.0.0.1", "::1", "testserver", "0.0.0.0"):
+            continue
+        is_ip = bool(re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", hostname))
+        scheme = "http" if (is_ip or ":" in h) else "https"
+        return f"{scheme}://{h}".rstrip("/")
+
     return "http://127.0.0.1:8069"
 
 
@@ -95,8 +173,10 @@ def extract_document_info(submission, task=None) -> dict[str, str]:
     else:
         pemohon = form_data.get("inisiator_nama") or "Inisiator"
 
-    # Tujuan Pengajuan
+    # Tujuan Pengajuan & Metadata Khusus Kontrak Toko / RCL
     form_slug = getattr(getattr(submission, "form_definition", None), "slug", "")
+    extra_rows: list[tuple[str, str]] = []
+
     if form_slug == "release-credit-limit":
         nama_toko = (
             form_data.get("nama_toko")
@@ -118,6 +198,99 @@ def extract_document_info(submission, task=None) -> dict[str, str]:
         ket = str(form_data.get("keterangan") or "").strip()
         if ket and ket not in ("-", "—"):
             tujuan_pengajuan += f" | Catatan: {ket}"
+    elif form_slug == "permohonan-kontrak":
+        nama_toko = (
+            form_data.get("nama_toko")
+            or form_data.get("nama_dealer")
+            or form_data.get("nama_customer")
+            or "-"
+        )
+        nama_pemilik = form_data.get("nama_pemilik") or "-"
+        jenis_kontrak = form_data.get("jenis_kontrak")
+        if not jenis_kontrak:
+            if form_data.get("chk_lampiran_spk_lalu") or "perpanjangan" in str(
+                form_data.get("info_kontrak_lama", "")
+            ).lower():
+                jenis_kontrak = "Perpanjangan"
+            else:
+                jenis_kontrak = "Baru"
+        brand = form_data.get("brand") or "-"
+        area_val = str(form_data.get("area") or form_data.get("kota") or "").strip()
+        cabang_val = str(cabang or "").strip()
+        if cabang_val and area_val and cabang_val.lower() != area_val.lower():
+            cabang_area = f"{cabang_val} / {area_val}"
+        else:
+            cabang_area = cabang_val or area_val or str(unit_kerja)
+
+        # Resolve current workflow stage label cleanly
+        sub_status = getattr(submission, "status", "")
+        active_task = task
+        if not active_task and getattr(submission, "id", None):
+            try:
+                active_task = (
+                    submission.approval_tasks.filter(status="pending")
+                    .select_related("workflow_stage")
+                    .order_by("stage_number", "id")
+                    .first()
+                )
+            except Exception:
+                active_task = None
+
+        stage_name_obj = getattr(getattr(active_task, "workflow_stage", None), "name", None)
+        if sub_status == "approved":
+            tahapan_saat_ini = "Disetujui Penuh (Final Approval Selesai)"
+        elif sub_status == "rejected":
+            tahapan_saat_ini = f"Ditolak ({stage_name_obj})" if stage_name_obj else "Ditolak"
+        elif sub_status == "needs_revision":
+            tahapan_saat_ini = f"Perlu Revisi ({stage_name_obj})" if stage_name_obj else "Perlu Revisi"
+        elif sub_status == "withdrawn":
+            tahapan_saat_ini = "Ditarik oleh Pemohon"
+        elif active_task and getattr(active_task, "workflow_stage", None):
+            ws = active_task.workflow_stage
+            if getattr(ws, "order", None) == 4:
+                is_signed = bool(form_data.get("ttd_toko_image"))
+                if not is_signed and getattr(submission, "id", None):
+                    try:
+                        is_signed = submission.signing_tokens.filter(status="signed").exists()
+                    except Exception:
+                        is_signed = False
+                tahapan_saat_ini = (
+                    "Stage 4: Final Approval Direksi"
+                    if is_signed
+                    else "Gate 4: Menunggu TTD Mitra Toko"
+                )
+            else:
+                tahapan_saat_ini = str(ws.name)
+        else:
+            tahapan_saat_ini = "Diajukan (Menunggu Review)"
+
+        durasi_val = str(form_data.get("durasi") or "").strip()
+        extra_note = str(
+            form_data.get("tujuan_pengajuan")
+            or form_data.get("tujuan")
+            or form_data.get("keterangan")
+            or form_data.get("catatan")
+            or form_data.get("alasan_pengajuan")
+            or ""
+        ).strip()
+        tujuan_pengajuan = (
+            f"Pengajuan Kontrak Kerjasama ({jenis_kontrak}) untuk {nama_toko} "
+            f"— Pemilik: {nama_pemilik}, Brand {brand}, Cabang/Area {cabang_area}"
+        )
+        if durasi_val and durasi_val not in ("-", "—"):
+            tujuan_pengajuan += f", Durasi {durasi_val}"
+        if extra_note and extra_note not in ("-", "—"):
+            tujuan_pengajuan += f" | Catatan: {extra_note}"
+        extra_rows = [
+            ("No. SPK", str(nomor_pengajuan)),
+            ("Nama Toko / Dealer", str(nama_toko)),
+            ("Pemilik", str(nama_pemilik)),
+            ("Jenis Kontrak", str(jenis_kontrak)),
+            ("Cabang / Area", str(cabang_area)),
+            ("Brand", str(brand)),
+            ("Pemohon", str(pemohon)),
+            ("Tahapan Saat Ini", str(tahapan_saat_ini)),
+        ]
     else:
         tujuan_pengajuan = (
             form_data.get("tujuan_pengajuan")
@@ -137,6 +310,7 @@ def extract_document_info(submission, task=None) -> dict[str, str]:
         "unit_kerja": str(unit_kerja),
         "pemohon": str(pemohon),
         "tujuan_pengajuan": str(tujuan_pengajuan),
+        "extra_rows": extra_rows,
     }
 
 
@@ -160,6 +334,8 @@ def get_event_wording(event: str, submission=None, task=None) -> dict[str, str]:
             "event_message": "Terdapat dokumen pengajuan baru yang memerlukan evaluasi dan persetujuan dari Anda.",
             "status_label": f"Menunggu Persetujuan{status_suffix}",
             "action_instruction": "Mohon untuk meninjau rincian dokumen dan memproses persetujuan melalui sistem.",
+            "action_title": "Review & Persetujuan",
+            "action_button_label": "Review & Berikan Persetujuan",
         }
 
     elif event == "approval_reminder":
@@ -171,6 +347,8 @@ def get_event_wording(event: str, submission=None, task=None) -> dict[str, str]:
             "event_message": "Ini adalah pengingat bahwa dokumen pengajuan berikut masih menunggu tindak lanjut persetujuan Anda.",
             "status_label": f"Menunggu Persetujuan (Tertunda){status_suffix}",
             "action_instruction": "Mohon kesediaan Bapak/Ibu untuk segera meninjau dan menyelesaikan persetujuan pengajuan ini.",
+            "action_title": "Pengingat Persetujuan",
+            "action_button_label": "Review & Berikan Persetujuan",
         }
 
     elif event in ("workflow_approved", "stage_decision", "approval_notification"):
@@ -182,6 +360,8 @@ def get_event_wording(event: str, submission=None, task=None) -> dict[str, str]:
                 "event_message": "Pengajuan Release Credit Limit berikut telah disetujui penuh sesuai matriks hierarki.",
                 "status_label": "Disetujui Sepenuhnya (Siap Release Credit Limit JDE)",
                 "action_instruction": "Pengajuan telah disahkan secara resmi dan siap untuk proses release credit limit di JDE.",
+                "action_title": "Detail Pengajuan",
+                "action_button_label": "Lihat Detail Pengajuan",
             }
         return {
             "judul_notifikasi": "PENGAJUAN TELAH DISETUJUI",
@@ -189,6 +369,8 @@ def get_event_wording(event: str, submission=None, task=None) -> dict[str, str]:
             "event_message": "Dokumen pengajuan berikut telah selesai diverifikasi dan resmi disetujui.",
             "status_label": "Disetujui Sepenuhnya",
             "action_instruction": "Dokumen telah disahkan secara resmi dan siap untuk ditindaklanjuti ke tahapan berikutnya.",
+            "action_title": "Detail Pengajuan",
+            "action_button_label": "Lihat Detail Pengajuan",
         }
 
     elif event in ("workflow_denied", "rejection_notification"):
@@ -200,6 +382,8 @@ def get_event_wording(event: str, submission=None, task=None) -> dict[str, str]:
             "event_message": "Pemberitahuan bahwa dokumen pengajuan berikut tidak disetujui oleh peninjau.",
             "status_label": "Ditolak",
             "action_instruction": catatan,
+            "action_title": "Detail Pengajuan",
+            "action_button_label": "Lihat Detail Pengajuan",
         }
 
     elif event in ("submission_returned", "needs_revision"):
@@ -211,6 +395,8 @@ def get_event_wording(event: str, submission=None, task=None) -> dict[str, str]:
             "event_message": "Dokumen pengajuan berikut dikembalikan oleh peninjau untuk dilakukan revisi/perbaikan data.",
             "status_label": "Membutuhkan Revisi",
             "action_instruction": catatan,
+            "action_title": "Tindak Lanjut Revisi",
+            "action_button_label": "Perbaiki Pengajuan Sekarang",
         }
 
     elif event == "escalation":
@@ -220,6 +406,8 @@ def get_event_wording(event: str, submission=None, task=None) -> dict[str, str]:
             "event_message": "Batas waktu persetujuan telah terlampaui sehingga dokumen ini dialihkan ke eskalasi berikutnya.",
             "status_label": "Menunggu Tindak Lanjut Eskalasi",
             "action_instruction": "Mohon segera menindaklanjuti dokumen eskalasi ini untuk mencegah keterlambatan operasional.",
+            "action_title": "Review & Persetujuan",
+            "action_button_label": "Review & Berikan Persetujuan",
         }
 
     elif event == "form_withdrawn":
@@ -229,6 +417,8 @@ def get_event_wording(event: str, submission=None, task=None) -> dict[str, str]:
             "event_message": "Dokumen pengajuan berikut telah ditarik kembali oleh inisiator/pemohon.",
             "status_label": "Ditarik oleh Pemohon",
             "action_instruction": "Tidak diperlukan tindakan lebih lanjut untuk dokumen ini.",
+            "action_title": "Detail Pengajuan",
+            "action_button_label": "Lihat Detail Pengajuan",
         }
 
     else:
@@ -239,18 +429,35 @@ def get_event_wording(event: str, submission=None, task=None) -> dict[str, str]:
             "event_message": "Pengajuan dokumen baru telah berhasil diserahkan ke dalam sistem Royal Workflow.",
             "status_label": "Diajukan (Menunggu Review)",
             "action_instruction": "Pengajuan Anda saat ini sedang dalam antrean proses review oleh pihak berwenang.",
+            "action_title": "Detail Pengajuan",
+            "action_button_label": "Lihat Detail Pengajuan",
         }
 
 
-def get_notification_action_url(submission, task=None) -> str:
+def get_notification_action_url(submission, task=None, event: str = "") -> str:
     """Build full absolute URL for the notification action/detail link."""
     base = _resolve_base_url()
     fdef = getattr(submission, "form_definition", None) if submission else None
     form_slug = getattr(fdef, "slug", "") if fdef else ""
+    ev = (event or "").lower()
     if submission and getattr(submission, "status", "") == "needs_revision":
         if form_slug:
             step_qs = "&step=1" if form_slug == "permohonan-kontrak" else ""
             return f"{base}/forms/{form_slug}/submit/?revision={submission.id}{step_qs}"
+    if ev in (
+        "submission_received",
+        "submission_created",
+        "workflow_approved",
+        "workflow_denied",
+        "approval_notification",
+        "rejection_notification",
+        "form_withdrawn",
+    ) and submission and getattr(submission, "id", None):
+        try:
+            rel = reverse("forms_workflows:submission_detail", args=[submission.id])
+            return f"{base}{rel}"
+        except Exception:
+            return f"{base}/forms/submissions/{submission.id}/"
     if form_slug == "release-credit-limit" and submission and getattr(submission, "id", None):
         try:
             rel = reverse("forms_workflows:submission_detail", args=[submission.id])
@@ -262,7 +469,7 @@ def get_notification_action_url(submission, task=None) -> str:
             rel = reverse("forms_workflows:approve_submission", args=[task.id])
             return f"{base}{rel}"
         except Exception:
-            return f"{base}/forms/approvals/{task.id}/"
+            return f"{base}/forms/approvals/{task.id}/approve/"
     elif submission and getattr(submission, "id", None):
         try:
             rel = reverse("forms_workflows:submission_detail", args=[submission.id])
@@ -278,7 +485,7 @@ def build_standard_notification_context(submission, event: str, task=None, appro
     """
     doc_info = extract_document_info(submission, task=task)
     wording = get_event_wording(event, submission=submission, task=task)
-    action_url = custom_action_url or get_notification_action_url(submission, task=task)
+    action_url = custom_action_url or get_notification_action_url(submission, task=task, event=event)
 
     return {
         "submission": submission,
@@ -289,6 +496,8 @@ def build_standard_notification_context(submission, event: str, task=None, appro
         "status_label": wording["status_label"],
         "action_instruction": wording["action_instruction"],
         "action_url": action_url,
+        "action_title": wording.get("action_title", "Detail Pengajuan"),
+        "action_button_label": wording.get("action_button_label", "Lihat Detail Pengajuan"),
         "judul_notifikasi": wording["judul_notifikasi"],
         "emoji": wording["emoji"],
     }

@@ -7,6 +7,7 @@ and submission management.
 
 import json
 import logging
+import math
 import mimetypes
 import os
 import re
@@ -1799,7 +1800,7 @@ def form_submission_hub(request, slug):
     search_query = request.GET.get("q", "").strip()
     if search_query:
         submissions_qs = submissions_qs.filter(
-            _build_submission_search_q(search_query, form_def.slug)
+            _build_submission_search_q(search_query, form_def.slug, active_pic_only=True)
         ).distinct()
 
     # Filter Bar: Dropdown filter stage alur statis lurus (SPK Kontrak Toko)
@@ -2565,15 +2566,7 @@ def submission_detail(request, submission_id):
     ):
         can_push_notification = True
         push_target_info = resolve_active_stage_push_target(submission)
-        cooldown_key = f"push_notif_cooldown_{submission.id}"
-        cooldown_val = cache.get(cooldown_key)
-        if cooldown_val:
-            try:
-                sent_at = datetime.fromisoformat(cooldown_val)
-                elapsed = (timezone.now() - sent_at).total_seconds()
-                push_cooldown_remaining = max(0, int(60 - elapsed))
-            except Exception:
-                push_cooldown_remaining = 60
+        push_cooldown_remaining = _get_push_cooldown_remaining(submission.id)
 
     return render(
         request,
@@ -2964,6 +2957,21 @@ def _is_ajax_request(request) -> bool:
     )
 
 
+def _get_push_cooldown_remaining(submission_id: int) -> int:
+    """Return remaining seconds (ceiling) for manual push notification cooldown."""
+    from django.core.cache import cache
+
+    cooldown_val = cache.get(f"push_notif_cooldown_{submission_id}")
+    if not cooldown_val:
+        return 0
+    try:
+        sent_at = datetime.fromisoformat(cooldown_val)
+        elapsed = (timezone.now() - sent_at).total_seconds()
+        return max(0, int(math.ceil(max(0.0, 60.0 - elapsed))))
+    except Exception:
+        return 60
+
+
 def _execute_single_push_notification(submission, user, client_ip: str, custom_note: str = "") -> dict:
     """Shared helper to validate, enforce 60s cooldown, send reminder, and record AuditLog."""
     from django.core.cache import cache
@@ -2977,12 +2985,14 @@ def _execute_single_push_notification(submission, user, client_ip: str, custom_n
         return {"success": False, "status_code": 400, "message": "Push notifikasi hanya dapat dikirimkan untuk pengajuan yang sedang aktif berjalan."}
 
     cooldown_key = f"push_notif_cooldown_{submission.id}"
-    if cache.get(cooldown_key):
+    remaining = _get_push_cooldown_remaining(submission.id)
+    if remaining > 0:
         return {
             "success": False,
             "cooldown": True,
+            "cooldown_remaining": remaining,
             "status_code": 429,
-            "message": "Pengingat baru saja dikirimkan. Mohon tunggu 60 detik sebelum mengirimkan push notifikasi berikutnya.",
+            "message": f"Pengingat baru saja dikirimkan. Mohon tunggu {remaining} detik sebelum mengirimkan push notifikasi berikutnya.",
         }
 
     result = send_manual_stage_reminder(submission, user, custom_note=custom_note)
@@ -3008,6 +3018,7 @@ def _execute_single_push_notification(submission, user, client_ip: str, custom_n
         return {
             "success": True,
             "status_code": 200,
+            "cooldown_remaining": 60,
             "message": result["message"],
             "stage_label": result.get("stage_label", ""),
             "recipient_summary": result.get("recipient_summary", ""),
@@ -5570,6 +5581,7 @@ def _form_data_search_q(form_slug, search, field_prefix="form_data"):
 
 _SEARCH_FORM_DATA_KEYS = (
     "nomor_spk",
+    "no_surat",
     "brand",
     "kota",
     "cabang",
@@ -5581,6 +5593,9 @@ _SEARCH_FORM_DATA_KEYS = (
     "kode_customer_jde",
     "jenis_pengajuan",
     "jenis_kontrak",
+    "jenis_hold",
+    "kategori_barang",
+    "jenis_so",
     "nomor_pengajuan",
     "no_pengajuan",
     "nomor_so",
@@ -5608,8 +5623,8 @@ def _get_submission_doc_number_label(sub) -> str:
 
 def _resolve_search_user_and_group_ids(search: str) -> tuple[list[int], list[int]]:
     """Pre-resolve matching User IDs (including Concat full name) and Group IDs
-    (matching group name or containing any matched PIC user) to avoid expensive
-    M2M joins on FormSubmission/ApprovalTask querysets."""
+    whose own group name matches the search keyword (without expanding user
+    memberships into unrelated stage groups)."""
     from django.contrib.auth import get_user_model
     from django.contrib.auth.models import Group
     from django.db.models import Value
@@ -5628,56 +5643,63 @@ def _resolve_search_user_and_group_ids(search: str) -> tuple[list[int], list[int
         )
         .values_list("id", flat=True)
     )
-    group_q = models.Q(name__icontains=search)
-    if matching_user_ids:
-        group_q |= models.Q(user__id__in=matching_user_ids)
     matching_group_ids = list(
-        Group.objects.filter(group_q).values_list("id", flat=True).distinct()
+        Group.objects.filter(name__icontains=search)
+        .values_list("id", flat=True)
+        .distinct()
     )
     return matching_user_ids, matching_group_ids
 
 
 def _build_form_data_keys_q(search: str, field_prefix: str = "form_data") -> models.Q:
-    """Build Q across standard SPK/toko/pengajuan JSON keys plus generic fallback."""
+    """Build Q across displayed SPK/toko/pengajuan & metadata JSON keys (no raw JSON dump)."""
     q = models.Q()
     for key in _SEARCH_FORM_DATA_KEYS:
         q |= models.Q(**{f"{field_prefix}__{key}__icontains": search})
-    try:
-        q |= models.Q(**{f"{field_prefix}__icontains": search})
-    except Exception:
-        pass
     return q
 
 
 def _build_stage_keyword_q(
-    search: str, task_prefix: str = "", submission_prefix: str = ""
+    search: str, task_prefix: str = "", submission_prefix: str = "", form_slug: str = ""
 ) -> models.Q:
-    """Map display status/stage labels (e.g. 'asm', 'rsom', 'ttd', 'direksi') to ORM filters."""
+    """Map display status/stage/contract-type labels to targeted ORM filters."""
     s_low = search.strip().lower()
     q = models.Q()
     stage_order_field = f"{task_prefix}workflow_stage__order"
     status_field = f"{submission_prefix}status"
+    form_slug_field = f"{submission_prefix}form_definition__slug"
 
-    def _stage_q(order_val: int) -> models.Q:
+    def _stage_q(order_val: int, slug_filter: str = "") -> models.Q:
+        cond = models.Q(**{stage_order_field: order_val})
         if task_prefix:
-            return models.Q(**{f"{task_prefix}status": "pending", stage_order_field: order_val})
-        return models.Q(**{stage_order_field: order_val})
+            cond &= models.Q(**{f"{task_prefix}status": "pending"})
+        if slug_filter:
+            cond &= models.Q(**{form_slug_field: slug_filter})
+        elif form_slug:
+            cond &= models.Q(**{form_slug_field: form_slug})
+        return cond
 
     if "asm" in s_low:
-        q |= _stage_q(1)
+        q |= _stage_q(1, "permohonan-kontrak") | _stage_q(2, "release-credit-limit")
     if "sales support" in s_low or "support" in s_low:
-        q |= _stage_q(2)
+        q |= _stage_q(2, "permohonan-kontrak")
     if "rsom" in s_low:
-        q |= _stage_q(3)
+        q |= _stage_q(3, "permohonan-kontrak")
     if any(kw in s_low for kw in ("ttd", "mitra", "toko")):
-        q |= _stage_q(4) & ~(
+        q |= _stage_q(4, "permohonan-kontrak") & ~(
             models.Q(**{f"{submission_prefix}signing_tokens__status": "signed"})
             | models.Q(**{f"{submission_prefix}form_data__ttd_toko_image__isnull": False})
         )
     if "direksi" in s_low:
-        q |= _stage_q(4) & (
+        q |= _stage_q(4, "permohonan-kontrak") & (
             models.Q(**{f"{submission_prefix}signing_tokens__status": "signed"})
             | models.Q(**{f"{submission_prefix}form_data__ttd_toko_image__isnull": False})
+        )
+    if "perpanjangan" in s_low:
+        q |= (
+            models.Q(**{f"{submission_prefix}form_data__info_kontrak_lama__icontains": "perpanjangan"})
+            | models.Q(**{f"{submission_prefix}form_data__chk_lampiran_spk_lalu": True})
+            | models.Q(**{f"{submission_prefix}form_data__chk_lampiran_spk_lalu": "on"})
         )
     if "disetujui" in s_low or "approved" in s_low:
         q |= models.Q(**{status_field: "approved"})
@@ -5690,47 +5712,109 @@ def _build_stage_keyword_q(
     return q
 
 
-def _build_submission_search_q(search: str, form_slug: str = "") -> models.Q:
-    """Build 4-dimension search Q for FormSubmission querysets (hub & history)."""
+def _extract_prefixed_submission_id(search: str) -> int | None:
+    """Extract numeric ID from fallback codes like 'SPK-0228', 'PB-0012', or 'RCL-0359'."""
+    s = search.strip()
+    if s.isdigit():
+        return int(s)
+    m = re.fullmatch(r"(?:spk|pb|rcl)-0*(\d+)", s, re.IGNORECASE)
+    return int(m.group(1)) if m else None
+
+
+def _build_submission_search_q(
+    search: str, form_slug: str = "", active_pic_only: bool = False
+) -> models.Q:
+    """Build targeted search Q for FormSubmission querysets (hub & history)."""
     matching_user_ids, matching_group_ids = _resolve_search_user_and_group_ids(search)
-    q = (
-        models.Q(form_definition__name__icontains=search)
-        | models.Q(status__icontains=search)
-        | models.Q(approval_tasks__step_name__icontains=search)
-        | models.Q(approval_tasks__workflow_stage__name__icontains=search)
-        | _build_form_data_keys_q(search, field_prefix="form_data")
-        | _build_stage_keyword_q(search, task_prefix="approval_tasks__", submission_prefix="")
-    )
-    if search.isdigit():
-        q |= models.Q(id=int(search))
+    if active_pic_only:
+        q = (
+            models.Q(
+                approval_tasks__status="pending",
+                approval_tasks__step_name__icontains=search,
+            )
+            | models.Q(
+                approval_tasks__status="pending",
+                approval_tasks__workflow_stage__name__icontains=search,
+            )
+            | _build_form_data_keys_q(search, field_prefix="form_data")
+            | _build_stage_keyword_q(
+                search,
+                task_prefix="approval_tasks__",
+                submission_prefix="",
+                form_slug=form_slug,
+            )
+        )
+    else:
+        q = (
+            models.Q(form_definition__name__icontains=search)
+            | models.Q(status__icontains=search)
+            | models.Q(approval_tasks__step_name__icontains=search)
+            | models.Q(approval_tasks__workflow_stage__name__icontains=search)
+            | _build_form_data_keys_q(search, field_prefix="form_data")
+            | _build_stage_keyword_q(
+                search,
+                task_prefix="approval_tasks__",
+                submission_prefix="",
+                form_slug=form_slug,
+            )
+        )
+    sub_id_match = _extract_prefixed_submission_id(search)
+    if sub_id_match is not None:
+        q |= models.Q(id=sub_id_match)
     if matching_user_ids:
-        q |= (
-            models.Q(submitter_id__in=matching_user_ids)
-            | models.Q(approval_tasks__assigned_to_id__in=matching_user_ids)
-            | models.Q(approval_tasks__completed_by_id__in=matching_user_ids)
-        )
+        if active_pic_only:
+            q |= (
+                models.Q(submitter_id__in=matching_user_ids)
+                | models.Q(
+                    status__in=["pending_approval", "submitted"],
+                    approval_tasks__status="pending",
+                    approval_tasks__assigned_to_id__in=matching_user_ids,
+                )
+                | models.Q(
+                    status="needs_revision",
+                    approval_tasks__status__in=["needs_revision", "rejected", "returned"],
+                    approval_tasks__completed_by_id__in=matching_user_ids,
+                )
+            )
+        else:
+            q |= (
+                models.Q(submitter_id__in=matching_user_ids)
+                | models.Q(approval_tasks__assigned_to_id__in=matching_user_ids)
+                | models.Q(approval_tasks__completed_by_id__in=matching_user_ids)
+            )
     if matching_group_ids:
-        q |= (
-            models.Q(approval_tasks__assigned_group_id__in=matching_group_ids)
-            | models.Q(approval_tasks__workflow_stage__approval_groups__id__in=matching_group_ids)
-        )
-    if form_slug:
+        if active_pic_only:
+            q |= models.Q(
+                status__in=["pending_approval", "submitted"],
+                approval_tasks__status="pending",
+                approval_tasks__assigned_to__isnull=True,
+                approval_tasks__assigned_group_id__in=matching_group_ids,
+            )
+        else:
+            q |= models.Q(approval_tasks__assigned_group_id__in=matching_group_ids)
+    if form_slug and not active_pic_only:
         q |= _form_data_search_q(form_slug, search, field_prefix="form_data")
     return q
 
 
 def _build_task_search_q(search: str, form_slug: str = "") -> models.Q:
-    """Build 4-dimension search Q for ApprovalTask querysets (pending inbox)."""
+    """Build targeted search Q for ApprovalTask querysets (pending inbox)."""
     matching_user_ids, matching_group_ids = _resolve_search_user_and_group_ids(search)
     q = (
         models.Q(submission__form_definition__name__icontains=search)
         | models.Q(step_name__icontains=search)
         | models.Q(workflow_stage__name__icontains=search)
         | _build_form_data_keys_q(search, field_prefix="submission__form_data")
-        | _build_stage_keyword_q(search, task_prefix="", submission_prefix="submission__")
+        | _build_stage_keyword_q(
+            search,
+            task_prefix="",
+            submission_prefix="submission__",
+            form_slug=form_slug,
+        )
     )
-    if search.isdigit():
-        q |= models.Q(submission__id=int(search))
+    sub_id_match = _extract_prefixed_submission_id(search)
+    if sub_id_match is not None:
+        q |= models.Q(submission__id=sub_id_match)
     if matching_user_ids:
         q |= (
             models.Q(submission__submitter_id__in=matching_user_ids)
@@ -5738,10 +5822,7 @@ def _build_task_search_q(search: str, form_slug: str = "") -> models.Q:
             | models.Q(completed_by_id__in=matching_user_ids)
         )
     if matching_group_ids:
-        q |= (
-            models.Q(assigned_group_id__in=matching_group_ids)
-            | models.Q(workflow_stage__approval_groups__id__in=matching_group_ids)
-        )
+        q |= models.Q(assigned_group_id__in=matching_group_ids)
     if form_slug:
         q |= _form_data_search_q(
             form_slug, search, field_prefix="submission__form_data"

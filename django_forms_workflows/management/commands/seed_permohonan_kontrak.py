@@ -41,10 +41,26 @@ class Command(BaseCommand):
             action="store_true",
             help="Hanya migrasikan hierarki urutan stage ke alur statis lurus (ASM -> Sales Support -> RSOM -> Direksi)",
         )
+        parser.add_argument(
+            "--sync-notifications-only",
+            action="store_true",
+            help="Hanya sinkronkan NotificationRule permohonan-kontrak ke format standar HTML ROYAL WORKFLOW tanpa menyentuh user/form/submission.",
+        )
 
     @transaction.atomic
     def handle(self, *args, **options):
         migrate_stages_only = options.get("migrate_stages_only", False)
+        sync_notifications_only = options.get("sync_notifications_only", False)
+
+        if sync_notifications_only:
+            workflow = WorkflowDefinition.objects.filter(form_definition__slug="permohonan-kontrak").first()
+            if not workflow:
+                self.stderr.write("WorkflowDefinition for 'permohonan-kontrak' not found!")
+                return
+            self._ensure_notification_rules(workflow, None, None)
+            self.stdout.write(self.style.SUCCESS("✓ NotificationRule permohonan-kontrak disinkronkan ke template standar HTML!"))
+            return
+
         groups = self._seed_groups()
 
         if migrate_stages_only:
@@ -1176,8 +1192,10 @@ class Command(BaseCommand):
                 "use_triggering_stage": False,
                 "defaults": {
                     "notify_submitter": True,
+                    "notify_stage_assignees": False,
+                    "notify_stage_groups": False,
                     "subject_template": "Permohonan Kontrak {nomor_spk} Berhasil Diajukan",
-                    "body_template": "Pengajuan kontrak kerjasama untuk toko {nama_toko} telah diterima dan sedang diproses dalam antrean persetujuan.",
+                    "body_template": "",
                 },
             },
             {
@@ -1186,10 +1204,24 @@ class Command(BaseCommand):
                 "use_triggering_stage": True,
                 "defaults": {
                     "use_triggering_stage": True,
+                    "notify_submitter": False,
                     "notify_stage_groups": True,
                     "notify_stage_assignees": True,
                     "subject_template": "Persetujuan Diperlukan: Permohonan Kontrak {nomor_spk} - {nama_toko}",
-                    "body_template": "Permohonan kontrak untuk toko {nama_toko} menunggu review dan persetujuan Anda.",
+                    "body_template": "",
+                },
+            },
+            {
+                "event": "approval_reminder",
+                "stage": None,
+                "use_triggering_stage": True,
+                "defaults": {
+                    "use_triggering_stage": True,
+                    "notify_submitter": False,
+                    "notify_stage_groups": True,
+                    "notify_stage_assignees": True,
+                    "subject_template": "Pengingat Persetujuan: Permohonan Kontrak {nomor_spk} - {nama_toko}",
+                    "body_template": "",
                 },
             },
             {
@@ -1198,8 +1230,10 @@ class Command(BaseCommand):
                 "use_triggering_stage": False,
                 "defaults": {
                     "notify_submitter": True,
+                    "notify_stage_assignees": False,
+                    "notify_stage_groups": False,
                     "subject_template": "Permintaan Revisi: Permohonan Kontrak {nomor_spk} - {nama_toko}",
-                    "body_template": "Permohonan kontrak untuk toko {nama_toko} dikembalikan oleh peninjau untuk dilakukan perbaikan/revisi data.",
+                    "body_template": "",
                 },
             },
             {
@@ -1208,8 +1242,10 @@ class Command(BaseCommand):
                 "use_triggering_stage": False,
                 "defaults": {
                     "notify_submitter": True,
+                    "notify_stage_assignees": False,
+                    "notify_stage_groups": False,
                     "subject_template": "Pemberitahuan: Permohonan Kontrak {nomor_spk} - {nama_toko} Ditolak",
-                    "body_template": "Permohonan kontrak untuk toko {nama_toko} telah ditolak oleh peninjau.",
+                    "body_template": "",
                 },
             },
             {
@@ -1218,8 +1254,10 @@ class Command(BaseCommand):
                 "use_triggering_stage": False,
                 "defaults": {
                     "notify_submitter": True,
+                    "notify_stage_assignees": False,
+                    "notify_stage_groups": False,
                     "subject_template": "Selamat! Permohonan Kontrak {nomor_spk} Telah Disetujui Penuh",
-                    "body_template": "Permohonan kontrak untuk toko {nama_toko} telah disetujui hingga tahap Final Sign-off. Surat Perjanjian Kerjasama telah resmi berlaku.",
+                    "body_template": "",
                 },
             },
         ]

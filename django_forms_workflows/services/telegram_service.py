@@ -5,6 +5,7 @@ Dispatches real-time instant alerts and reminders to Telegram Bot / Group
 alongside standard email notifications.
 """
 
+import html
 import logging
 import os
 import requests
@@ -117,7 +118,8 @@ def send_telegram_message(
 
 def format_workflow_telegram_message(submission, event: str, task=None) -> str:
     """
-    Formats a clean Telegram message matching Telegram Notifikasi standard.
+    Formats a clean HTML Telegram message matching Royal Workflow standard,
+    escaping dynamic text safely and rendering extra metadata rows when available.
     """
     from django_forms_workflows.services.notification_formatter import (
         extract_document_info,
@@ -127,32 +129,45 @@ def format_workflow_telegram_message(submission, event: str, task=None) -> str:
 
     doc_info = extract_document_info(submission, task=task)
     wording = get_event_wording(event, submission=submission, task=task)
-    action_url = get_notification_action_url(submission, task=task)
+    action_url = get_notification_action_url(submission, task=task, event=event)
 
+    esc = html.escape
     emoji = wording["emoji"]
-    judul = wording["judul_notifikasi"]
-    info_singkat = wording["event_message"]
-    status_label = wording["status_label"]
-    action_inst = wording["action_instruction"]
+    judul = esc(wording["judul_notifikasi"])
+    info_singkat = esc(wording["event_message"])
+    status_label = esc(wording["status_label"])
+    action_inst = esc(wording["action_instruction"]) if wording.get("action_instruction") else ""
+    tujuan = esc(doc_info["tujuan_pengajuan"])
+
+    extra_rows = doc_info.get("extra_rows") or []
+    if extra_rows:
+        info_lines = "\n".join(
+            f"{esc(lbl)}: <b>{esc(val)}</b>" for lbl, val in extra_rows
+        )
+    else:
+        info_lines = (
+            f"Jenis Dokumen: <b>{esc(doc_info['jenis_dokumen'])}</b>\n"
+            f"No. Pengajuan: <b>{esc(doc_info['nomor_pengajuan'])}</b>\n"
+            f"Unit Kerja: <b>{esc(doc_info['unit_kerja'])}</b>\n"
+            f"Pemohon: <b>{esc(doc_info['pemohon'])}</b>"
+        )
 
     action_block = f"\n{action_inst}\n" if action_inst else ""
+    safe_url = esc(action_url)
 
     message = (
-        f"{emoji} [ROYAL WORKFLOW] [{judul}]\n\n"
+        f"{emoji} <b>[ROYAL WORKFLOW] [{judul}]</b>\n\n"
         f"{info_singkat}\n\n"
-        f"📄 Informasi Dokumen\n"
-        f"Jenis Dokumen: {doc_info['jenis_dokumen']}\n"
-        f"No. Pengajuan: {doc_info['nomor_pengajuan']}\n"
-        f"Unit Kerja: {doc_info['unit_kerja']}\n"
-        f"Pemohon: {doc_info['pemohon']}\n\n"
-        f"🎯 Tujuan Pengajuan\n"
-        f"{doc_info['tujuan_pengajuan']}\n\n"
-        f"📌 Status\n"
+        f"📄 <b>Informasi Dokumen</b>\n"
+        f"{info_lines}\n\n"
+        f"🎯 <b>Tujuan Pengajuan</b>\n"
+        f"{tujuan}\n\n"
+        f"📌 <b>Status</b>\n"
         f"{status_label}\n"
         f"{action_block}\n"
-        f"📑 Detail Pengajuan\n"
-        f"{action_url}\n\n"
-        f"Royal Workflow Notifications"
+        f"📑 <b>Detail Pengajuan</b>\n"
+        f"<a href=\"{safe_url}\">{safe_url}</a>\n\n"
+        f"<i>Royal Workflow Notifications</i>"
     )
     return message
 
@@ -179,7 +194,7 @@ def dispatch_telegram_workflow_event(submission_id: int, event: str, task_id: in
         submission = FormSubmission.objects.select_related("form_definition", "submitter").get(id=submission_id)
         task = ApprovalTask.objects.filter(id=task_id).first() if task_id else None
         text = format_workflow_telegram_message(submission, event, task=task)
-        return send_telegram_message(text)
+        return send_telegram_message(text, parse_mode="HTML")
     except Exception as exc:
         logger.error("Error in dispatch_telegram_workflow_event: %s", exc)
         return False

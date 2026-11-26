@@ -1035,6 +1035,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // 2. Live Search (Min. 3 Karakter, Debounce 300ms, Anti-Race Condition)
+    filterForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        clearTimeout(debounceTimer);
+        const trimmed = searchInput ? searchInput.value.trim() : '';
+        if (trimmed.length === 0 || trimmed.length >= 3) {
+            executeLiveSearch(1);
+        }
+    });
+
     if (searchInput) {
         updateSearchUiState(searchInput.value);
 
@@ -1046,17 +1055,31 @@ document.addEventListener('DOMContentLoaded', function() {
             clearTimeout(debounceTimer);
 
             if (trimmed.length === 0) {
-                // Hanya muat ulang data normal jika sebelumnya sudah memfilter >= 3 karakter
-                if (activeSearchQuery.length >= 3) {
+                // Batalkan request pencarian aktif yang tertunda dan reset ke daftar penuh
+                if (activeAbortController) {
+                    activeAbortController.abort();
+                }
+                const hasUrlQuery = new URLSearchParams(window.location.search).has('q');
+                if (activeSearchQuery.length > 0 || hasUrlQuery) {
                     debounceTimer = setTimeout(function() {
                         executeLiveSearch(1);
-                    }, 150);
+                    }, 120);
                 }
                 return;
             }
 
             if (trimmed.length < 3) {
-                // 1-2 karakter: jangan panggil server agar tabel stabil tanpa berkedip
+                // Jika sebelumnya ada filter aktif (>= 3 char) lalu dihapus sebagian ke < 3 char,
+                // reset hasil agar tabel tidak terjebak menampilkan hasil filter lama yang tidak sinkron
+                if (activeAbortController) {
+                    activeAbortController.abort();
+                }
+                const hasUrlQuery = new URLSearchParams(window.location.search).has('q');
+                if (activeSearchQuery.length >= 3 || hasUrlQuery) {
+                    debounceTimer = setTimeout(function() {
+                        executeLiveSearch(1);
+                    }, 200);
+                }
                 return;
             }
 
@@ -1083,7 +1106,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 updateSearchUiState('');
                 searchInput.focus();
                 clearTimeout(debounceTimer);
-                if (activeSearchQuery.length >= 3) {
+                if (activeAbortController) {
+                    activeAbortController.abort();
+                }
+                const hasUrlQuery = new URLSearchParams(window.location.search).has('q');
+                if (activeSearchQuery.length > 0 || hasUrlQuery) {
                     executeLiveSearch(1);
                 }
             });
