@@ -666,15 +666,9 @@
             totalSoInput.addEventListener('blur', () => validateTotalSo(true));
         }
 
-        // Helper info bar below Section 03
-        const holdHelper = document.createElement('div');
-        holdHelper.className = 'alert alert-light border small text-secondary mb-0 mt-2 py-2 px-3';
-        holdHelper.innerHTML =
-            '<i class="bi bi-info-circle text-primary me-1"></i> ' +
-            '<strong>C1</strong> = Credit Limit Hold &nbsp;|&nbsp; ' +
-            '<strong>C2</strong> = TOP Hold &nbsp;|&nbsp; ' +
-            '<strong>C1 + C2</strong> = Kedua jenis hold';
-        p3.body.appendChild(holdHelper);
+        if (p3.body.lastElementChild) {
+            p3.body.lastElementChild.classList.remove('mb-2');
+        }
         container.appendChild(p3.box);
 
         // 04 — Lampiran (Dynamic Repeater Table)
