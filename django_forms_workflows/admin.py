@@ -576,8 +576,53 @@ class StageApprovalGroupInline(nested_admin.NestedTabularInline):
     model = StageApprovalGroup
     extra = 1
     ordering = ("role", "position")
-    autocomplete_fields = ("group",)
-    fields = ("group", "role", "position")
+    autocomplete_fields = ("group", "users")
+    fields = ("group", "role", "position", "users", "recipients_preview")
+    readonly_fields = ("recipients_preview",)
+
+    def recipients_preview(self, obj):
+        if not obj or not obj.pk:
+            return format_html('<span style="color: #94a3b8; font-style: italic;">Simpan untuk melihat daftar user</span>')
+
+        explicit_users = list(obj.users.filter(is_active=True))
+        if explicit_users:
+            items = []
+            for u in explicit_users:
+                name = u.get_full_name() or u.username
+                email = u.email or "no email"
+                items.append(f'<li style="margin-bottom: 2px;"><strong>{name}</strong> <span style="color: #64748b;">({email})</span> <span style="background: #e0f2fe; color: #0369a1; padding: 1px 6px; border-radius: 4px; font-size: 11px;">User Terpilih</span></li>')
+            return format_html(
+                '<div style="max-height: 120px; overflow-y: auto; font-size: 12px; min-width: 220px;">'
+                '<div style="font-weight: 600; color: #0284c7; margin-bottom: 4px;">🎯 User Khusus Terpilih ({0}):</div>'
+                '<ul style="margin: 0; padding-left: 18px;">{1}</ul>'
+                '</div>',
+                len(explicit_users),
+                mark_safe("".join(items)),
+            )
+
+        if not obj.group:
+            return "-"
+
+        group_users = list(obj.group.user_set.filter(is_active=True).order_by("username"))
+        if not group_users:
+            return format_html('<span style="color: #ef4444; font-weight: 500;">⚠️ Tidak ada user aktif di grup ini</span>')
+
+        items = []
+        for u in group_users:
+            name = u.get_full_name() or u.username
+            email = u.email or "no email"
+            items.append(f'<li style="margin-bottom: 2px;">{name} <span style="color: #64748b;">({email})</span></li>')
+
+        return format_html(
+            '<div style="max-height: 120px; overflow-y: auto; font-size: 12px; min-width: 220px;">'
+            '<div style="font-weight: 600; color: #16a34a; margin-bottom: 4px;">👥 Seluruh Anggota Grup ({0}):</div>'
+            '<ul style="margin: 0; padding-left: 18px;">{1}</ul>'
+            '</div>',
+            len(group_users),
+            mark_safe("".join(items)),
+        )
+
+    recipients_preview.short_description = "Detail User Penerima Email"
 
 
 class WorkflowStageInline(nested_admin.NestedStackedInline):

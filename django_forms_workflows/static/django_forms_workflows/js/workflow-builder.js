@@ -1119,28 +1119,69 @@ export class WorkflowBuilder {
 
         return `
             <div class="mb-3">
-                <label class="form-label"><strong>Approval Group Order</strong></label>
+                <label class="form-label"><strong>Approval Group Order &amp; User Recipients</strong></label>
                 <div class="list-group">
-                    ${orderedGroups.map((group, index) => `
-                        <div class="list-group-item d-flex justify-content-between align-items-center py-2">
-                            <div>
-                                <span class="badge bg-secondary me-2">${index + 1}</span>
-                                ${this.escapeHtml(group.name)}
+                    ${orderedGroups.map((group, index) => {
+                        const grpObj = this.groups.find(g => g.id === group.id);
+                        const availableUsers = group.all_group_users?.length ? group.all_group_users : (grpObj?.users || []);
+                        const selectedUserIds = group.user_ids || [];
+                        const isSpecific = selectedUserIds.length > 0;
+
+                        return `
+                        <div class="list-group-item py-2 px-3 mb-2 border rounded">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="badge bg-secondary me-2">${index + 1}</span>
+                                    <strong>${this.escapeHtml(group.name)}</strong>
+                                    ${isSpecific 
+                                        ? `<span class="badge bg-primary ms-2" style="font-size: 11px;">🎯 ${selectedUserIds.length} User Terpilih</span>`
+                                        : `<span class="badge bg-success ms-2" style="font-size: 11px;">👥 Seluruh Anggota (${availableUsers.length})</span>`
+                                    }
+                                </div>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" ${index === 0 ? 'disabled' : ''}
+                                            onclick="workflowBuilder.moveStageApprovalGroup('${node.id}', ${group.id}, -1)">
+                                        <i class="bi bi-arrow-up"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" ${index === orderedGroups.length - 1 ? 'disabled' : ''}
+                                            onclick="workflowBuilder.moveStageApprovalGroup('${node.id}', ${group.id}, 1)">
+                                        <i class="bi bi-arrow-down"></i>
+                                    </button>
+                                </div>
                             </div>
-                            <div class="btn-group btn-group-sm" role="group">
-                                <button type="button" class="btn btn-outline-secondary" ${index === 0 ? 'disabled' : ''}
-                                        onclick="workflowBuilder.moveStageApprovalGroup('${node.id}', ${group.id}, -1)">
-                                    <i class="bi bi-arrow-up"></i>
-                                </button>
-                                <button type="button" class="btn btn-outline-secondary" ${index === orderedGroups.length - 1 ? 'disabled' : ''}
-                                        onclick="workflowBuilder.moveStageApprovalGroup('${node.id}', ${group.id}, 1)">
-                                    <i class="bi bi-arrow-down"></i>
-                                </button>
+
+                            <!-- Detail User List / Recipient Selector -->
+                            <div class="mt-2 pt-2 border-top">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <small class="text-muted fw-bold"><i class="bi bi-envelope-at me-1"></i>Detail User Penerima Email:</small>
+                                    <small class="text-muted" style="font-size: 10.5px;">Pilih spesifik atau kosongkan untuk semua</small>
+                                </div>
+                                ${availableUsers.length > 0 ? `
+                                    <div class="p-2 bg-light rounded" style="max-height: 140px; overflow-y: auto; font-size: 12px;">
+                                        ${availableUsers.map(u => {
+                                            const checked = selectedUserIds.includes(u.id) ? 'checked' : '';
+                                            return `
+                                            <div class="form-check d-flex align-items-center mb-1">
+                                                <input class="form-check-input me-2" type="checkbox" id="user_${node.id}_${group.id}_${u.id}"
+                                                       value="${u.id}" ${checked}
+                                                       onchange="workflowBuilder.toggleStageGroupUser('${node.id}', ${group.id}, ${u.id}, this.checked)">
+                                                <label class="form-check-label d-flex align-items-center" for="user_${node.id}_${group.id}_${u.id}">
+                                                    <strong>${this.escapeHtml(u.name || u.username)}</strong>
+                                                    <span class="text-muted ms-1 small">(${this.escapeHtml(u.email || 'no email')})</span>
+                                                </label>
+                                            </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                ` : `
+                                    <small class="text-warning d-block fst-italic">⚠️ Tidak ada user aktif di grup ini.</small>
+                                `}
                             </div>
                         </div>
-                    `).join('')}
+                        `;
+                    }).join('')}
                 </div>
-                <small class="text-muted d-block mt-1">This order is used when the stage logic is <strong>Sequential</strong>.</small>
+                <small class="text-muted d-block mt-1">Urutan diproses saat logika <strong>Sequential</strong>. Centang user tertentu untuk membatasi penerima email/tugas.</small>
             </div>
         `;
     }
@@ -2104,7 +2145,32 @@ export class WorkflowBuilder {
             id: group.id,
             name: group.name,
             position: index,
+            user_ids: group.user_ids || [],
+            users: group.users || [],
+            all_group_users: group.all_group_users || [],
         }));
+    }
+
+    toggleStageGroupUser(nodeId, groupId, userId, isChecked) {
+        const node = this.nodes.find(n => n.id === nodeId);
+        if (!node) return;
+
+        const groups = this.getNormalizedStageApprovalGroups(node.data.approval_groups || []);
+        const target = groups.find(g => g.id === groupId);
+        if (!target) return;
+
+        target.user_ids = target.user_ids || [];
+        userId = parseInt(userId);
+        if (isChecked) {
+            if (!target.user_ids.includes(userId)) {
+                target.user_ids.push(userId);
+            }
+        } else {
+            target.user_ids = target.user_ids.filter(id => id !== userId);
+        }
+        node.data.approval_groups = groups;
+        this.updateStageConfig(nodeId);
+        this.renderProperties();
     }
 
     readStageApprovalFieldsFromPanel(container, nodeId) {
