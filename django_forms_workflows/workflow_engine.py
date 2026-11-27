@@ -1633,7 +1633,12 @@ def handle_resubmit_revision(
         ):
             if acc_key in prev_fd and acc_key not in updated_form_data:
                 updated_form_data[acc_key] = prev_fd[acc_key]
-        for stale_key in ("rcl_target_final_level", "rcl_target_final_label", "rcl_matrix_reason"):
+        for stale_key in (
+            "rcl_target_final_level",
+            "rcl_target_final_label",
+            "rcl_matrix_reason",
+            "acc_jenis_produk",
+        ):
             updated_form_data.pop(stale_key, None)
 
     submission.form_data = updated_form_data

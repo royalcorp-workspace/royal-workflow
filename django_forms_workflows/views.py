@@ -2634,6 +2634,7 @@ def release_credit_limit_evaluate_matrix(request):
         {
             "jenis_hold": request.GET.get("jenis_hold", "C1"),
             "brand": request.GET.get("brand", ""),
+            "acc_jenis_produk": request.GET.get("jenis_produk", ""),
             "total_so": request.GET.get("total_so", 0),
             "acc_rata_rata_omzet": request.GET.get("rata_rata_omzet", 0),
         }
@@ -2663,7 +2664,9 @@ def release_credit_limit_review_action(request, submission_id):
         STAGE_GM,
         STAGE_NSM,
         evaluate_rcl_approval_matrix,
+        get_allowed_jenis_produk_for_jenis_so,
         get_pending_rcl_task,
+        normalize_acc_jenis_produk,
         parse_rupiah_amount,
         user_can_act_on_rcl_task,
     )
@@ -2703,6 +2706,21 @@ def release_credit_limit_review_action(request, submission_id):
             raw_val = (request.POST.get(key) or "").strip()
             if raw_val != "":
                 fd[key] = parse_rupiah_amount(raw_val)
+
+        allowed_jp = get_allowed_jenis_produk_for_jenis_so(fd.get("jenis_so"))
+        raw_jp = (request.POST.get("acc_jenis_produk") or "").strip()
+        if raw_jp:
+            norm_jp = normalize_acc_jenis_produk(raw_jp)
+            if not norm_jp or norm_jp not in allowed_jp:
+                messages.error(
+                    request,
+                    f"Jenis Produk '{raw_jp}' tidak valid untuk Jenis SO '{fd.get('jenis_so') or '—'}'. Pilihan yang diizinkan: {', '.join(allowed_jp)}.",
+                )
+                return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+            fd["acc_jenis_produk"] = norm_jp
+        elif "acc_jenis_produk" in request.POST:
+            fd["acc_jenis_produk"] = ""
+
         submission.form_data = fd
         submission.save(update_fields=["form_data"])
 
@@ -2712,7 +2730,11 @@ def release_credit_limit_review_action(request, submission_id):
             object_id=submission.id,
             user=request.user,
             user_ip=get_client_ip(request),
-            changes={"accounting_draft_saved": True, "stage": "Review Accounting Cabang"},
+            changes={
+                "accounting_draft_saved": True,
+                "stage": "Review Accounting Cabang",
+                "jenis_produk": fd.get("acc_jenis_produk") or "",
+            },
         )
         messages.success(request, "Draft informasi credit Accounting Cabang berhasil disimpan.")
         return redirect("forms_workflows:submission_detail", submission_id=submission.id)
@@ -2795,13 +2817,27 @@ def release_credit_limit_review_action(request, submission_id):
             else:
                 fd[key] = parse_rupiah_amount(raw_val)
 
+        allowed_jp = get_allowed_jenis_produk_for_jenis_so(fd.get("jenis_so"))
+        raw_jp = (request.POST.get("acc_jenis_produk") or "").strip()
+        norm_jp = normalize_acc_jenis_produk(raw_jp)
+        if not raw_jp:
+            missing_labels.append("Jenis Produk")
+
         if missing_labels:
             messages.error(
                 request,
-                f"Seluruh 5 informasi credit Accounting Cabang wajib diisi: {', '.join(missing_labels)}.",
+                f"Seluruh informasi credit Accounting Cabang wajib diisi: {', '.join(missing_labels)}.",
             )
             return redirect("forms_workflows:submission_detail", submission_id=submission.id)
 
+        if not norm_jp or norm_jp not in allowed_jp:
+            messages.error(
+                request,
+                f"Jenis Produk '{raw_jp}' tidak valid untuk Jenis SO '{fd.get('jenis_so') or '—'}'. Pilihan yang diizinkan: {', '.join(allowed_jp)}.",
+            )
+            return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+        fd["acc_jenis_produk"] = norm_jp
         fd["acc_reviewed_by"] = request.user.get_full_name() or request.user.username
         fd["acc_reviewed_at"] = timezone.now().strftime("%d %b %Y, %H:%M WIB")
 
@@ -2833,6 +2869,7 @@ def release_credit_limit_review_action(request, submission_id):
             changes={
                 "task_id": pending_task.id,
                 "stage": "Review Accounting Cabang",
+                "jenis_produk": norm_jp,
                 "target_final_level": matrix["target_final_level"],
                 "matrix_reason": matrix["matrix_reason"],
             },
