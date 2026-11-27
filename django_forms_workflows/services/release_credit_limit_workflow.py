@@ -15,8 +15,24 @@ from django_forms_workflows.services.branch_resolver import (
     resolve_submission_branch,
 )
 
-# Brand grouping for C1 (Credit Limit Hold) matrix
+# Brand grouping fallback for C1 (Credit Limit Hold) matrix
 FOAM_BRAND_KEYWORDS = ("ROYAL", "FOAM", "CLASSIC", "GRAND", "NON WOVEN", "NON-WOVEN")
+
+# Mapping Jenis SO -> allowed Jenis Produk choices for Accounting Cabang
+ALL_RCL_JENIS_PRODUK = ("Mattress", "Foam", "Non Woven")
+JENIS_SO_TO_PRODUK_MAP = {
+    "ZO": ["Mattress", "Non Woven"],
+    "SG": ["Mattress", "Foam", "Non Woven"],
+    "S5": ["Foam", "Non Woven"],
+    "S6": ["Foam", "Non Woven"],
+}
+JENIS_PRODUK_CANONICAL_MAP = {
+    "mattress": "Mattress",
+    "foam": "Foam",
+    "non woven": "Non Woven",
+    "non-woven": "Non Woven",
+    "nonwoven": "Non Woven",
+}
 
 # Stage order constants
 STAGE_ACCOUNTING = 1
@@ -61,12 +77,49 @@ def format_rupiah_display(val: Any) -> str:
     return f"Rp {num:,}".replace(",", ".")
 
 
+def normalize_jenis_so(val: Optional[str]) -> str:
+    """Extract canonical Jenis SO code ('ZO', 'SG', 'S5', 'S6', 'SO', etc.)."""
+    raw = str(val or "").strip().upper()
+    if not raw:
+        return ""
+    m = re.match(r"^(ZO|SG|S5|S6|SO)\b", raw)
+    return m.group(1) if m else raw
+
+
+def get_allowed_jenis_produk_for_jenis_so(jenis_so: Optional[str]) -> list[str]:
+    """Return allowed Jenis Produk choices filtered by the submitter's Jenis SO."""
+    code = normalize_jenis_so(jenis_so)
+    if code in JENIS_SO_TO_PRODUK_MAP:
+        return list(JENIS_SO_TO_PRODUK_MAP[code])
+    # Fallback for legacy/general 'SO' or blank values so review is never blocked
+    return list(ALL_RCL_JENIS_PRODUK)
+
+
+def normalize_acc_jenis_produk(val: Optional[str]) -> str:
+    """Normalize Accounting Cabang's Jenis Produk choice to canonical label."""
+    raw = re.sub(r"\s+", " ", str(val or "").strip().lower())
+    return JENIS_PRODUK_CANONICAL_MAP.get(raw, "")
+
+
 def classify_rcl_brand_category(brand: Optional[str]) -> tuple[str, str]:
-    """Return (category_code, human_label) for a Release Credit Limit brand."""
+    """Return (category_code, human_label) fallback derived from a Release Credit Limit brand."""
     b_upper = str(brand or "").strip().upper()
     if any(k in b_upper for k in FOAM_BRAND_KEYWORDS):
         return "FOAM_NON_WOVEN", "Foam / Non Woven"
     return "NON_FOAM_SPRINGBED", "Non-Foam (Springbed)"
+
+
+def classify_rcl_product_category(
+    jenis_produk: Optional[str],
+    brand: Optional[str] = None,
+) -> tuple[str, str]:
+    """Classify matrix category primarily from Accounting's Jenis Produk, falling back to brand."""
+    norm_jp = normalize_acc_jenis_produk(jenis_produk)
+    if norm_jp in ("Foam", "Non Woven"):
+        return "FOAM_NON_WOVEN", "Foam / Non Woven"
+    if norm_jp == "Mattress":
+        return "NON_FOAM_SPRINGBED", "Non-Foam (Springbed)"
+    return classify_rcl_brand_category(brand)
 
 
 def normalize_jenis_hold(val: Optional[str]) -> str:
@@ -86,7 +139,8 @@ def evaluate_rcl_approval_matrix(form_data: Optional[dict]) -> dict:
     fd = form_data or {}
     jenis_hold = normalize_jenis_hold(fd.get("jenis_hold"))
     brand = str(fd.get("brand") or "").strip()
-    cat_code, cat_label = classify_rcl_brand_category(brand)
+    acc_jenis_produk = normalize_acc_jenis_produk(fd.get("acc_jenis_produk"))
+    cat_code, cat_label = classify_rcl_product_category(acc_jenis_produk, brand)
     total_so = parse_rupiah_amount(fd.get("total_so"))
     omzet = parse_rupiah_amount(fd.get("acc_rata_rata_omzet"))
 
@@ -114,20 +168,20 @@ def evaluate_rcl_approval_matrix(form_data: Optional[dict]) -> dict:
                 reason = "C1 Non-Foam (Omzet <= Rp 30 Jt, Total SO <= Rp 5 Jt) berhenti di ASM / BM."
             elif total_so <= 10_000_000:
                 target_level = "NSM"
-                reason = "C1 Non-Foam (Omzet <= Rp 30 Jt, Total SO Rp 5-10 Jt) sampai NSM."
+                reason = "C1 Non-Foam (Omzet <= Rp 30 Jt, Total SO > Rp 5 Jt s.d. <= Rp 10 Jt) sampai NSM."
             else:
                 target_level = "GM"
                 reason = "C1 Non-Foam (Omzet <= Rp 30 Jt, Total SO > Rp 10 Jt) wajib hingga GM."
         elif omzet < 50_000_000:
             if total_so <= 5_000_000:
                 target_level = "ASM"
-                reason = "C1 Non-Foam (Omzet Rp 30-50 Jt, Total SO <= Rp 5 Jt) berhenti di ASM / BM."
-            elif total_so < 10_000_000:
+                reason = "C1 Non-Foam (Omzet > Rp 30 Jt s.d. < Rp 50 Jt, Total SO <= Rp 5 Jt) berhenti di ASM / BM."
+            elif total_so <= 10_000_000:
                 target_level = "NSM"
-                reason = "C1 Non-Foam (Omzet Rp 30-50 Jt, Total SO Rp 5-10 Jt) sampai NSM."
+                reason = "C1 Non-Foam (Omzet > Rp 30 Jt s.d. < Rp 50 Jt, Total SO > Rp 5 Jt s.d. <= Rp 10 Jt) sampai NSM."
             else:
                 target_level = "GM"
-                reason = "C1 Non-Foam (Omzet Rp 30-50 Jt, Total SO >= Rp 10 Jt) wajib hingga GM."
+                reason = "C1 Non-Foam (Omzet > Rp 30 Jt s.d. < Rp 50 Jt, Total SO > Rp 10 Jt) wajib hingga GM."
         else:
             # omzet >= 50_000_000
             if total_so <= 25_000_000:
@@ -135,7 +189,7 @@ def evaluate_rcl_approval_matrix(form_data: Optional[dict]) -> dict:
                 reason = "C1 Non-Foam (Omzet >= Rp 50 Jt, Total SO <= Rp 25 Jt) berhenti di ASM / BM."
             elif total_so < 75_000_000:
                 target_level = "NSM"
-                reason = "C1 Non-Foam (Omzet >= Rp 50 Jt, Total SO Rp 25-75 Jt) sampai NSM."
+                reason = "C1 Non-Foam (Omzet >= Rp 50 Jt, Total SO > Rp 25 Jt s.d. < Rp 75 Jt) sampai NSM."
             else:
                 target_level = "GM"
                 reason = "C1 Non-Foam (Omzet >= Rp 50 Jt, Total SO >= Rp 75 Jt) wajib hingga GM."
@@ -149,6 +203,7 @@ def evaluate_rcl_approval_matrix(form_data: Optional[dict]) -> dict:
 
     return {
         "jenis_hold_norm": jenis_hold,
+        "jenis_produk": acc_jenis_produk,
         "product_category": cat_code,
         "product_category_label": cat_label,
         "total_so": total_so,
@@ -256,6 +311,7 @@ def get_rcl_review_context(user, submission, form_data: Optional[dict] = None) -
             "acc_open_order_amount",
             "acc_over_due",
             "acc_rata_rata_omzet",
+            "acc_jenis_produk",
         )
     )
 
@@ -303,17 +359,28 @@ def get_rcl_review_context(user, submission, form_data: Optional[dict] = None) -
             return "—"
         return format_rupiah_display(raw)
 
+    jenis_so_code = normalize_jenis_so(fd.get("jenis_so"))
+    allowed_jenis_produk_options = get_allowed_jenis_produk_for_jenis_so(fd.get("jenis_so"))
+    saved_jenis_produk = normalize_acc_jenis_produk(fd.get("acc_jenis_produk"))
+    selected_jenis_produk = (
+        saved_jenis_produk if saved_jenis_produk in allowed_jenis_produk_options else ""
+    )
+
     accounting_data = {
         "plafon_saat_ini_input": _fmt_input("acc_plafon_saat_ini"),
         "total_over_credit_input": _fmt_input("acc_total_over_credit"),
         "open_order_amount_input": _fmt_input("acc_open_order_amount"),
         "over_due_input": _fmt_input("acc_over_due"),
         "rata_rata_omzet_input": _fmt_input("acc_rata_rata_omzet"),
+        "jenis_produk": selected_jenis_produk,
         "plafon_saat_ini_display": _fmt_ro("acc_plafon_saat_ini"),
         "total_over_credit_display": _fmt_ro("acc_total_over_credit"),
         "open_order_amount_display": _fmt_ro("acc_open_order_amount"),
         "over_due_display": _fmt_ro("acc_over_due"),
         "rata_rata_omzet_display": _fmt_ro("acc_rata_rata_omzet"),
+        "jenis_produk_display": saved_jenis_produk or "—",
+        "allowed_jenis_produk_options": allowed_jenis_produk_options,
+        "jenis_so_code": jenis_so_code,
         "reviewed_by": fd.get("acc_reviewed_by") or "",
         "reviewed_at": fd.get("acc_reviewed_at") or "",
         "has_values": acc_fields_present,
@@ -415,6 +482,44 @@ def get_rcl_review_context(user, submission, form_data: Optional[dict] = None) -
                 "is_multi_group": False,
             })
 
+    required_levels = matrix.get("required_levels") or ["ACCOUNTING", "ASM"]
+    progress_total = max(3, 1 + len(required_levels))
+
+    if submission.status in ("draft", "needs_revision", "withdrawn"):
+        progress_step = 1
+    elif submission.status == "approved":
+        progress_step = progress_total
+    elif submission.status == "rejected":
+        rejected_tasks = [t for t in all_tasks if t.status == "rejected"]
+        if rejected_tasks:
+            rej_task = max(
+                rejected_tasks,
+                key=lambda t: (t.stage_number or 0, t.id or 0),
+            )
+            rej_stage = (
+                rej_task.workflow_stage.order
+                if rej_task.workflow_stage_id and rej_task.workflow_stage
+                else (rej_task.stage_number or 1)
+            )
+            progress_step = 1 + int(rej_stage)
+        else:
+            max_approved_stage = 0
+            for t in all_tasks:
+                if t.status == "approved":
+                    st = (
+                        t.workflow_stage.order
+                        if t.workflow_stage_id and t.workflow_stage
+                        else (t.stage_number or 0)
+                    )
+                    max_approved_stage = max(max_approved_stage, int(st))
+            progress_step = 1 + max_approved_stage
+    elif pending_task and stage_order:
+        progress_step = 1 + int(stage_order)
+    else:
+        progress_step = 1
+
+    progress_step = max(1, min(int(progress_step), progress_total))
+
     return {
         "pending_task": pending_task,
         "stage_order": stage_order,
@@ -427,5 +532,7 @@ def get_rcl_review_context(user, submission, form_data: Optional[dict] = None) -
         "next_stage_preview_label": next_stage_preview_label,
         "lampiran_items": lampiran_items,
         "history_rows": history_rows,
+        "progress_step": progress_step,
+        "progress_total": progress_total,
     }
 

@@ -388,17 +388,19 @@
             {% endif %}
           {% endif %}
           {% with pdf=submission.form_definition.pdf_generation %}
-            {% if pdf == 'anytime' and submission.status != 'draft' or pdf == 'post_approval' and submission.status == 'approved' or can_approve_pdf and submission.status != 'draft' %}
-              {% if submission.form_definition.slug == 'pengajuan-biaya' %}
-                <a href="{% url 'forms_workflows:submission_pdf' submission.id %}Pengajuan_Biaya_{{ submission.id }}.pdf" target="_blank" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;" title="Cetak Dokumen Pengajuan Biaya (PDF)">
-                  <i class="bi bi-printer-fill text-danger"></i>
-                  <span>Cetak Dokumen (PDF)</span>
-                </a>
-              {% else %}
-                <a href="{% url 'forms_workflows:submission_pdf' submission.id %}SPK_Submission_{{ submission.id }}.pdf" target="_blank" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;" title="Buka dokumen PDF di tab baru">
-                  <i class="bi bi-file-earmark-pdf-fill text-danger"></i>
-                  <span>PDF</span>
-                </a>
+            {% if pdf and pdf != 'none' and submission.form_definition.slug != 'release-credit-limit' %}
+              {% if pdf == 'anytime' and submission.status != 'draft' or pdf == 'post_approval' and submission.status == 'approved' or can_approve_pdf and submission.status != 'draft' %}
+                {% if submission.form_definition.slug == 'pengajuan-biaya' %}
+                  <a href="{% url 'forms_workflows:submission_pdf' submission.id %}Pengajuan_Biaya_{{ submission.id }}.pdf" target="_blank" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;" title="Cetak Dokumen Pengajuan Biaya (PDF)">
+                    <i class="bi bi-printer-fill text-danger"></i>
+                    <span>Cetak Dokumen (PDF)</span>
+                  </a>
+                {% else %}
+                  <a href="{% url 'forms_workflows:submission_pdf' submission.id %}SPK_Submission_{{ submission.id }}.pdf" target="_blank" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center gap-1.5 flex-grow-1 flex-md-grow-0" style="white-space: nowrap;" title="Buka dokumen PDF di tab baru">
+                    <i class="bi bi-file-earmark-pdf-fill text-danger"></i>
+                    <span>PDF</span>
+                  </a>
+                {% endif %}
               {% endif %}
             {% endif %}
           {% endwith %}
@@ -720,16 +722,16 @@
           <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
             <span class="fw-bold text-dark small">Alur Persetujuan</span>
             <span class="text-muted" style="font-size: 11.5px;">
-              Tahap {{ current_stage_number|default:1 }} dari {{ total_stages }}
+              Tahap {{ rcl_ctx.progress_step|default:1 }} dari {{ rcl_ctx.progress_total|default:total_stages }}
               {% if rcl_ctx.matrix.target_final_label %}&middot; Target Akhir: <strong class="text-dark">{{ rcl_ctx.matrix.target_final_label }}</strong>{% endif %}
             </span>
           </div>
           <div class="rcl-stepper">
             {# Initiator Step #}
-            <div class="rcl-step is-done">
-              <div class="rcl-step-dot"><i class="bi bi-check-lg"></i></div>
+            <div class="rcl-step {% if submission.status == 'needs_revision' or submission.status == 'draft' %}is-active{% else %}is-done{% endif %}">
+              <div class="rcl-step-dot">{% if submission.status == 'needs_revision' or submission.status == 'draft' %}1{% else %}<i class="bi bi-check-lg"></i>{% endif %}</div>
               <div class="rcl-step-label">Pemohon</div>
-              <div class="rcl-step-sub">Submitted</div>
+              <div class="rcl-step-sub">{% if submission.status == 'needs_revision' %}Perlu Revisi{% elif submission.status == 'draft' %}Draft{% else %}Submitted{% endif %}</div>
             </div>
             {% for stage in approval_stages %}
               <div class="rcl-step {% if stage.is_skipped_by_matrix %}is-skipped{% elif stage.is_completed %}is-done{% elif stage.is_current %}is-active{% elif stage.is_rejected %}is-rejected{% endif %}" {% if stage.is_skipped_by_matrix %}title="Dilewati sesuai matriks batas akhir"{% endif %}>

@@ -243,22 +243,33 @@ def run_tests():
     # ==================================================================
     from django_forms_workflows.services.release_credit_limit_workflow import (
         evaluate_rcl_approval_matrix,
+        get_allowed_jenis_produk_for_jenis_so,
         get_pending_rcl_task,
     )
     from django_forms_workflows.models import WorkflowDefinition
 
-    # 1. Unit assertions for matrix rules
+    # 1. Unit assertions for Jenis SO -> Jenis Produk mapping & matrix rules
+    assert get_allowed_jenis_produk_for_jenis_so("ZO") == ["Mattress", "Non Woven"]
+    assert get_allowed_jenis_produk_for_jenis_so("SG") == ["Mattress", "Foam", "Non Woven"]
+    assert get_allowed_jenis_produk_for_jenis_so("S5") == ["Foam", "Non Woven"]
+    assert get_allowed_jenis_produk_for_jenis_so("S6") == ["Foam", "Non Woven"]
+    assert get_allowed_jenis_produk_for_jenis_so("SO") == ["Mattress", "Foam", "Non Woven"]
+    assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Elite Springbed", "acc_jenis_produk": "Foam", "total_so": 30000000, "acc_rata_rata_omzet": 0})["target_final_level"] == "ASM"
+    assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Elite Springbed", "acc_jenis_produk": "Non Woven", "total_so": 50000000, "acc_rata_rata_omzet": 0})["target_final_level"] == "NSM"
+    assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Royal Foam", "acc_jenis_produk": "Mattress", "total_so": 8000000, "acc_rata_rata_omzet": 20000000})["target_final_level"] == "NSM"
+    assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Royal Foam", "acc_jenis_produk": "Mattress", "total_so": 15000000, "acc_rata_rata_omzet": 20000000})["target_final_level"] == "GM"
     assert evaluate_rcl_approval_matrix({"jenis_hold": "C2", "brand": "Royal Foam", "total_so": 1000000, "acc_rata_rata_omzet": 999000000})["target_final_level"] == "GM"
     assert evaluate_rcl_approval_matrix({"jenis_hold": "C1 + C2", "brand": "Serenity", "total_so": 1000000, "acc_rata_rata_omzet": 999000000})["target_final_level"] == "GM"
     assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Royal Foam", "total_so": 30000000, "acc_rata_rata_omzet": 0})["target_final_level"] == "ASM"
     assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Classic", "total_so": 50000000, "acc_rata_rata_omzet": 0})["target_final_level"] == "NSM"
     assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Royal Foam", "total_so": 100000000, "acc_rata_rata_omzet": 0})["target_final_level"] == "GM"
     assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Lady Americana", "total_so": 5000000, "acc_rata_rata_omzet": 20000000})["target_final_level"] == "ASM"
-    assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Lady Americana", "total_so": 8000000, "acc_rata_rata_omzet": 20000000})["target_final_level"] == "NSM"
-    assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Lady Americana", "total_so": 15000000, "acc_rata_rata_omzet": 20000000})["target_final_level"] == "GM"
+    assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Lady Americana", "total_so": 10000000, "acc_rata_rata_omzet": 30000000})["target_final_level"] == "NSM"
+    assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Lady Americana", "total_so": 10000001, "acc_rata_rata_omzet": 30000000})["target_final_level"] == "GM"
     assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Elite Springbed", "total_so": 5000000, "acc_rata_rata_omzet": 40000000})["target_final_level"] == "ASM"
     assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Elite Springbed", "total_so": 8000000, "acc_rata_rata_omzet": 40000000})["target_final_level"] == "NSM"
-    assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Elite Springbed", "total_so": 10000000, "acc_rata_rata_omzet": 40000000})["target_final_level"] == "GM"
+    assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Elite Springbed", "total_so": 10000000, "acc_rata_rata_omzet": 40000000})["target_final_level"] == "NSM"
+    assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Elite Springbed", "total_so": 10000001, "acc_rata_rata_omzet": 40000000})["target_final_level"] == "GM"
     assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Serenity", "total_so": 25000000, "acc_rata_rata_omzet": 50000000})["target_final_level"] == "ASM"
     assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Serenity", "total_so": 50000000, "acc_rata_rata_omzet": 50000000})["target_final_level"] == "NSM"
     assert evaluate_rcl_approval_matrix({"jenis_hold": "C1", "brand": "Serenity", "total_so": 75000000, "acc_rata_rata_omzet": 50000000})["target_final_level"] == "GM"

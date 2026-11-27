@@ -184,7 +184,7 @@
           {% endif %}
 
           {% with pdf=submission.form_definition.pdf_generation %}
-            {% if pdf != 'none' %}
+            {% if pdf and pdf != 'none' and submission.form_definition.slug != 'release-credit-limit' %}
               <a href="{% url 'forms_workflows:submission_pdf' submission.id %}SPK_Submission_{{ submission.id }}.pdf" target="_blank" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1.5" style="white-space: nowrap;" title="Buka dokumen PDF di tab baru">
                 <i class="bi bi-file-earmark-pdf-fill text-danger"></i>
                 <span>PDF</span>

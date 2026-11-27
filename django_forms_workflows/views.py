@@ -390,9 +390,14 @@ def _process_release_credit_limit_data(form_data, submission_pk, request, is_sub
             form_data["no_pengajuan"] = no_gen
             form_data["nomor_pengajuan"] = no_gen
 
+    raw_nomor = str(form_data.get("nomor_so") or "").strip()
+    if raw_nomor:
+        nomor_digits = _re.sub(r"[^\d]", "", raw_nomor)
+        form_data["nomor_so"] = nomor_digits
+
     raw_total = str(form_data.get("total_so") or "").strip()
-    digits = _re.sub(r"[^\d]", "", raw_total)
-    if digits:
+    if raw_total:
+        digits = _re.sub(r"[^\d]", "", raw_total)
         form_data["total_so"] = digits
 
     raw_lampiran = form_data.get("lampiran_dokumen")
@@ -1550,6 +1555,12 @@ def form_auto_save(request, slug):
                         perusahaan=perusahaan,
                     )
 
+        elif form_def.slug == "release-credit-limit":
+            import re as _re_rcl
+            for numeric_key in ("nomor_so", "total_so"):
+                if numeric_key in data and data[numeric_key] is not None:
+                    data[numeric_key] = _re_rcl.sub(r"[^\d]", "", str(data[numeric_key]))
+
         draft.form_data = data
         draft.submission_ip = get_client_ip(request)
         draft.user_agent = request.META.get("HTTP_USER_AGENT", "")
@@ -2452,10 +2463,14 @@ def submission_detail(request, submission_id):
     # post_approval forms even before the submission is fully approved.
     form_def = submission.form_definition
     can_approve_pdf = (
-        request.user.is_superuser
-        or user_can_approve(request.user, submission)
-        or request.user.groups.filter(id__in=form_def.admin_groups.all()).exists()
-        or is_reviewer
+        form_def.pdf_generation != "none"
+        and form_def.slug != "release-credit-limit"
+        and (
+            request.user.is_superuser
+            or user_can_approve(request.user, submission)
+            or request.user.groups.filter(id__in=form_def.admin_groups.all()).exists()
+            or is_reviewer
+        )
     )
 
     # Privacy: hide approval history from the submitter when configured.
@@ -2474,6 +2489,12 @@ def submission_detail(request, submission_id):
 
     active_tasks_count = sum(1 for t in approval_tasks if t.status != "skipped")
     skipped_tasks_count = sum(1 for t in approval_tasks if t.status == "skipped")
+
+    rcl_ctx = None
+    if form_def and form_def.slug == "release-credit-limit":
+        from .services.release_credit_limit_workflow import get_rcl_review_context
+
+        rcl_ctx = get_rcl_review_context(request.user, submission, form_data)
 
     # Build linear approval stages for visual stepper tracking in submission_detail
     approval_stages = []
@@ -2499,7 +2520,11 @@ def submission_detail(request, submission_id):
 
             rcl_target_level = ""
             if form_def and form_def.slug == "release-credit-limit":
-                rcl_target_level = str(form_data.get("rcl_target_final_level") or "").strip().upper()
+                rcl_target_level = str(
+                    (rcl_ctx or {}).get("matrix", {}).get("target_final_level")
+                    or form_data.get("rcl_target_final_level")
+                    or ""
+                ).strip().upper()
 
             for i, stage in enumerate(stages, start=1):
                 stage_tasks = tasks_by_stage.get(stage.id, [])
@@ -2526,12 +2551,6 @@ def submission_detail(request, submission_id):
                         "total_count": len(stage_tasks),
                     }
                 )
-
-    rcl_ctx = None
-    if form_def and form_def.slug == "release-credit-limit":
-        from .services.release_credit_limit_workflow import get_rcl_review_context
-
-        rcl_ctx = get_rcl_review_context(request.user, submission, form_data)
 
     audit_history_rows = (
         rcl_ctx["history_rows"]
@@ -2617,6 +2636,7 @@ def release_credit_limit_evaluate_matrix(request):
         {
             "jenis_hold": request.GET.get("jenis_hold", "C1"),
             "brand": request.GET.get("brand", ""),
+            "acc_jenis_produk": request.GET.get("jenis_produk", ""),
             "total_so": request.GET.get("total_so", 0),
             "acc_rata_rata_omzet": request.GET.get("rata_rata_omzet", 0),
         }
@@ -2646,7 +2666,9 @@ def release_credit_limit_review_action(request, submission_id):
         STAGE_GM,
         STAGE_NSM,
         evaluate_rcl_approval_matrix,
+        get_allowed_jenis_produk_for_jenis_so,
         get_pending_rcl_task,
+        normalize_acc_jenis_produk,
         parse_rupiah_amount,
         user_can_act_on_rcl_task,
     )
@@ -2686,6 +2708,21 @@ def release_credit_limit_review_action(request, submission_id):
             raw_val = (request.POST.get(key) or "").strip()
             if raw_val != "":
                 fd[key] = parse_rupiah_amount(raw_val)
+
+        allowed_jp = get_allowed_jenis_produk_for_jenis_so(fd.get("jenis_so"))
+        raw_jp = (request.POST.get("acc_jenis_produk") or "").strip()
+        if raw_jp:
+            norm_jp = normalize_acc_jenis_produk(raw_jp)
+            if not norm_jp or norm_jp not in allowed_jp:
+                messages.error(
+                    request,
+                    f"Jenis Produk '{raw_jp}' tidak valid untuk Jenis SO '{fd.get('jenis_so') or '—'}'. Pilihan yang diizinkan: {', '.join(allowed_jp)}.",
+                )
+                return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+            fd["acc_jenis_produk"] = norm_jp
+        elif "acc_jenis_produk" in request.POST:
+            fd["acc_jenis_produk"] = ""
+
         submission.form_data = fd
         submission.save(update_fields=["form_data"])
 
@@ -2695,7 +2732,11 @@ def release_credit_limit_review_action(request, submission_id):
             object_id=submission.id,
             user=request.user,
             user_ip=get_client_ip(request),
-            changes={"accounting_draft_saved": True, "stage": "Review Accounting Cabang"},
+            changes={
+                "accounting_draft_saved": True,
+                "stage": "Review Accounting Cabang",
+                "jenis_produk": fd.get("acc_jenis_produk") or "",
+            },
         )
         messages.success(request, "Draft informasi credit Accounting Cabang berhasil disimpan.")
         return redirect("forms_workflows:submission_detail", submission_id=submission.id)
@@ -2778,13 +2819,27 @@ def release_credit_limit_review_action(request, submission_id):
             else:
                 fd[key] = parse_rupiah_amount(raw_val)
 
+        allowed_jp = get_allowed_jenis_produk_for_jenis_so(fd.get("jenis_so"))
+        raw_jp = (request.POST.get("acc_jenis_produk") or "").strip()
+        norm_jp = normalize_acc_jenis_produk(raw_jp)
+        if not raw_jp:
+            missing_labels.append("Jenis Produk")
+
         if missing_labels:
             messages.error(
                 request,
-                f"Seluruh 5 informasi credit Accounting Cabang wajib diisi: {', '.join(missing_labels)}.",
+                f"Seluruh informasi credit Accounting Cabang wajib diisi: {', '.join(missing_labels)}.",
             )
             return redirect("forms_workflows:submission_detail", submission_id=submission.id)
 
+        if not norm_jp or norm_jp not in allowed_jp:
+            messages.error(
+                request,
+                f"Jenis Produk '{raw_jp}' tidak valid untuk Jenis SO '{fd.get('jenis_so') or '—'}'. Pilihan yang diizinkan: {', '.join(allowed_jp)}.",
+            )
+            return redirect("forms_workflows:submission_detail", submission_id=submission.id)
+
+        fd["acc_jenis_produk"] = norm_jp
         fd["acc_reviewed_by"] = request.user.get_full_name() or request.user.username
         fd["acc_reviewed_at"] = timezone.now().strftime("%d %b %Y, %H:%M WIB")
 
@@ -2816,6 +2871,7 @@ def release_credit_limit_review_action(request, submission_id):
             changes={
                 "task_id": pending_task.id,
                 "stage": "Review Accounting Cabang",
+                "jenis_produk": norm_jp,
                 "target_final_level": matrix["target_final_level"],
                 "matrix_reason": matrix["matrix_reason"],
             },
