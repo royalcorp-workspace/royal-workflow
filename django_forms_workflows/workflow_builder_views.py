@@ -142,8 +142,27 @@ def _serialize_stage_approval_groups(stage):
             "name": sag.group.name,
             "position": sag.position,
             "role": sag.role,
+            "user_ids": list(sag.users.values_list("id", flat=True)),
+            "users": [
+                {
+                    "id": u.id,
+                    "username": u.username,
+                    "name": u.get_full_name() or u.username,
+                    "email": u.email,
+                }
+                for u in sag.users.filter(is_active=True)
+            ],
+            "all_group_users": [
+                {
+                    "id": u.id,
+                    "username": u.username,
+                    "name": u.get_full_name() or u.username,
+                    "email": u.email,
+                }
+                for u in sag.group.user_set.filter(is_active=True).order_by("username")
+            ],
         }
-        for sag in stage.stageapprovalgroup_set.select_related("group").order_by(
+        for sag in stage.stageapprovalgroup_set.select_related("group").prefetch_related("users").order_by(
             "role", "position", "group__name"
         )
     ]
@@ -528,6 +547,15 @@ def workflow_builder_load(request, form_id):
             {
                 "id": group.id,
                 "name": group.name,
+                "users": [
+                    {
+                        "id": u.id,
+                        "username": u.username,
+                        "name": u.get_full_name() or u.username,
+                        "email": u.email,
+                    }
+                    for u in group.user_set.filter(is_active=True).order_by("username")
+                ],
             }
         )
 
@@ -1253,12 +1281,15 @@ def convert_visual_to_workflow(workflow_data, form_definition, workflow=None):
             key=lambda g: g.get("position", 0),
         )
         for pos, group_entry in enumerate(sorted_group_entries):
-            StageApprovalGroup.objects.create(
+            sag = StageApprovalGroup.objects.create(
                 stage=stage,
                 group_id=group_entry["id"],
                 position=group_entry.get("position", pos),
                 role=group_entry.get("role", "approval"),
             )
+            uids = group_entry.get("user_ids") or []
+            if uids:
+                sag.users.set(uids)
 
         stage_node_map[snode.get("id")] = stage
         stage_field_map[stage.id] = _resolve_form_field_ids(

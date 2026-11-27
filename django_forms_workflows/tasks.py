@@ -1342,47 +1342,66 @@ def _collect_notification_recipients(
             # Step 3 — only role="approval" rows on those stages count.
             # If the dispatch is for a specific task with an assigned_group,
             # narrow strictly to that task's group to prevent cross-group duplicate blasts.
+            sag_qs = StageApprovalGroup.objects.filter(
+                stage_id__in=effective_stage_ids, role="approval"
+            ).prefetch_related("users", "group")
             if task and getattr(task, "assigned_group_id", None):
-                target_group_ids = [task.assigned_group_id]
-            else:
-                target_group_ids = list(
-                    StageApprovalGroup.objects.filter(
-                        stage_id__in=effective_stage_ids, role="approval"
-                    ).values_list("group_id", flat=True)
-                )
+                sag_qs = sag_qs.filter(group_id=task.assigned_group_id)
 
-            if target_group_ids:
-                from django.contrib.auth.models import Group
-                from .services.branch_resolver import is_user_eligible_for_submission
+            handled_explicit_users = False
+            for sag in sag_qs:
+                explicit_users = list(sag.users.filter(is_active=True).exclude(email=""))
+                if explicit_users:
+                    handled_explicit_users = True
+                    for u in explicit_users:
+                        if (
+                            submission
+                            and submission.submitter_id
+                            and u.id == submission.submitter_id
+                            and getattr(notif, "event", "") in ("approval_request", "approval_reminder")
+                            and not getattr(notif, "notify_submitter", False)
+                        ):
+                            continue
+                        _add(u.email)
 
-                groups_map = {g.id: g for g in Group.objects.filter(id__in=target_group_ids)}
-                candidate_users = (
-                    user_model.objects.filter(groups__id__in=target_group_ids)
-                    .exclude(email="")
-                    .select_related("employee_profile")
-                    .prefetch_related("groups")
-                    .distinct()
-                )
-                for u in candidate_users:
-                    # Do not send approval request/reminder to the submitter themselves
-                    if (
-                        submission
-                        and submission.submitter_id
-                        and u.id == submission.submitter_id
-                        and getattr(notif, "event", "") in ("approval_request", "approval_reminder")
-                        and not getattr(notif, "notify_submitter", False)
-                    ):
-                        continue
+            if not handled_explicit_users:
+                if task and getattr(task, "assigned_group_id", None):
+                    target_group_ids = [task.assigned_group_id]
+                else:
+                    target_group_ids = list(sag_qs.values_list("group_id", flat=True))
 
-                    user_group_objs = [
-                        groups_map[gid]
-                        for gid in target_group_ids
-                        if u.groups.filter(id=gid).exists()
-                    ]
-                    for grp in user_group_objs:
-                        if is_user_eligible_for_submission(u, grp, submission, form_data):
-                            _add(u.email)
-                            break
+                if target_group_ids:
+                    from django.contrib.auth.models import Group
+                    from .services.branch_resolver import is_user_eligible_for_submission
+
+                    groups_map = {g.id: g for g in Group.objects.filter(id__in=target_group_ids)}
+                    candidate_users = (
+                        user_model.objects.filter(groups__id__in=target_group_ids)
+                        .exclude(email="")
+                        .select_related("employee_profile")
+                        .prefetch_related("groups")
+                        .distinct()
+                    )
+                    for u in candidate_users:
+                        # Do not send approval request/reminder to the submitter themselves
+                        if (
+                            submission
+                            and submission.submitter_id
+                            and u.id == submission.submitter_id
+                            and getattr(notif, "event", "") in ("approval_request", "approval_reminder")
+                            and not getattr(notif, "notify_submitter", False)
+                        ):
+                            continue
+
+                        user_group_objs = [
+                            groups_map[gid]
+                            for gid in target_group_ids
+                            if u.groups.filter(id=gid).exists()
+                        ]
+                        for grp in user_group_objs:
+                            if is_user_eligible_for_submission(u, grp, submission, form_data):
+                                _add(u.email)
+                                break
 
     # 6. Explicit notify_groups M2M (NotificationRule only)
     if hasattr(notif, "notify_groups"):

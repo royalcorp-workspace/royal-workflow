@@ -991,37 +991,79 @@ def _create_stage_tasks(
     if not groups:
         return  # caller responsible for advancing/finalizing if stage has no tasks
 
+    sags = {
+        sag.group_id: sag
+        for sag in stage.stageapprovalgroup_set.filter(role="approval").prefetch_related("users")
+    }
+
     if stage.approval_logic == "sequence":
         g = groups[0]
-        task = ApprovalTask.objects.create(
-            submission=submission,
-            assigned_group=g,
-            workflow_stage=stage,
-            stage_number=stage_num,
-            step_name=f"Stage {stage_num} (Step 1 of {len(groups)})",
-            step_number=1,
-            status="pending",
-            due_date=due_date,
-        )
-        _notify_task_request(task)
-        ensure_signing_token_for_stage(submission, stage, task)
-    else:
-        # "all" or "any" → parallel tasks for every group in this stage
-        first_task = None
-        for g in groups:
+        sag = sags.get(g.id)
+        specific_users = list(sag.users.filter(is_active=True)) if sag else []
+        if specific_users:
+            for u in specific_users:
+                task = ApprovalTask.objects.create(
+                    submission=submission,
+                    assigned_to=u,
+                    assigned_group=g,
+                    workflow_stage=stage,
+                    stage_number=stage_num,
+                    step_name=f"Stage {stage_num} (Step 1 of {len(groups)})",
+                    step_number=1,
+                    status="pending",
+                    due_date=due_date,
+                )
+                _notify_task_request(task)
+                ensure_signing_token_for_stage(submission, stage, task)
+        else:
             task = ApprovalTask.objects.create(
                 submission=submission,
                 assigned_group=g,
                 workflow_stage=stage,
                 stage_number=stage_num,
-                step_name=f"Stage {stage_num}",
+                step_name=f"Stage {stage_num} (Step 1 of {len(groups)})",
+                step_number=1,
                 status="pending",
                 due_date=due_date,
             )
             _notify_task_request(task)
-            if first_task is None:
-                first_task = task
-        ensure_signing_token_for_stage(submission, stage, first_task)
+            ensure_signing_token_for_stage(submission, stage, task)
+    else:
+        # "all" or "any" → parallel tasks for every group in this stage
+        first_task = None
+        for g in groups:
+            sag = sags.get(g.id)
+            specific_users = list(sag.users.filter(is_active=True)) if sag else []
+            if specific_users:
+                for u in specific_users:
+                    task = ApprovalTask.objects.create(
+                        submission=submission,
+                        assigned_to=u,
+                        assigned_group=g,
+                        workflow_stage=stage,
+                        stage_number=stage_num,
+                        step_name=f"Stage {stage_num}",
+                        status="pending",
+                        due_date=due_date,
+                    )
+                    _notify_task_request(task)
+                    if first_task is None:
+                        first_task = task
+            else:
+                task = ApprovalTask.objects.create(
+                    submission=submission,
+                    assigned_group=g,
+                    workflow_stage=stage,
+                    stage_number=stage_num,
+                    step_name=f"Stage {stage_num}",
+                    status="pending",
+                    due_date=due_date,
+                )
+                _notify_task_request(task)
+                if first_task is None:
+                    first_task = task
+        if first_task:
+            ensure_signing_token_for_stage(submission, stage, first_task)
 
 
 def _start_deferred_workflows(submission: FormSubmission) -> bool:
@@ -1359,31 +1401,69 @@ def handle_approval(
                     submission, workflow, stages, stage.order, due_date
                 )
                 return
+            sags = {
+                sag.group_id: sag
+                for sag in stage.stageapprovalgroup_set.filter(role="approval").prefetch_related("users")
+            }
+
             if stage.approval_logic == "sequence":
                 g = groups[0]
-                new_task = ApprovalTask.objects.create(
-                    submission=submission,
-                    assigned_group=g,
-                    workflow_stage=stage,
-                    stage_number=stage.order,
-                    step_name=f"Stage {stage.order} (Step 1 of {len(groups)})",
-                    step_number=1,
-                    status="pending",
-                    due_date=due_date,
-                )
-                _notify_task_request(new_task)
-            else:
-                for g in groups:
+                sag = sags.get(g.id)
+                specific_users = list(sag.users.filter(is_active=True)) if sag else []
+                if specific_users:
+                    for u in specific_users:
+                        new_task = ApprovalTask.objects.create(
+                            submission=submission,
+                            assigned_to=u,
+                            assigned_group=g,
+                            workflow_stage=stage,
+                            stage_number=stage.order,
+                            step_name=f"Stage {stage.order} (Step 1 of {len(groups)})",
+                            step_number=1,
+                            status="pending",
+                            due_date=due_date,
+                        )
+                        _notify_task_request(new_task)
+                else:
                     new_task = ApprovalTask.objects.create(
                         submission=submission,
                         assigned_group=g,
                         workflow_stage=stage,
                         stage_number=stage.order,
-                        step_name=f"Stage {stage.order}",
+                        step_name=f"Stage {stage.order} (Step 1 of {len(groups)})",
+                        step_number=1,
                         status="pending",
                         due_date=due_date,
                     )
                     _notify_task_request(new_task)
+            else:
+                for g in groups:
+                    sag = sags.get(g.id)
+                    specific_users = list(sag.users.filter(is_active=True)) if sag else []
+                    if specific_users:
+                        for u in specific_users:
+                            new_task = ApprovalTask.objects.create(
+                                submission=submission,
+                                assigned_to=u,
+                                assigned_group=g,
+                                workflow_stage=stage,
+                                stage_number=stage.order,
+                                step_name=f"Stage {stage.order}",
+                                status="pending",
+                                due_date=due_date,
+                            )
+                            _notify_task_request(new_task)
+                    else:
+                        new_task = ApprovalTask.objects.create(
+                            submission=submission,
+                            assigned_group=g,
+                            workflow_stage=stage,
+                            stage_number=stage.order,
+                            step_name=f"Stage {stage.order}",
+                            status="pending",
+                            due_date=due_date,
+                        )
+                        _notify_task_request(new_task)
             return
 
         logic = stage.approval_logic

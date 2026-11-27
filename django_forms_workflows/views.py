@@ -1643,7 +1643,7 @@ def _filter_tasks_for_user_scope(tasks_qs, user):
         | models.Q(completed_by=user)
         | models.Q(id__in=delegated_ids)
         | (
-            models.Q(assigned_group__in=user_groups)
+            models.Q(assigned_group__in=user_groups, assigned_to__isnull=True)
             & models.Q(
                 workflow_stage__stageapprovalgroup__group__in=user_groups,
                 workflow_stage__stageapprovalgroup__role="approval",
@@ -1664,6 +1664,8 @@ def _filter_tasks_for_user_scope(tasks_qs, user):
     ):
         if t.assigned_to_id == user.id or t.completed_by_id == user.id or t.id in delegated_id_set:
             allowed_ids.append(t.id)
+            continue
+        if t.assigned_to_id is not None:
             continue
         grp_name = t.assigned_group.name if t.assigned_group else ""
         if grp_name and _is_branch_scoped_role_name(grp_name):

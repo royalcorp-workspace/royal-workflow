@@ -2017,6 +2017,15 @@ class StageApprovalGroup(models.Model):
         Group,
         on_delete=models.CASCADE,
     )
+    users = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name="stage_approval_groups",
+        help_text=(
+            "Spesifik user penerima notifikasi email & penugasan tugas untuk peran ini. "
+            "Jika kosong, seluruh anggota grup yang memenuhi syarat akan menerima email."
+        ),
+    )
     position = models.PositiveIntegerField(
         default=0,
         help_text="Order in which this group is processed (lower = first)",

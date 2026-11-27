@@ -54,20 +54,9 @@ class Command(BaseCommand):
         group_atasan_cabang, _ = Group.objects.get_or_create(name="Atasan Cabang (Manager Cabang)")
         group_pic_pusat, _ = Group.objects.get_or_create(name="PIC Pusat (Operasional & Umum)")
         group_atasan_pic, _ = Group.objects.get_or_create(name="Atasan PIC Pusat (Head of Division)")
+        group_gm_pusat, _ = Group.objects.get_or_create(name="General Manager Sales")
         group_finance_transfer, _ = Group.objects.get_or_create(name="Finance (Transfer & Pencairan)")
         group_finance_closing, _ = Group.objects.get_or_create(name="Finance (Verifikasi Realisasi Closing)")
-
-        # Assign user admin ke seluruh grup agar siap digunakan untuk peninjauan di inbox
-        admin_user = User.objects.filter(username="admin").first()
-        if admin_user:
-            admin_user.groups.add(
-                group_maker,
-                group_atasan_cabang,
-                group_pic_pusat,
-                group_atasan_pic,
-                group_finance_transfer,
-                group_finance_closing,
-            )
 
         # 1.b Akun Pengujian Per-Peran & Hierarki HRMS (Dedicated Role-Based Testing Accounts)
         default_pwd = "Bandung*123#"
@@ -288,46 +277,29 @@ class Command(BaseCommand):
         # 1. Review Pengajuan oleh ASM (Role: ASM) - Atasan Langsung
         # 2. Review Pengajuan oleh PIC Pusat (Role: PIC Pusat) - Keputusan Manual/Digital
         # 3. Review Pengajuan oleh GM Pusat (Role: GM Pusat) - Digital / TTD Manual
-        # 4. Review Pengajuan & Transfer Dana (Role: Finance) - Transfer Dana Berhasil/Gagal
+        # 4. Review Pengajuan & Transfer Dana (Role: Finance Cabang) - Transfer Dana Berhasil/Gagal
         # 5. Input No. PPVM & Laporan Realisasi (Role: Pemohon) - Realisasi JDE & Nota
-        # 6. Pencocokan PPVM & Approval Realisasi (Role: Finance) - Pencocokan PPVM JDE & Closing
-        group_asm_list = [
-            Group.objects.get_or_create(name="Sales Area Manager")[0],
-            Group.objects.get_or_create(name="Manager Cabang & Atasan Langsung")[0],
-            Group.objects.get_or_create(name="Atasan Cabang (Manager Cabang)")[0],
-        ]
-        group_pic_pusat_list = [
-            Group.objects.get_or_create(name="PIC Pusat (Operasional & Umum)")[0],
-            Group.objects.get_or_create(name="PIC Operasional & Umum Pusat")[0],
-        ]
-        group_gm_pusat_list = [
-            Group.objects.get_or_create(name="General Manager Sales")[0],
-            Group.objects.get_or_create(name="Atasan PIC Pusat (Head of Division)")[0],
-        ]
-        group_finance_transfer_list = [
-            Group.objects.get_or_create(name="Finance (Transfer & Pencairan)")[0],
-            Group.objects.get_or_create(name="Finance Team")[0],
-        ]
-        group_maker_list = [
-            Group.objects.get_or_create(name="Kasir Cabang (Pemohon)")[0],
-        ]
-        group_finance_closing_list = [
-            Group.objects.get_or_create(name="Finance (Verifikasi Realisasi Closing)")[0],
-            Group.objects.get_or_create(name="Finance Team")[0],
-        ]
+        # 6. Pencocokan PPVM & Approval Realisasi (Role: Finance Pusat) - Pencocokan PPVM JDE & Closing
+        u_mgr = created_user_objs.get("atasan.cabang")
+        u_pic = created_user_objs.get("pic.pusat")
+        u_gm = created_user_objs.get("head.division")
+        u_fin_ops = created_user_objs.get("finance.ops")
+        u_kasir = created_user_objs.get("kasir.cabang")
+        u_real_gm = User.objects.filter(username="general.manager").first() or u_gm
+        u_real_fin = User.objects.filter(username="approver.finance").first() or u_fin_ops
 
         stages_config = [
-            (1, "Review Pengajuan oleh ASM", group_asm_list),
-            (2, "Review Pengajuan oleh PIC Pusat", group_pic_pusat_list),
-            (3, "Review Pengajuan oleh GM Pusat", group_gm_pusat_list),
-            (4, "Review Pengajuan & Transfer Dana (Finance)", group_finance_transfer_list),
-            (5, "Input No. PPVM & Laporan Realisasi (Pemohon)", group_maker_list),
-            (6, "Pencocokan PPVM & Approval Realisasi (Finance)", group_finance_closing_list),
+            (1, "Review Pengajuan oleh ASM", group_atasan_cabang, [u_mgr] if u_mgr else []),
+            (2, "Review Pengajuan oleh PIC Pusat", group_pic_pusat, [u_pic, u_gm] if (u_pic and u_gm) else ([u_pic] if u_pic else [])),
+            (3, "Review Pengajuan oleh GM Pusat", group_gm_pusat, [u_real_gm] if u_real_gm else []),
+            (4, "Review Pengajuan & Transfer Dana (Finance Cabang)", group_finance_transfer, [u_fin_ops] if u_fin_ops else []),
+            (5, "Input No. PPVM & Laporan Realisasi (Pemohon)", group_maker, [u_kasir] if u_kasir else []),
+            (6, "Pencocokan PPVM & Approval Realisasi (Finance Pusat)", group_finance_closing, [u_real_fin] if u_real_fin else []),
         ]
 
         created_stages = []
         stages_by_order = {}
-        for order, stage_name, groups in stages_config:
+        for order, stage_name, grp, stage_users in stages_config:
             stage, _ = WorkflowStage.objects.get_or_create(
                 workflow=workflow,
                 order=order,
@@ -349,17 +321,18 @@ class Command(BaseCommand):
             stage.save()
             # Clear old stage approval groups to ensure sync
             stage.stageapprovalgroup_set.all().delete()
-            for pos, g in enumerate(groups, start=1):
-                StageApprovalGroup.objects.create(
-                    stage=stage,
-                    group=g,
-                    role="approval",
-                    position=pos,
-                )
+            sag = StageApprovalGroup.objects.create(
+                stage=stage,
+                group=grp,
+                role="approval",
+                position=1,
+            )
+            if stage_users:
+                sag.users.set(stage_users)
             created_stages.append(stage)
             stages_by_order[order] = stage
 
-        self.stdout.write("Configured 6-Stage Approval Workflow (ASM -> PIC Pusat -> GM Pusat -> Finance Transfer -> Realisasi & PPVM Kasir -> Pencocokan PPVM Finance).")
+        self.stdout.write("Configured 6-Stage Approval Workflow with dedicated roles & users (ASM -> PIC GM -> GM -> Finance Cabang -> Realisasi Pemohon -> Finance Pusat).")
 
         # 5. Form Fields Specification (Restructured into 5 Explicit Sections per Requirements)
         field_specs = [
@@ -748,8 +721,8 @@ class Command(BaseCommand):
           <td class="info-value" style="color: #1e3a8a; font-size: 15px; font-weight: 700;">Rp {{{{ form_data.total_nominal|default:"0" }}}}</td>
         </tr>
         <tr>
-          <td class="info-label">Kategori Barang</td>
-          <td class="info-value">{{{{ form_data.kategori_barang|default:form_data.kategori_biaya|default:"ATK" }}}} (PIC: {{{{ form_data.pic|default:form_data.nama_pic|default:"General Affair" }}}})</td>
+          <td class="info-label">Kategori Biaya</td>
+          <td class="info-value">{{{{ form_data.kategori_biaya|default:"Operasional & Umum" }}}}</td>
         </tr>
         <tr>
           <td class="info-label">Cabang</td>
@@ -757,11 +730,11 @@ class Command(BaseCommand):
         </tr>
         <tr>
           <td class="info-label">Metode Pembayaran</td>
-          <td class="info-value">{{{{ form_data.metode_pembayaran|default:form_data.metode_pencairan|default:"Transfer Rekening Bank" }}}} ({{{{ form_data.nama_bank|default:"-" }}}}: {{{{ form_data.nomor_rekening|default:"-" }}}})</td>
+          <td class="info-value">{{{{ form_data.metode_pembayaran|default:"Transfer Rekening Bank" }}}} ({{{{ form_data.nama_bank|default:"-" }}}}: {{{{ form_data.nomor_rekening|default:"-" }}}})</td>
         </tr>
         <tr>
           <td class="info-label">Catatan Pengajuan</td>
-          <td class="info-value">{{{{ form_data.catatan_pengajuan|default:form_data.catatan_justifikasi|default:"-" }}}}</td>
+          <td class="info-value">{{{{ form_data.catatan_pengajuan|default:"-" }}}}</td>
         </tr>
       </table>
 
