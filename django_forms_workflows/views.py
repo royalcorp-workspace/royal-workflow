@@ -390,9 +390,14 @@ def _process_release_credit_limit_data(form_data, submission_pk, request, is_sub
             form_data["no_pengajuan"] = no_gen
             form_data["nomor_pengajuan"] = no_gen
 
+    raw_nomor = str(form_data.get("nomor_so") or "").strip()
+    if raw_nomor:
+        nomor_digits = _re.sub(r"[^\d]", "", raw_nomor)
+        form_data["nomor_so"] = nomor_digits
+
     raw_total = str(form_data.get("total_so") or "").strip()
-    digits = _re.sub(r"[^\d]", "", raw_total)
-    if digits:
+    if raw_total:
+        digits = _re.sub(r"[^\d]", "", raw_total)
         form_data["total_so"] = digits
 
     raw_lampiran = form_data.get("lampiran_dokumen")
@@ -1550,6 +1555,12 @@ def form_auto_save(request, slug):
                         perusahaan=perusahaan,
                     )
 
+        elif form_def.slug == "release-credit-limit":
+            import re as _re_rcl
+            for numeric_key in ("nomor_so", "total_so"):
+                if numeric_key in data and data[numeric_key] is not None:
+                    data[numeric_key] = _re_rcl.sub(r"[^\d]", "", str(data[numeric_key]))
+
         draft.form_data = data
         draft.submission_ip = get_client_ip(request)
         draft.user_agent = request.META.get("HTTP_USER_AGENT", "")
@@ -2450,10 +2461,14 @@ def submission_detail(request, submission_id):
     # post_approval forms even before the submission is fully approved.
     form_def = submission.form_definition
     can_approve_pdf = (
-        request.user.is_superuser
-        or user_can_approve(request.user, submission)
-        or request.user.groups.filter(id__in=form_def.admin_groups.all()).exists()
-        or is_reviewer
+        form_def.pdf_generation != "none"
+        and form_def.slug != "release-credit-limit"
+        and (
+            request.user.is_superuser
+            or user_can_approve(request.user, submission)
+            or request.user.groups.filter(id__in=form_def.admin_groups.all()).exists()
+            or is_reviewer
+        )
     )
 
     # Privacy: hide approval history from the submitter when configured.
@@ -2472,6 +2487,12 @@ def submission_detail(request, submission_id):
 
     active_tasks_count = sum(1 for t in approval_tasks if t.status != "skipped")
     skipped_tasks_count = sum(1 for t in approval_tasks if t.status == "skipped")
+
+    rcl_ctx = None
+    if form_def and form_def.slug == "release-credit-limit":
+        from .services.release_credit_limit_workflow import get_rcl_review_context
+
+        rcl_ctx = get_rcl_review_context(request.user, submission, form_data)
 
     # Build linear approval stages for visual stepper tracking in submission_detail
     approval_stages = []
@@ -2497,7 +2518,11 @@ def submission_detail(request, submission_id):
 
             rcl_target_level = ""
             if form_def and form_def.slug == "release-credit-limit":
-                rcl_target_level = str(form_data.get("rcl_target_final_level") or "").strip().upper()
+                rcl_target_level = str(
+                    (rcl_ctx or {}).get("matrix", {}).get("target_final_level")
+                    or form_data.get("rcl_target_final_level")
+                    or ""
+                ).strip().upper()
 
             for i, stage in enumerate(stages, start=1):
                 stage_tasks = tasks_by_stage.get(stage.id, [])
@@ -2524,12 +2549,6 @@ def submission_detail(request, submission_id):
                         "total_count": len(stage_tasks),
                     }
                 )
-
-    rcl_ctx = None
-    if form_def and form_def.slug == "release-credit-limit":
-        from .services.release_credit_limit_workflow import get_rcl_review_context
-
-        rcl_ctx = get_rcl_review_context(request.user, submission, form_data)
 
     audit_history_rows = (
         rcl_ctx["history_rows"]

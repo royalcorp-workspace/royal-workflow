@@ -114,20 +114,20 @@ def evaluate_rcl_approval_matrix(form_data: Optional[dict]) -> dict:
                 reason = "C1 Non-Foam (Omzet <= Rp 30 Jt, Total SO <= Rp 5 Jt) berhenti di ASM / BM."
             elif total_so <= 10_000_000:
                 target_level = "NSM"
-                reason = "C1 Non-Foam (Omzet <= Rp 30 Jt, Total SO Rp 5-10 Jt) sampai NSM."
+                reason = "C1 Non-Foam (Omzet <= Rp 30 Jt, Total SO > Rp 5 Jt s.d. <= Rp 10 Jt) sampai NSM."
             else:
                 target_level = "GM"
                 reason = "C1 Non-Foam (Omzet <= Rp 30 Jt, Total SO > Rp 10 Jt) wajib hingga GM."
         elif omzet < 50_000_000:
             if total_so <= 5_000_000:
                 target_level = "ASM"
-                reason = "C1 Non-Foam (Omzet Rp 30-50 Jt, Total SO <= Rp 5 Jt) berhenti di ASM / BM."
-            elif total_so < 10_000_000:
+                reason = "C1 Non-Foam (Omzet > Rp 30 Jt s.d. < Rp 50 Jt, Total SO <= Rp 5 Jt) berhenti di ASM / BM."
+            elif total_so <= 10_000_000:
                 target_level = "NSM"
-                reason = "C1 Non-Foam (Omzet Rp 30-50 Jt, Total SO Rp 5-10 Jt) sampai NSM."
+                reason = "C1 Non-Foam (Omzet > Rp 30 Jt s.d. < Rp 50 Jt, Total SO > Rp 5 Jt s.d. <= Rp 10 Jt) sampai NSM."
             else:
                 target_level = "GM"
-                reason = "C1 Non-Foam (Omzet Rp 30-50 Jt, Total SO >= Rp 10 Jt) wajib hingga GM."
+                reason = "C1 Non-Foam (Omzet > Rp 30 Jt s.d. < Rp 50 Jt, Total SO > Rp 10 Jt) wajib hingga GM."
         else:
             # omzet >= 50_000_000
             if total_so <= 25_000_000:
@@ -135,7 +135,7 @@ def evaluate_rcl_approval_matrix(form_data: Optional[dict]) -> dict:
                 reason = "C1 Non-Foam (Omzet >= Rp 50 Jt, Total SO <= Rp 25 Jt) berhenti di ASM / BM."
             elif total_so < 75_000_000:
                 target_level = "NSM"
-                reason = "C1 Non-Foam (Omzet >= Rp 50 Jt, Total SO Rp 25-75 Jt) sampai NSM."
+                reason = "C1 Non-Foam (Omzet >= Rp 50 Jt, Total SO > Rp 25 Jt s.d. < Rp 75 Jt) sampai NSM."
             else:
                 target_level = "GM"
                 reason = "C1 Non-Foam (Omzet >= Rp 50 Jt, Total SO >= Rp 75 Jt) wajib hingga GM."
@@ -415,6 +415,44 @@ def get_rcl_review_context(user, submission, form_data: Optional[dict] = None) -
                 "is_multi_group": False,
             })
 
+    required_levels = matrix.get("required_levels") or ["ACCOUNTING", "ASM"]
+    progress_total = max(3, 1 + len(required_levels))
+
+    if submission.status in ("draft", "needs_revision", "withdrawn"):
+        progress_step = 1
+    elif submission.status == "approved":
+        progress_step = progress_total
+    elif submission.status == "rejected":
+        rejected_tasks = [t for t in all_tasks if t.status == "rejected"]
+        if rejected_tasks:
+            rej_task = max(
+                rejected_tasks,
+                key=lambda t: (t.stage_number or 0, t.id or 0),
+            )
+            rej_stage = (
+                rej_task.workflow_stage.order
+                if rej_task.workflow_stage_id and rej_task.workflow_stage
+                else (rej_task.stage_number or 1)
+            )
+            progress_step = 1 + int(rej_stage)
+        else:
+            max_approved_stage = 0
+            for t in all_tasks:
+                if t.status == "approved":
+                    st = (
+                        t.workflow_stage.order
+                        if t.workflow_stage_id and t.workflow_stage
+                        else (t.stage_number or 0)
+                    )
+                    max_approved_stage = max(max_approved_stage, int(st))
+            progress_step = 1 + max_approved_stage
+    elif pending_task and stage_order:
+        progress_step = 1 + int(stage_order)
+    else:
+        progress_step = 1
+
+    progress_step = max(1, min(int(progress_step), progress_total))
+
     return {
         "pending_task": pending_task,
         "stage_order": stage_order,
@@ -427,5 +465,7 @@ def get_rcl_review_context(user, submission, form_data: Optional[dict] = None) -
         "next_stage_preview_label": next_stage_preview_label,
         "lampiran_items": lampiran_items,
         "history_rows": history_rows,
+        "progress_step": progress_step,
+        "progress_total": progress_total,
     }
 

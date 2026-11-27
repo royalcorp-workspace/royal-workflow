@@ -388,9 +388,210 @@
             { name: 'jenis_hold', colClass: 'col-12 col-md-6' },
         ]);
 
-        // Rp prefix & thousand separator formatting for total_so
+        function createInlineFeedback(anchorEl, clsName) {
+            if (!anchorEl || !anchorEl.parentNode) return null;
+            const el = document.createElement('div');
+            el.className = `${clsName} mt-1 small`;
+            el.style.display = 'none';
+            anchorEl.insertAdjacentElement('afterend', el);
+            return el;
+        }
+
+        function setInlineFeedback(el, type, html) {
+            if (!el) return;
+            if (!html) {
+                el.style.display = 'none';
+                el.className = `${el.className.split(' ')[0]} mt-1 small`;
+                el.innerHTML = '';
+                return;
+            }
+            const baseCls = el.className.split(' ')[0];
+            el.className = `${baseCls} mt-1 small ${type === 'danger' ? 'text-danger' : (type === 'warning' ? 'text-warning-emphasis' : 'text-success')}`;
+            el.innerHTML = html;
+            el.style.display = 'block';
+        }
+
+        function attachStrictNumericGuard(inputEl, { formatDisplay, onBlocked, onSanitized }) {
+            if (!inputEl) return;
+            inputEl.setAttribute('inputmode', 'numeric');
+            inputEl.setAttribute('autocomplete', 'off');
+
+            const allowedNavKeys = new Set([
+                'Backspace', 'Delete', 'Tab', 'Escape', 'Enter',
+                'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End',
+            ]);
+
+            function applyValueWithCaret(rawVal, digitsBeforeCaret) {
+                const formatted = formatDisplay
+                    ? formatDisplay(rawVal)
+                    : String(rawVal || '').replace(/[^\d]/g, '');
+                if (formatted !== inputEl.value) {
+                    inputEl.value = formatted;
+                }
+                if (digitsBeforeCaret !== null && document.activeElement === inputEl) {
+                    let newPos = 0;
+                    if (digitsBeforeCaret > 0) {
+                        let seenDigits = 0;
+                        newPos = formatted.length;
+                        for (let i = 0; i < formatted.length; i++) {
+                            if (/\d/.test(formatted[i])) seenDigits++;
+                            if (seenDigits >= digitsBeforeCaret) {
+                                newPos = i + 1;
+                                break;
+                            }
+                        }
+                    }
+                    try {
+                        inputEl.setSelectionRange(newPos, newPos);
+                    } catch (_) { /* ignore non-selectable edge */ }
+                }
+            }
+
+            inputEl.addEventListener('keydown', function (e) {
+                if (e.ctrlKey || e.metaKey || e.altKey || allowedNavKeys.has(e.key)) {
+                    return;
+                }
+                if (e.key && e.key.length === 1 && !/^[0-9]$/.test(e.key)) {
+                    e.preventDefault();
+                    if (onBlocked) onBlocked();
+                }
+            });
+
+            inputEl.addEventListener('beforeinput', function (e) {
+                if (!e.data) return;
+                if ((e.inputType === 'insertText' || e.inputType === 'insertCompositionText') && /[^\d]/.test(e.data)) {
+                    const cleanChunk = e.data.replace(/[^\d]/g, '');
+                    e.preventDefault();
+                    if (onBlocked) onBlocked();
+                    if (!cleanChunk) return;
+
+                    const start = inputEl.selectionStart ?? inputEl.value.length;
+                    const end = inputEl.selectionEnd ?? start;
+                    const merged = inputEl.value.slice(0, start) + cleanChunk + inputEl.value.slice(end);
+                    const digitsBefore = (inputEl.value.slice(0, start) + cleanChunk).replace(/[^\d]/g, '').length;
+                    applyValueWithCaret(merged, digitsBefore);
+                    if (onSanitized) onSanitized(true);
+                }
+            });
+
+            inputEl.addEventListener('paste', function (e) {
+                const clip = e.clipboardData || window.clipboardData;
+                if (!clip) return;
+                const pasted = clip.getData('text') || '';
+                const hadNonDigits = /[^\d]/.test(pasted);
+                const cleanDigits = pasted.replace(/[^\d]/g, '');
+                e.preventDefault();
+
+                const start = inputEl.selectionStart ?? inputEl.value.length;
+                const end = inputEl.selectionEnd ?? start;
+                const merged = inputEl.value.slice(0, start) + cleanDigits + inputEl.value.slice(end);
+                const digitsBefore = (inputEl.value.slice(0, start) + cleanDigits).replace(/[^\d]/g, '').length;
+                applyValueWithCaret(merged, digitsBefore);
+
+                if (hadNonDigits && onBlocked) {
+                    onBlocked();
+                } else if (onSanitized) {
+                    onSanitized(false);
+                }
+            });
+
+            inputEl.addEventListener('input', function () {
+                const raw = inputEl.value || '';
+                const expectedAllowedRe = formatDisplay ? /[^\d.]/ : /[^\d]/;
+                const hadNonDigits = expectedAllowedRe.test(raw);
+                const caret = inputEl.selectionStart;
+                const digitsBefore = caret !== null
+                    ? raw.slice(0, caret).replace(/[^\d]/g, '').length
+                    : null;
+                applyValueWithCaret(raw, digitsBefore);
+                if (hadNonDigits && onBlocked) {
+                    onBlocked();
+                } else if (onSanitized) {
+                    onSanitized(hadNonDigits);
+                }
+            });
+        }
+
+        function formatRupiahDigits(val) {
+            const digits = String(val || '').replace(/[^\d]/g, '');
+            if (!digits) return '';
+            return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        }
+
+        // Strict numeric-only guard & validation for nomor_so
+        const nomorSoInput = getFieldInput('nomor_so');
+        let validateNomorSo = function () { return true; };
+        if (nomorSoInput) {
+            nomorSoInput.setAttribute('pattern', '[0-9]*');
+            const nomorSoFeedback = createInlineFeedback(nomorSoInput, 'rcl-nomor-so-feedback');
+            let nomorBlockedTimer = null;
+
+            validateNomorSo = function (showErrorIfEmpty = false) {
+                const raw = (nomorSoInput.value || '').trim();
+                const digits = raw.replace(/[^\d]/g, '');
+                if (raw !== digits) nomorSoInput.value = digits;
+
+                nomorSoInput.classList.remove('is-valid', 'is-invalid');
+                if (!digits) {
+                    if (showErrorIfEmpty) {
+                        nomorSoInput.classList.add('is-invalid');
+                        setInlineFeedback(
+                            nomorSoFeedback,
+                            'danger',
+                            '<i class="bi bi-exclamation-circle me-1"></i> Nomor SO wajib diisi dengan digit angka (0-9).'
+                        );
+                        return false;
+                    }
+                    setInlineFeedback(nomorSoFeedback, '', '');
+                    return true;
+                }
+                if (!/^\d+$/.test(digits)) {
+                    nomorSoInput.classList.add('is-invalid');
+                    setInlineFeedback(
+                        nomorSoFeedback,
+                        'danger',
+                        '<i class="bi bi-exclamation-triangle me-1"></i> Nomor SO hanya boleh berisi digit angka (0-9).'
+                    );
+                    return false;
+                }
+                nomorSoInput.classList.add('is-valid');
+                setInlineFeedback(nomorSoFeedback, '', '');
+                return true;
+            };
+
+            attachStrictNumericGuard(nomorSoInput, {
+                formatDisplay: null,
+                onBlocked: function () {
+                    clearTimeout(nomorBlockedTimer);
+                    setInlineFeedback(
+                        nomorSoFeedback,
+                        'danger',
+                        '<i class="bi bi-shield-exclamation me-1"></i> Hanya digit angka 0-9 yang diperbolehkan pada Nomor SO.'
+                    );
+                    nomorBlockedTimer = setTimeout(() => {
+                        if (!nomorSoInput.classList.contains('is-invalid')) {
+                            setInlineFeedback(nomorSoFeedback, '', '');
+                        }
+                    }, 2200);
+                },
+                onSanitized: function () {
+                    clearTimeout(nomorBlockedTimer);
+                    validateNomorSo(false);
+                },
+            });
+
+            if (nomorSoInput.value) {
+                nomorSoInput.value = String(nomorSoInput.value).replace(/[^\d]/g, '');
+                validateNomorSo(false);
+            }
+            nomorSoInput.addEventListener('blur', () => validateNomorSo(true));
+        }
+
+        // Rp prefix, cursor-safe thousand separator, & strict numeric guard for total_so
         const totalSoInput = getFieldInput('total_so');
+        let validateTotalSo = function () { return true; };
         if (totalSoInput) {
+            totalSoInput.setAttribute('pattern', '[0-9.]*');
             const igSo = document.createElement('div');
             igSo.className = 'input-group';
             totalSoInput.parentNode.insertBefore(igSo, totalSoInput);
@@ -400,17 +601,69 @@
             igSo.appendChild(rpPrefix);
             igSo.appendChild(totalSoInput);
 
-            function formatRupiahDigits(val) {
-                const digits = String(val || '').replace(/[^\d]/g, '');
-                if (!digits) return '';
-                return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-            }
+            // Place feedback outside .input-group so Bootstrap border radius stays intact
+            const totalSoFeedback = createInlineFeedback(igSo, 'rcl-total-so-feedback');
+            let totalBlockedTimer = null;
+
+            validateTotalSo = function (showErrorIfEmpty = false) {
+                const formatted = formatRupiahDigits(totalSoInput.value);
+                if (totalSoInput.value !== formatted) totalSoInput.value = formatted;
+                const digits = formatted.replace(/[^\d]/g, '');
+
+                totalSoInput.classList.remove('is-valid', 'is-invalid');
+                if (!digits) {
+                    if (showErrorIfEmpty) {
+                        totalSoInput.classList.add('is-invalid');
+                        setInlineFeedback(
+                            totalSoFeedback,
+                            'danger',
+                            '<i class="bi bi-exclamation-circle me-1"></i> Total SO wajib diisi dengan nominal angka (0-9).'
+                        );
+                        return false;
+                    }
+                    setInlineFeedback(totalSoFeedback, '', '');
+                    return true;
+                }
+                if (parseInt(digits, 10) <= 0) {
+                    totalSoInput.classList.add('is-invalid');
+                    setInlineFeedback(
+                        totalSoFeedback,
+                        'danger',
+                        '<i class="bi bi-exclamation-triangle me-1"></i> Total SO harus lebih besar dari 0.'
+                    );
+                    return false;
+                }
+                totalSoInput.classList.add('is-valid');
+                setInlineFeedback(totalSoFeedback, '', '');
+                return true;
+            };
+
+            attachStrictNumericGuard(totalSoInput, {
+                formatDisplay: formatRupiahDigits,
+                onBlocked: function () {
+                    clearTimeout(totalBlockedTimer);
+                    setInlineFeedback(
+                        totalSoFeedback,
+                        'danger',
+                        '<i class="bi bi-shield-exclamation me-1"></i> Hanya digit angka 0-9 yang diperbolehkan pada Total SO.'
+                    );
+                    totalBlockedTimer = setTimeout(() => {
+                        if (!totalSoInput.classList.contains('is-invalid')) {
+                            setInlineFeedback(totalSoFeedback, '', '');
+                        }
+                    }, 2200);
+                },
+                onSanitized: function () {
+                    clearTimeout(totalBlockedTimer);
+                    validateTotalSo(false);
+                },
+            });
+
             if (totalSoInput.value) {
                 totalSoInput.value = formatRupiahDigits(totalSoInput.value);
+                validateTotalSo(false);
             }
-            totalSoInput.addEventListener('input', function () {
-                this.value = formatRupiahDigits(this.value);
-            });
+            totalSoInput.addEventListener('blur', () => validateTotalSo(true));
         }
 
         // Helper info bar below Section 03
@@ -558,8 +811,39 @@
         initialRows.forEach((r) => addLampiranRow(r));
         addBtn.addEventListener('click', () => addLampiranRow({}));
 
-        formEl.addEventListener('submit', function () {
+        formEl.addEventListener('submit', function (e) {
             syncLampiranJson();
+
+            const submitter = e.submitter || document.activeElement;
+            const isDraftAction = Boolean(
+                submitter && (
+                    submitter.id === 'btnSaveDraft'
+                    || (submitter.name === 'action' && submitter.value === 'draft')
+                )
+            );
+
+            if (nomorSoInput) {
+                nomorSoInput.value = String(nomorSoInput.value || '').replace(/[^\d]/g, '');
+            }
+
+            if (!isDraftAction) {
+                const isNomorValid = validateNomorSo(true);
+                const isTotalValid = validateTotalSo(true);
+                if (!isNomorValid || !isTotalValid) {
+                    e.preventDefault();
+                    const firstInvalid = !isNomorValid ? nomorSoInput : totalSoInput;
+                    if (firstInvalid) {
+                        firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        setTimeout(() => firstInvalid.focus(), 120);
+                    }
+                    return;
+                }
+            }
+
+            // Unmask thousand separator dots so payload sent to server is pure digits (0-9)
+            if (totalSoInput) {
+                totalSoInput.value = String(totalSoInput.value || '').replace(/[^\d]/g, '');
+            }
         });
     });
 })();

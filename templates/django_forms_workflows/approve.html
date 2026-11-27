@@ -271,7 +271,7 @@
           {% endif %}
 
           {% with pdf=submission.form_definition.pdf_generation %}
-            {% if pdf != 'none' %}
+            {% if pdf and pdf != 'none' and submission.form_definition.slug != 'release-credit-limit' %}
               {% if submission.form_definition.slug == 'pengajuan-biaya' %}
                 <a href="{% url 'forms_workflows:submission_pdf' submission.id %}Pengajuan_Biaya_{{ submission.id }}.pdf" target="_blank" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1.5" style="white-space: nowrap;" title="Cetak Dokumen Pengajuan Biaya (PDF)">
                   <i class="bi bi-printer-fill text-danger"></i>

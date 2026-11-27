@@ -1489,6 +1489,54 @@ class DynamicForm(forms.Form):
                 if not cleaned_data.get("komponen_biaya_support"):
                     cleaned_data["komponen_biaya_support"] = self.data.get("komponen_biaya_support") or "[]"
 
+        # Release Credit Limit: Strict Numeric Validation for nomor_so & total_so
+        if self.form_definition and self.form_definition.slug == "release-credit-limit":
+            raw_nomor_so = str(
+                self.data.get("nomor_so")
+                if "nomor_so" in self.data
+                else (cleaned_data.get("nomor_so") or "")
+            ).strip()
+            if raw_nomor_so:
+                if not re.fullmatch(r"\d+", raw_nomor_so):
+                    if "nomor_so" not in self._errors:
+                        self.add_error(
+                            "nomor_so",
+                            ValidationError(
+                                "Nomor SO hanya boleh berisi digit angka (0-9) tanpa huruf, spasi, atau simbol.",
+                                code="invalid_numeric",
+                            ),
+                        )
+                else:
+                    cleaned_data["nomor_so"] = raw_nomor_so
+
+            raw_total_so = str(
+                self.data.get("total_so")
+                if "total_so" in self.data
+                else (cleaned_data.get("total_so") or "")
+            ).strip()
+            if raw_total_so:
+                if not re.fullmatch(r"(?:\d+|\d{1,3}(?:\.\d{3})+)", raw_total_so):
+                    if "total_so" not in self._errors:
+                        self.add_error(
+                            "total_so",
+                            ValidationError(
+                                "Total SO hanya boleh berisi angka (0-9) tanpa huruf atau karakter simbol.",
+                                code="invalid_numeric",
+                            ),
+                        )
+                else:
+                    digits_total_so = raw_total_so.replace(".", "")
+                    if int(digits_total_so) <= 0:
+                        self.add_error(
+                            "total_so",
+                            ValidationError(
+                                "Total SO harus lebih besar dari 0.",
+                                code="invalid_amount",
+                            ),
+                        )
+                    else:
+                        cleaned_data["total_so"] = digits_total_so
+
         return cleaned_data
 
     def _verify_captcha_token(self, token):
